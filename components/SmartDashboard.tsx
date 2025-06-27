@@ -44,7 +44,7 @@ export function SmartDashboard() {
   return <NoOrgDashboard />;
 }
 
-function SingleOrgDashboard({ organization }: { organization: any }) {
+function SingleOrgDashboard({ organization }: { organization: { id: string; name: string; membersCount: number } }) {
   const router = useRouter();
   const [showNewProjectForm, setShowNewProjectForm] = useState(false);
   
@@ -291,7 +291,7 @@ function SingleOrgDashboard({ organization }: { organization: any }) {
   );
 }
 
-function MultiOrgDashboard({ organizations }: { organizations: any[] }) {
+function MultiOrgDashboard({ organizations }: { organizations: { id: string; name: string; role: string }[] }) {
   const router = useRouter();
 
   return (

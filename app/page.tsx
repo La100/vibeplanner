@@ -3,11 +3,10 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useUser } from "@clerk/nextjs";
-import { Doc } from "@/convex/_generated/dataModel";
-import { CreateOrganization } from "@clerk/nextjs";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Building2, Plus, Users, FolderOpen, BarChart3, ArrowRight, CheckCircle, Globe, Shield, Zap } from "lucide-react";
+import { Building2, Users, FolderOpen, BarChart3, ArrowRight } from "lucide-react";
 import Link from "next/link";
 
 export default function Home() {

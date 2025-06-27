@@ -20,41 +20,7 @@ import {
   Users
 } from "lucide-react";
 
-type Task = {
-  _id: Id<"tasks">;
-  _creationTime: number;
-  title: string;
-  description?: string;
-  status: string;
-  priority: string;
-  assignedTo?: string;
-  createdBy: string;
-  dueDate?: number;
-  estimatedHours?: number;
-  actualHours?: number;
-  tags: string[];
-  projectName: string;
-};
 
-type Project = {
-  _id: Id<"projects">;
-  _creationTime: number;
-  name: string;
-  description?: string;
-  teamId: Id<"teams">;
-  status: string;
-  priority: string;
-  startDate?: number;
-  endDate?: number;
-  budget?: number;
-  client?: string;
-  location?: string;
-  createdBy: string;
-  assignedTo: string[];
-  taskCount: number;
-  completedTasks: number;
-  teamName: string;
-};
 
 interface ProjectDetailProps {
   projectId: Id<"projects">;
@@ -71,7 +37,6 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
   
   const createTask = useMutation(api.myFunctions.createTask);
   const updateTaskStatus = useMutation(api.myFunctions.updateTaskStatus);
-  const updateProject = useMutation(api.myFunctions.updateProject);
 
   const [newTask, setNewTask] = useState({
     title: "",
@@ -172,7 +137,9 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
     return new Date(timestamp).toLocaleDateString("pl-PL");
   };
 
-  const progress = project.taskCount > 0 ? (project.completedTasks / project.taskCount) * 100 : 0;
+  const totalTasks = tasks?.length || 0;
+  const completedTasks = tasks?.filter(task => task.status === "completed").length || 0;
+  const progress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -212,7 +179,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
           <div className="mt-4">
             <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
               <span>Postęp projektu</span>
-              <span>{project.completedTasks}/{project.taskCount} zadań ({Math.round(progress)}%)</span>
+              <span>{completedTasks}/{totalTasks} zadań ({Math.round(progress)}%)</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
               <div 
@@ -233,7 +200,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
             ].map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => setActiveTab(tab.id as "overview" | "tasks" | "team")}
                 className={`py-4 px-1 border-b-2 font-medium text-sm ${
                   activeTab === tab.id
                     ? "border-blue-500 text-blue-600"
@@ -347,7 +314,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                     <Filter className="h-4 w-4 text-gray-400" />
                     <select 
                       value={taskFilter} 
-                      onChange={(e) => setTaskFilter(e.target.value as any)}
+                      onChange={(e) => setTaskFilter(e.target.value as "all" | "todo" | "in_progress" | "completed")}
                       className="border border-gray-300 rounded-md px-3 py-1 text-sm"
                     >
                       <option value="all">Wszystkie zadania</option>
@@ -393,7 +360,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                         <label className="block text-sm font-medium text-gray-700 mb-1">Priorytet</label>
                         <select
                           value={newTask.priority}
-                          onChange={(e) => setNewTask({ ...newTask, priority: e.target.value as any })}
+                          onChange={(e) => setNewTask({ ...newTask, priority: e.target.value as "low" | "medium" | "high" | "urgent" })}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md"
                         >
                           <option value="low">Niski</option>
@@ -500,7 +467,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                             </span>
                             <select
                               value={task.status}
-                              onChange={(e) => handleStatusChange(task._id, e.target.value as any)}
+                              onChange={(e) => handleStatusChange(task._id, e.target.value as "todo" | "in_progress" | "review" | "completed" | "blocked")}
                               className="text-xs border border-gray-300 rounded px-2 py-1"
                             >
                               <option value="todo">Do zrobienia</option>

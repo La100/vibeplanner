@@ -48,9 +48,9 @@ export function InviteClientForm({ projectId }: InviteClientFormProps) {
         description: `An invitation has been sent to ${values.email}.`,
       });
       form.reset();
-    } catch (error: any) {
+    } catch (error) {
       toast.error("Error Sending Invitation", {
-        description: error.message || "There was a problem sending the invitation. Please try again.",
+        description: (error as Error).message || "There was a problem sending the invitation. Please try again.",
       });
     }
   }

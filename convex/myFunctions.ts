@@ -497,6 +497,7 @@ export const createTask = mutation({
     dueDate: v.optional(v.number()),
     assignedTo: v.optional(v.string()),
     tags: v.array(v.string()),
+    estimatedHours: v.optional(v.number()),
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -520,6 +521,24 @@ export const createTask = mutation({
   }
 });
 
+export const updateTaskStatus = mutation({
+  args: {
+    taskId: v.id("tasks"),
+    status: v.union(
+      v.literal("todo"),
+      v.literal("in_progress"),
+      v.literal("review"),
+      v.literal("completed"),
+      v.literal("blocked")
+    ),
+  },
+  async handler(ctx, args) {
+    const task = await ctx.db.get(args.taskId);
+    if (!task) throw new Error("Task not found");
+    await ctx.db.patch(args.taskId, { status: args.status });
+  },
+});
+
 export const toggleTaskStatus = mutation({
   args: { taskId: v.id("tasks") },
   async handler(ctx, args) {
@@ -533,7 +552,15 @@ export const toggleTaskStatus = mutation({
 export const getProject = query({
   args: { projectId: v.id("projects") },
   async handler(ctx, args) {
-    return ctx.db.get(args.projectId);
+    const project = await ctx.db.get(args.projectId);
+    if (!project) {
+      return null;
+    }
+    const team = await ctx.db.get(project.teamId);
+    if (!team) {
+      return { ...project, teamName: "Unknown Team" };
+    }
+    return { ...project, teamName: team.name };
   }
 });
 
@@ -552,10 +579,29 @@ export const updateProject = mutation({
 export const listTeamProjects = query({
   args: { teamId: v.id("teams") },
   async handler(ctx, args) {
-    return await ctx.db
+    const projects = await ctx.db
       .query("projects")
       .withIndex("by_team", q => q.eq("teamId", args.teamId))
       .collect();
+
+    const projectsWithTaskCounts = await Promise.all(
+      projects.map(async (project) => {
+        const tasks = await ctx.db
+          .query("tasks")
+          .withIndex("by_project", (q) => q.eq("projectId", project._id))
+          .collect();
+        const completedTasks = tasks.filter(
+          (task) => task.status === "completed"
+        ).length;
+        return {
+          ...project,
+          taskCount: tasks.length,
+          completedTasks: completedTasks,
+        };
+      })
+    );
+
+    return projectsWithTaskCounts;
   }
 });
 
@@ -565,6 +611,11 @@ export const createProject = mutation({
     name: v.string(),
     description: v.optional(v.string()),
     priority: v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent")),
+    client: v.optional(v.string()),
+    location: v.optional(v.string()),
+    budget: v.optional(v.number()),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -701,6 +752,39 @@ export const acceptClientInvitation = mutation({
       // For now, we do nothing if they are already a member.
     }
   }
+});
+
+export const syncTeamWithClerkOrg = mutation({
+  args: {
+    clerkOrgId: v.string(),
+    orgName: v.string(),
+  },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // Check if the team already exists
+    const existingTeam = await ctx.db
+      .query("teams")
+      .withIndex("by_clerk_org", (q) => q.eq("clerkOrgId", args.clerkOrgId))
+      .unique();
+
+    if (existingTeam) {
+      // Update existing team if name has changed
+      if (existingTeam.name !== args.orgName) {
+        await ctx.db.patch(existingTeam._id, { name: args.orgName });
+      }
+    } else {
+      // Create new team
+      await ctx.db.insert("teams", {
+        clerkOrgId: args.clerkOrgId,
+        name: args.orgName,
+        slug: generateSlug(args.orgName),
+      });
+    }
+  },
 });
 
 export const syncAndCleanUpTeams = action({
