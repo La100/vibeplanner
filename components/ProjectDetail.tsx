@@ -292,7 +292,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                       <div className="flex-1">
                         <p className="font-medium">{task.title}</p>
                         <p className="text-sm text-gray-500">
-                          {task.dueDate && `Termin: ${formatDate(task.dueDate)}`}
+                          {task.endDate && `Termin: ${formatDate(task.endDate)}`}
                         </p>
                       </div>
                       <span className={`px-2 py-1 rounded-full text-xs ${getPriorityColor(task.priority)}`}>
@@ -446,10 +446,10 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                               <p className="text-sm text-gray-600 mt-1">{task.description}</p>
                             )}
                             <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                              {task.dueDate && (
+                              {task.endDate && (
                                 <span className="flex items-center gap-1">
                                   <Calendar className="h-3 w-3" />
-                                  {formatDate(task.dueDate)}
+                                  {formatDate(task.endDate)}
                                 </span>
                               )}
                               {task.estimatedHours && (

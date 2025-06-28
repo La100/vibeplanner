@@ -6,7 +6,7 @@ import { useOrganization } from "@clerk/nextjs";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 
-import { ArrowLeft, Plus, FolderOpen, Users, Calendar, MapPin, DollarSign, Building2 } from "lucide-react";
+import { ArrowLeft, Plus, FolderOpen, Users, Calendar, MapPin, DollarSign, Building2, CheckSquare, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +31,11 @@ export default function OrganizationPage() {
   // Get projects for this organization
   const projects = useQuery(api.myFunctions.listProjectsByClerkOrg, 
     organization?.id ? { clerkOrgId: organization.id } : "skip"
+  );
+  
+  // Get team tasks for overview
+  const teamTasks = useQuery(api.myFunctions.listTeamTasks, 
+    team && team._id ? { teamId: team._id } : "skip"
   );
   
   const createProject = useMutation(api.myFunctions.createProjectInOrg);
@@ -80,7 +85,7 @@ export default function OrganizationPage() {
         router.push(`/${params.slug}/${newProjectSlug}`);
       }
     } catch (error) {
-      console.error("Error creating project:", error);
+      console.error("Błąd podczas tworzenia projektu:", error);
     }
   };
 
@@ -103,9 +108,7 @@ export default function OrganizationPage() {
     </div>;
   }
 
-  console.log("Organization data:", organization);
-  console.log("Team data:", team);
-  console.log("Projects data:", projects);
+  
 
   return (
     <div className="min-h-screen bg-background">
@@ -312,48 +315,156 @@ export default function OrganizationPage() {
               <div className="space-y-6">
                 <h2 className="text-2xl font-bold tracking-tight">Przegląd zespołu</h2>
                 
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {/* Team Stats */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Projekty</CardTitle>
-                      <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium">Total Projects</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold">{projects?.length || 0}</div>
-                      <p className="text-xs text-muted-foreground">
-                        Wszystkie projekty zespołu
-                      </p>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Członkowie</CardTitle>
-                      <Users className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{organization.membersCount}</div>
-                      <p className="text-xs text-muted-foreground">
-                        Członkowie zespołu
-                      </p>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Zadania</CardTitle>
-                      <Calendar className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">
-                        {projects?.reduce((sum, p) => sum + (p.taskCount || 0), 0) || 0}
+                      <div className="flex items-center gap-2">
+                        <FolderOpen className="h-4 w-4 text-primary" />
+                        <span className="text-2xl font-bold">{projects?.length || 0}</span>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        Wszystkie zadania
-                      </p>
+                    </CardContent>
+                  </Card>
+                  
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium">Total Tasks</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center gap-2">
+                        <CheckSquare className="h-4 w-4 text-primary" />
+                        <span className="text-2xl font-bold">{teamTasks?.length || 0}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium">Completed Tasks</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center gap-2">
+                        <CheckSquare className="h-4 w-4 text-green-600" />
+                        <span className="text-2xl font-bold text-green-600">
+                          {teamTasks?.filter(t => t.status === "completed").length || 0}
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium">Overdue Tasks</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-red-500" />
+                        <span className="text-2xl font-bold text-red-600">
+                          {teamTasks?.filter(t => 
+                            t.endDate && 
+                            t.endDate < Date.now() && 
+                            t.status !== "completed"
+                          ).length || 0}
+                        </span>
+                      </div>
                     </CardContent>
                   </Card>
                 </div>
+
+                {/* Recent Tasks */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Recent Tasks</CardTitle>
+                    <CardDescription>Latest task activity across all projects</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {teamTasks?.slice(0, 8).map(task => (
+                        <div key={task._id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-medium">{task.title}</h4>
+                              <Badge variant="outline" className="text-xs">
+                                {task.projectName}
+                              </Badge>
+                            </div>
+                            {task.description && (
+                              <p className="text-sm text-muted-foreground truncate mt-1">
+                                {task.description}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {task.endDate && (
+                              <div className="flex items-center text-xs text-muted-foreground">
+                                <Calendar className="h-3 w-3 mr-1" />
+                                {new Date(task.endDate).toLocaleDateString()}
+                              </div>
+                            )}
+                            <Badge variant="outline" className="text-xs">
+                              {task.status.replace("_", " ")}
+                            </Badge>
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => router.push(`/${params.slug}/${task.projectSlug}/tasks`)}
+                            >
+                              View
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                      {(!teamTasks || teamTasks.length === 0) && (
+                        <div className="text-center text-muted-foreground py-8">
+                          No tasks yet. Create a project and add some tasks to get started!
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Active Projects Summary */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Active Projects</CardTitle>
+                    <CardDescription>Projects currently in progress</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {projects?.filter(p => p.status === "active").slice(0, 6).map(project => (
+                        <Card key={project._id} className="cursor-pointer hover:shadow-md transition-shadow"
+                              onClick={() => router.push(`/${params.slug}/${project.slug}`)}>
+                          <CardContent className="p-4">
+                            <div className="space-y-2">
+                              <h4 className="font-medium">{project.name}</h4>
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="text-muted-foreground">
+                                  {project.completedTasks}/{project.taskCount} tasks
+                                </span>
+                                <div className="w-16 bg-muted rounded-full h-2">
+                                  <div 
+                                    className="bg-primary h-2 rounded-full transition-all" 
+                                    style={{ 
+                                      width: `${project.taskCount > 0 ? (project.completedTasks / project.taskCount) * 100 : 0}%` 
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                      {(!projects || projects.filter(p => p.status === "active").length === 0) && (
+                        <div className="col-span-full text-center text-muted-foreground py-8">
+                          No active projects. Create a new project to get started!
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             </TabsContent>
           </Tabs>

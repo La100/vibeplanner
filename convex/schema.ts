@@ -76,7 +76,8 @@ export default defineSchema({
     ),
     assignedTo: v.optional(v.string()), // Clerk user ID
     createdBy: v.string(), // Clerk user ID
-    dueDate: v.optional(v.number()),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
     estimatedHours: v.optional(v.number()),
     actualHours: v.optional(v.number()),
     tags: v.array(v.string()),
@@ -85,7 +86,8 @@ export default defineSchema({
     .index("by_team", ["teamId"])
     .index("by_status", ["status"])
     .index("by_assigned_to", ["assignedTo"])
-    .index("by_due_date", ["dueDate"]),
+    .index("by_start_date", ["startDate"])
+    .index("by_end_date", ["endDate"]),
 
   // Pliki i dokumenty
   files: defineTable({
@@ -143,6 +145,7 @@ export default defineSchema({
       v.literal("client")
     ),
     permissions: v.array(v.string()),
+    projectIds: v.optional(v.array(v.id("projects"))), // Lista projektów dla klientów
     joinedAt: v.number(),
     isActive: v.boolean(),
   })
@@ -183,4 +186,44 @@ export default defineSchema({
     name: v.optional(v.string()),
   })
     .index("by_clerk_user_id", ["clerkUserId"]),
+
+  // Tymczasowe zaproszenia klientów (do konkretnych projektów)
+  pendingClientInvitations: defineTable({
+    email: v.string(),
+    projectId: v.id("projects"),
+    clerkOrgId: v.string(),
+    invitedBy: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("accepted"),
+      v.literal("expired")
+    ),
+    expiresAt: v.number(),
+  })
+    .index("by_email", ["email"])
+    .index("by_project", ["projectId"])
+    .index("by_org", ["clerkOrgId"]),
+
+  // Klienci z dostępem do konkretnych projektów
+  clients: defineTable({
+    email: v.string(),
+    clerkUserId: v.optional(v.string()), // Gdy się zarejestruje
+    clerkOrgId: v.string(),
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    invitedBy: v.string(),
+    status: v.union(
+      v.literal("invited"),
+      v.literal("active"),
+      v.literal("inactive")
+    ),
+    invitedAt: v.number(),
+    joinedAt: v.optional(v.number()),
+  })
+    .index("by_email", ["email"])
+    .index("by_project", ["projectId"])
+    .index("by_team", ["teamId"])
+    .index("by_clerk_user", ["clerkUserId"])
+    .index("by_org_and_user", ["clerkOrgId", "clerkUserId"])
+    .index("by_status", ["status"]),
 });

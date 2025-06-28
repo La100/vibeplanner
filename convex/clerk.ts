@@ -44,6 +44,9 @@ const handleClerkWebhook = httpAction(async (ctx, request) => {
             orgName: event.data.organization.name,
             orgSlug: event.data.organization.slug!,
             orgImageUrl: event.data.organization.image_url,
+            userEmail: (event.data.public_user_data as any).email_addresses?.[0]?.email_address || 
+                      (event.data.public_user_data as any).email_address || 
+                      "unknown@example.com",
         });
         break;
     case "organizationMembership.updated":
@@ -54,6 +57,9 @@ const handleClerkWebhook = httpAction(async (ctx, request) => {
             orgName: event.data.organization.name,
             orgSlug: event.data.organization.slug!,
             orgImageUrl: event.data.organization.image_url,
+            userEmail: (event.data.public_user_data as any).email_addresses?.[0]?.email_address || 
+                      (event.data.public_user_data as any).email_address || 
+                      "unknown@example.com",
         });
         break;
     case "organizationMembership.deleted":

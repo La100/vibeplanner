@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
-import { Home, GanttChartSquare, CheckSquare, Folder, Users, Settings, ArrowLeft } from "lucide-react";
+import { Home, GanttChartSquare, CheckSquare, Folder, Users, Settings, ArrowLeft, Calendar } from "lucide-react";
 
 export function ProjectSidebar() {
   const params = useParams<{ slug: string, projectSlug: string }>();
@@ -28,6 +28,7 @@ export function ProjectSidebar() {
   const navLinks = [
     { href: `/${params.slug}/${params.projectSlug}`, label: "Overview", icon: Home },
     { href: `/${params.slug}/${params.projectSlug}/tasks`, label: "Tasks", icon: CheckSquare },
+    { href: `/${params.slug}/${params.projectSlug}/calendar`, label: "Calendar", icon: Calendar },
     { href: `/${params.slug}/${params.projectSlug}/files`, label: "Files", icon: Folder },
     { href: `/${params.slug}/${params.projectSlug}/gantt`, label: "Gantt Chart", icon: GanttChartSquare },
     { href: `/${params.slug}/${params.projectSlug}/members`, label: "Members", icon: Users },

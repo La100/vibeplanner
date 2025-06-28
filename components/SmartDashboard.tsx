@@ -69,7 +69,7 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
       syncTeam({
         clerkOrgId: organization.id,
         orgName: organization.name,
-      }).catch(console.error);
+      }).catch(() => {});
     }
   }, [organization?.id, organization?.name, team, syncTeam]);
 
@@ -112,7 +112,7 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
 
       router.push(`/project/${projectId}`);
     } catch (error) {
-      console.error("Failed to create project:", error);
+      console.error("Error creating project:", error);
     }
   };
 
