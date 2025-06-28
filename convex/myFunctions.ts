@@ -593,7 +593,7 @@ export const createTask = mutation({
     title: v.string(),
     description: v.optional(v.string()),
     priority: v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent")),
-    dueDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
     assignedTo: v.optional(v.string()),
     tags: v.array(v.string()),
     estimatedHours: v.optional(v.number()),
@@ -612,7 +612,7 @@ export const createTask = mutation({
       description: args.description,
       status: "todo",
       priority: args.priority,
-      dueDate: args.dueDate,
+      endDate: args.endDate,
       assignedTo: args.assignedTo,
       createdBy: identity.subject,
       tags: args.tags,
@@ -1287,14 +1287,14 @@ export const updateTaskDates = mutation({
   args: {
     taskId: v.id("tasks"),
     startDate: v.optional(v.number()),
-    dueDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
   },
   async handler(ctx, args) {
-    const { taskId, startDate, dueDate } = args;
+    const { taskId, startDate, endDate } = args;
     const task = await ctx.db.get(taskId);
     if (!task) {
       throw new Error("Task not found");
     }
-    await ctx.db.patch(taskId, { startDate, dueDate });
+    await ctx.db.patch(taskId, { startDate, endDate });
   },
 }); 

@@ -320,7 +320,9 @@ export const KanbanProvider = <
             className
           )}
         >
-          {children}
+          {columns.map((column) => (
+            <div key={column.id}>{children(column)}</div>
+          ))}
         </div>
         {typeof window !== 'undefined' &&
           createPortal(

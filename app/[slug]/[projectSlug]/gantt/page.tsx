@@ -67,7 +67,7 @@ export default function ProjectGanttPage() {
       await updateTaskDates({
         taskId: id as Id<"tasks">,
         startDate: startAt.getTime(),
-        dueDate: endAt?.getTime(),
+        endDate: endAt?.getTime(),
       });
     } catch (error) {
       console.error("Failed to update task dates", error);

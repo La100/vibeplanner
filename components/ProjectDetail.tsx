@@ -75,7 +75,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
         description: newTask.description || undefined,
         projectId,
         priority: newTask.priority,
-        dueDate: newTask.dueDate ? new Date(newTask.dueDate).getTime() : undefined,
+        endDate: newTask.dueDate ? new Date(newTask.dueDate).getTime() : undefined,
         estimatedHours: newTask.estimatedHours ? parseFloat(newTask.estimatedHours) : undefined,
         tags: newTask.tags.split(",").map(tag => tag.trim()).filter(tag => tag),
       });

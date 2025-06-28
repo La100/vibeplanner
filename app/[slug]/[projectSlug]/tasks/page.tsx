@@ -110,7 +110,7 @@ export default function ProjectTasksPage() {
         title: values.title,
         description: values.description,
         priority: values.priority,
-        dueDate: values.dueDate ? new Date(values.dueDate).getTime() : undefined,
+        endDate: values.dueDate ? new Date(values.dueDate).getTime() : undefined,
         estimatedHours: values.estimatedHours,
         tags: [],
       });
