@@ -59,6 +59,7 @@ export default defineSchema({
   tasks: defineTable({
     title: v.string(),
     description: v.optional(v.string()),
+    content: v.optional(v.string()), // Rich text content from Tiptap editor
     projectId: v.id("projects"),
     teamId: v.id("teams"),
     status: v.union(
@@ -78,6 +79,7 @@ export default defineSchema({
     createdBy: v.string(), // Clerk user ID
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
+    dueDate: v.optional(v.number()),
     estimatedHours: v.optional(v.number()),
     actualHours: v.optional(v.number()),
     tags: v.array(v.string()),

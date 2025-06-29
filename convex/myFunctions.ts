@@ -780,11 +780,22 @@ export const getTeam = query({
   }
 });
 
+export const getTask = query({
+  args: { taskId: v.id("tasks") },
+  async handler(ctx, args) {
+    const task = await ctx.db.get(args.taskId);
+    if (!task) return null;
+    
+    return task;
+  }
+});
+
 export const updateTask = mutation({
   args: {
     taskId: v.id("tasks"),
     title: v.optional(v.string()),
     description: v.optional(v.string()),
+    content: v.optional(v.string()),
   },
   async handler(ctx, args) {
     const { taskId, ...rest } = args;
@@ -1297,4 +1308,201 @@ export const updateTaskDates = mutation({
     }
     await ctx.db.patch(taskId, { startDate, endDate });
   },
+});
+
+// Delete a project and all its related data
+export const deleteProject = mutation({
+  args: {
+    projectId: v.id("projects"),
+  },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    // Get the project to check permissions
+    const project = await ctx.db.get(args.projectId);
+    if (!project) throw new Error("Project not found");
+
+    // Check if user has permission to delete (admin or member role)
+    const teamMember = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!teamMember || (teamMember.role !== "admin" && teamMember.role !== "member")) {
+      throw new Error("Insufficient permissions to delete this project");
+    }
+
+    // Delete all tasks associated with the project
+    const tasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_project", q => q.eq("projectId", args.projectId))
+      .collect();
+
+    const taskDeletionPromises = tasks.map(task => ctx.db.delete(task._id));
+    await Promise.all(taskDeletionPromises);
+
+    // Delete all comments related to the project or its tasks
+    const projectComments = await ctx.db
+      .query("comments")
+      .withIndex("by_project", q => q.eq("projectId", args.projectId))
+      .collect();
+
+    const taskComments = await Promise.all(
+      tasks.map(task => 
+        ctx.db
+          .query("comments")
+          .withIndex("by_task", q => q.eq("taskId", task._id))
+          .collect()
+      )
+    ).then(results => results.flat());
+
+    const allComments = [...projectComments, ...taskComments];
+    const commentDeletionPromises = allComments.map(comment => ctx.db.delete(comment._id));
+    await Promise.all(commentDeletionPromises);
+
+    // Delete all files related to the project or its tasks
+    const projectFiles = await ctx.db
+      .query("files")
+      .withIndex("by_project", q => q.eq("projectId", args.projectId))
+      .collect();
+
+    const taskFiles = await Promise.all(
+      tasks.map(task => 
+        ctx.db
+          .query("files")
+          .withIndex("by_task", q => q.eq("taskId", task._id))
+          .collect()
+      )
+    ).then(results => results.flat());
+
+    const allFiles = [...projectFiles, ...taskFiles];
+    const fileDeletionPromises = allFiles.map(file => ctx.db.delete(file._id));
+    await Promise.all(fileDeletionPromises);
+
+    // Delete all invitations related to the project
+    const invitations = await ctx.db
+      .query("invitations")
+      .filter(q => q.eq(q.field("projectId"), args.projectId))
+      .collect();
+
+    const invitationDeletionPromises = invitations.map(invitation => ctx.db.delete(invitation._id));
+    await Promise.all(invitationDeletionPromises);
+
+    // Delete all pending client invitations for this project
+    const pendingInvitations = await ctx.db
+      .query("pendingClientInvitations")
+      .filter(q => q.eq(q.field("projectId"), args.projectId))
+      .collect();
+
+    const pendingInvitationDeletionPromises = pendingInvitations.map(invitation => ctx.db.delete(invitation._id));
+    await Promise.all(pendingInvitationDeletionPromises);
+
+    // Delete all client records associated with this project
+    const clients = await ctx.db
+      .query("clients")
+      .filter(q => q.eq(q.field("projectId"), args.projectId))
+      .collect();
+
+    const clientDeletionPromises = clients.map(client => ctx.db.delete(client._id));
+    await Promise.all(clientDeletionPromises);
+
+    // Finally, delete the project itself
+    await ctx.db.delete(args.projectId);
+
+    return { success: true };
+  }
 }); 
+
+// Parse task from natural language using OpenAI
+export const parseTaskFromChat = action({
+  args: {
+    message: v.string(),
+    projectId: v.id("projects"),
+  },
+  async handler(ctx, args) {
+    // Get OpenAI API key from environment variables
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error("OpenAI API key not configured");
+    }
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4',
+          messages: [
+            {
+              role: 'system',
+              content: `You are a task parser. Parse the user's message to extract task information. 
+              Return ONLY a valid JSON object with the following structure:
+              {
+                "isTask": boolean,
+                "title": string,
+                "description": string,
+                "priority": "low" | "medium" | "high" | "urgent" | null,
+                "dueDate": ISO date string or null,
+                "tags": string[]
+              }
+              
+              IMPORTANT RULES:
+              - If the message is not about creating a task, set "isTask" to false
+              - For priority, default to "medium" unless specified
+              - KEEP THE SAME LANGUAGE as the input message (don't translate Polish to English!)
+              - For dates, use current time context and return proper ISO date strings (YYYY-MM-DD)
+              - Polish date parsing:
+                * "jutro" = tomorrow's date
+                * "dziś" = today's date  
+                * "za tydzień" = date 7 days from now
+                * "za 2 dni" = date 2 days from now
+                * "w poniedziałek" = next Monday
+                * "o 10" = just note in description, not separate time field
+              - Current date context: ${new Date().toISOString().split('T')[0]}
+              - Current day of week: ${new Date().toLocaleDateString('pl-PL', { weekday: 'long' })}`
+            },
+            {
+              role: 'user',
+              content: args.message
+            }
+          ],
+          temperature: 0.1,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`OpenAI API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices[0]?.message?.content;
+      
+      if (!content) {
+        throw new Error("No response from OpenAI");
+      }
+
+      try {
+        const parsedTask = JSON.parse(content);
+        
+        // Validate the structure
+        if (!parsedTask.hasOwnProperty('isTask')) {
+          throw new Error("Invalid response structure");
+        }
+
+        return parsedTask;
+      } catch (parseError) {
+        console.error("Failed to parse OpenAI response:", content);
+        throw new Error("Failed to parse task information");
+      }
+    } catch (error) {
+      console.error("OpenAI API error:", error);
+      throw new Error("Failed to process message with AI");
+    }
+  }
+});
