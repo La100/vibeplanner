@@ -77,7 +77,7 @@ export default function TeamManager({ team, onBack, onProjectClick }: TeamManage
   const [showNewProjectForm, setShowNewProjectForm] = useState(false);
 
   const projects = useQuery(api.myFunctions.listTeamProjects, { teamId: team._id });
-  const createProject = useMutation(api.myFunctions.createProject);
+  const createProject = useMutation(api.myFunctions.createProjectInOrg);
 
   const [newProject, setNewProject] = useState({
     name: "",
@@ -98,6 +98,7 @@ export default function TeamManager({ team, onBack, onProjectClick }: TeamManage
       await createProject({
         name: newProject.name,
         description: newProject.description || undefined,
+        clerkOrgId: team.clerkOrgId,
         teamId: team._id,
         priority: newProject.priority,
         client: newProject.client || undefined,

@@ -9,6 +9,7 @@
  */
 
 import type * as clerk from "../clerk.js";
+import type * as clipper from "../clipper.js";
 import type * as files from "../files.js";
 import type * as http from "../http.js";
 import type * as myFunctions from "../myFunctions.js";
@@ -30,6 +31,7 @@ import type {
  */
 declare const fullApi: ApiFromModules<{
   clerk: typeof clerk;
+  clipper: typeof clipper;
   files: typeof files;
   http: typeof http;
   myFunctions: typeof myFunctions;

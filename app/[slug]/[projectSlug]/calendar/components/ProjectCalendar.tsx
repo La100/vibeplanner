@@ -97,7 +97,7 @@ export default function ProjectCalendar() {
   // Przeterminowane zadania
   const overdueTasks = tasksWithDates
     .filter(task => {
-      if (!task.endDate || task.status === "completed") return false;
+      if (!task.endDate || task.status === "done") return false;
       return new Date(task.endDate) < new Date();
     })
     .sort((a, b) => (a.endDate || 0) - (b.endDate || 0));
@@ -144,7 +144,7 @@ export default function ProjectCalendar() {
                     return tasks.some(task => 
                       task.endDate && 
                       new Date(task.endDate) < new Date() && 
-                      task.status !== "completed"
+                      task.status !== "done"
                     );
                   }),
                 }}
@@ -159,7 +159,7 @@ export default function ProjectCalendar() {
                     const hasOverdue = dayTasks.some(task => 
                       task.endDate && 
                       new Date(task.endDate) < new Date() && 
-                      task.status !== "completed"
+                      task.status !== "done"
                     );
                     
                     return (

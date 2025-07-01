@@ -18,6 +18,12 @@ export default defineSchema({
       isPublic: v.boolean(),
       allowGuestAccess: v.boolean(),
     })),
+    taskStatusSettings: v.optional(v.object({
+      todo: v.object({ name: v.string(), color: v.string() }),
+      in_progress: v.object({ name: v.string(), color: v.string() }),
+      review: v.object({ name: v.string(), color: v.string() }),
+      done: v.object({ name: v.string(), color: v.string() }),
+    }))
   })
     .index("by_clerk_org", ["clerkOrgId"])
     .index("by_slug", ["slug"])
@@ -47,8 +53,19 @@ export default defineSchema({
     budget: v.optional(v.number()),
     client: v.optional(v.string()),
     location: v.optional(v.string()),
+    currency: v.optional(v.union(
+      v.literal("USD"),
+      v.literal("EUR"),
+      v.literal("PLN")
+    )),
     createdBy: v.string(), // Clerk user ID
     assignedTo: v.array(v.string()), // Array of Clerk user IDs
+    taskStatusSettings: v.optional(v.object({
+      todo: v.object({ name: v.string(), color: v.string() }),
+      in_progress: v.object({ name: v.string(), color: v.string() }),
+      review: v.object({ name: v.string(), color: v.string() }),
+      done: v.object({ name: v.string(), color: v.string() }),
+    }))
   })
     .index("by_team", ["teamId"])
     .index("by_team_and_slug", ["teamId", "slug"])
@@ -63,11 +80,10 @@ export default defineSchema({
     projectId: v.id("projects"),
     teamId: v.id("teams"),
     status: v.union(
-      v.literal("todo"),
-      v.literal("in_progress"),
-      v.literal("review"),
-      v.literal("completed"),
-      v.literal("blocked")
+        v.literal("todo"),
+        v.literal("in_progress"),
+        v.literal("review"),
+        v.literal("done")
     ),
     priority: v.union(
       v.literal("low"),
@@ -83,6 +99,7 @@ export default defineSchema({
     estimatedHours: v.optional(v.number()),
     actualHours: v.optional(v.number()),
     tags: v.array(v.string()),
+    cost: v.optional(v.number()),
   })
     .index("by_project", ["projectId"])
     .index("by_team", ["teamId"])
@@ -91,6 +108,18 @@ export default defineSchema({
     .index("by_start_date", ["startDate"])
     .index("by_end_date", ["endDate"]),
 
+  // Foldery dla organizacji plików
+  folders: defineTable({
+    name: v.string(),
+    teamId: v.id("teams"),
+    projectId: v.optional(v.id("projects")),
+    parentFolderId: v.optional(v.id("folders")), // Dla zagnieżdżonych folderów
+    createdBy: v.string(), // Clerk user ID
+  })
+    .index("by_team", ["teamId"])
+    .index("by_project", ["projectId"])
+    .index("by_parent", ["parentFolderId"]),
+
   // Pliki i dokumenty
   files: defineTable({
     name: v.string(),
@@ -98,6 +127,7 @@ export default defineSchema({
     teamId: v.id("teams"),
     projectId: v.optional(v.id("projects")),
     taskId: v.optional(v.id("tasks")),
+    folderId: v.optional(v.id("folders")), // W którym folderze znajduje się plik
     fileType: v.union(
       v.literal("image"),
       v.literal("document"),
@@ -115,6 +145,7 @@ export default defineSchema({
     .index("by_team", ["teamId"])
     .index("by_project", ["projectId"])
     .index("by_task", ["taskId"])
+    .index("by_folder", ["folderId"])
     .index("by_uploaded_by", ["uploadedBy"]),
 
   // Komentarze
@@ -181,13 +212,7 @@ export default defineSchema({
     .index("by_token", ["token"])
     .index("by_status", ["status"]),
 
-  // Użytkownicy
-  users: defineTable({
-    clerkUserId: v.string(),
-    email: v.string(),
-    name: v.optional(v.string()),
-  })
-    .index("by_clerk_user_id", ["clerkUserId"]),
+  
 
   // Tymczasowe zaproszenia klientów (do konkretnych projektów)
   pendingClientInvitations: defineTable({
@@ -228,4 +253,63 @@ export default defineSchema({
     .index("by_clerk_user", ["clerkUserId"])
     .index("by_org_and_user", ["clerkOrgId", "clerkUserId"])
     .index("by_status", ["status"]),
+
+  // Użytkownicy
+  users: defineTable({
+    clerkUserId: v.string(),
+    email: v.string(),
+    name: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+  })
+    .index("by_clerk_user_id", ["clerkUserId"])
+    .index("by_email", ["email"]),
+
+  // Shopping List
+  shoppingListSections: defineTable({
+    name: v.string(),
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    order: v.number(),
+    createdBy: v.string(), // Clerk user ID
+  })
+    .index("by_project", ["projectId"]),
+
+  shoppingListItems: defineTable({
+    name: v.string(),
+    notes: v.optional(v.string()),
+    completed: v.boolean(),
+    completedAt: v.optional(v.number()),
+    buyBefore: v.optional(v.number()),
+    priority: v.union(
+      v.literal("LOW"),
+      v.literal("MEDIUM"),
+      v.literal("HIGH"),
+      v.literal("URGENT")
+    ),
+    imageUrl: v.optional(v.string()),
+    productLink: v.optional(v.string()),
+    supplier: v.optional(v.string()),
+    catalogNumber: v.optional(v.string()),
+    category: v.optional(v.string()),
+    dimensions: v.optional(v.string()),
+    quantity: v.number(),
+    unitPrice: v.optional(v.number()),
+    totalPrice: v.optional(v.number()),
+    realizationStatus: v.union(
+      v.literal("PLANNED"),
+      v.literal("ORDERED"),
+      v.literal("IN_TRANSIT"),
+      v.literal("DELIVERED"),
+      v.literal("COMPLETED"),
+      v.literal("CANCELLED")
+    ),
+    sectionId: v.optional(v.id("shoppingListSections")),
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    createdBy: v.string(), // Clerk user ID
+    assignedTo: v.optional(v.string()), // Clerk user ID
+  })
+  .index("by_project", ["projectId"])
+  .index("by_section", ["sectionId"])
+  .index("by_status", ["realizationStatus"]),
 });

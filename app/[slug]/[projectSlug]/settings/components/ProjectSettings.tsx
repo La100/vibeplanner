@@ -1,23 +1,38 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { InviteClientForm } from "@/components/InviteClientForm";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormReturn } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "convex/react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useState } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-const nameFormSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters")
+import { Users, Settings, Shield, AlertTriangle } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import TaskStatusSettings from "./TaskStatusSettings";
+import ProjectMembers from "./ProjectMembers";
+
+
+
+const settingsFormSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  currency: z.enum(["USD", "EUR", "PLN"]).optional(),
 });
 
 const deleteFormSchema = z.object({
@@ -28,6 +43,7 @@ export default function ProjectSettings() {
   const params = useParams<{ slug: string, projectSlug: string }>();
   const router = useRouter();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"general" | "members" | "taskstatus" | "advanced">("general");
   
   const project = useQuery(api.myFunctions.getProjectBySlug, {
     teamSlug: params.slug,
@@ -42,13 +58,17 @@ export default function ProjectSettings() {
     project ? { teamId: project.teamId } : "skip"
   );
 
+
+
   const updateProject = useMutation(api.myFunctions.updateProject);
   const deleteProject = useMutation(api.myFunctions.deleteProject);
 
-  const nameForm = useForm<z.infer<typeof nameFormSchema>>({
-    resolver: zodResolver(nameFormSchema),
-    defaultValues: { name: project?.name || "" },
-    values: project ? { name: project.name } : undefined,
+  const settingsForm = useForm<z.infer<typeof settingsFormSchema>>({
+    resolver: zodResolver(settingsFormSchema),
+    values: project ? { 
+      name: project.name,
+      currency: project.currency || "USD",
+    } : undefined,
   });
 
   const deleteForm = useForm<z.infer<typeof deleteFormSchema>>({
@@ -87,18 +107,21 @@ export default function ProjectSettings() {
     );
   }
 
-  async function onNameSubmit(values: z.infer<typeof nameFormSchema>) {
+  async function onSettingsSubmit(values: z.infer<typeof settingsFormSchema>) {
     try {
-      const result = await updateProject({ projectId: project!._id, name: values.name });
-      toast.success("Project name updated");
+      const result = await updateProject({ 
+        projectId: project!._id, 
+        name: values.name,
+        currency: values.currency,
+      });
+      toast.success("Project settings updated");
       
-      // Jeśli slug się zmienił, przekieruj do nowego URL
       if (result?.slug && result.slug !== params.projectSlug) {
         router.push(`/${params.slug}/${result.slug}/settings`);
       }
     } catch (error) {
-      toast.error("Error updating project name", {
-        description: (error as Error).message || "There was a problem updating the project name."
+      toast.error("Error updating project settings", {
+        description: (error as Error).message || "There was a problem updating the project settings."
       });
     }
   }
@@ -124,121 +147,263 @@ export default function ProjectSettings() {
   }
 
   return (
-    <div className="max-w-xl mx-auto mt-8 space-y-8">
-      <Card>
-        <CardHeader>
-          <CardTitle>Project Name</CardTitle>
-          <CardDescription>
-            Change the name of your project.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form {...nameForm}>
-            <form onSubmit={nameForm.handleSubmit(onNameSubmit)} className="space-y-4">
-              <FormField
-                control={nameForm.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Project Name</FormLabel>
+    <div className="max-w-4xl mx-auto mt-4 lg:mt-8 px-4 lg:px-0 pb-8">
+      <div className="mb-6">
+        <h1 className="text-2xl lg:text-3xl font-bold">Project Settings</h1>
+        <p className="text-muted-foreground text-sm lg:text-base mt-1">Manage your project configuration and access.</p>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)} className="w-full">
+        <TabsList className="grid w-full grid-cols-4 h-auto p-1 mb-6">
+          <TabsTrigger value="general" className="flex flex-col items-center gap-1 p-2 text-xs data-[state=active]:bg-background">
+            <Settings className="h-4 w-4" />
+            <span className="text-xs">General</span>
+          </TabsTrigger>
+          <TabsTrigger value="members" className="flex flex-col items-center gap-1 p-2 text-xs data-[state=active]:bg-background">
+            <Users className="h-4 w-4" />
+            <span className="text-xs">Members</span>
+          </TabsTrigger>
+          <TabsTrigger value="taskstatus" className="flex flex-col items-center gap-1 p-2 text-xs data-[state=active]:bg-background">
+            <Shield className="h-4 w-4" />
+            <span className="text-xs">Status</span>
+          </TabsTrigger>
+          <TabsTrigger value="advanced" className="flex flex-col items-center gap-1 p-2 text-xs data-[state=active]:bg-background">
+            <AlertTriangle className="h-4 w-4" />
+            <span className="text-xs">Advanced</span>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="general" className="mt-0">
+          <GeneralTab 
+            settingsForm={settingsForm}
+            onSettingsSubmit={onSettingsSubmit}
+          />
+        </TabsContent>
+
+        <TabsContent value="members" className="mt-0">
+          <MembersTab project={project} />
+        </TabsContent>
+
+        <TabsContent value="taskstatus" className="mt-0">
+          <TaskStatusTab project={project} />
+        </TabsContent>
+
+        <TabsContent value="advanced" className="mt-0">
+          <AdvancedTab 
+            project={project}
+            deleteForm={deleteForm}
+            deleteDialogOpen={deleteDialogOpen}
+            setDeleteDialogOpen={setDeleteDialogOpen}
+            onDeleteSubmit={onDeleteSubmit}
+          />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// General Settings Tab
+function GeneralTab({ 
+  settingsForm, 
+  onSettingsSubmit 
+}: {
+  settingsForm: UseFormReturn<z.infer<typeof settingsFormSchema>>;
+  onSettingsSubmit: (values: z.infer<typeof settingsFormSchema>) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-4">
+        <CardTitle className="text-lg lg:text-xl">General Settings</CardTitle>
+        <CardDescription className="text-sm">
+          Manage your project's basic information and preferences.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="px-4 lg:px-6">
+        <Form {...settingsForm}>
+          <form onSubmit={settingsForm.handleSubmit(onSettingsSubmit)} className="space-y-4 lg:space-y-6">
+            <FormField
+              control={settingsForm.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem className="space-y-2">
+                  <FormLabel className="text-sm font-medium">Project Name</FormLabel>
+                  <FormControl>
+                    <Input 
+                      placeholder="Project name" 
+                      {...field} 
+                      className="w-full h-10 text-base" 
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={settingsForm.control}
+              name="currency"
+              render={({ field }) => (
+                <FormItem className="space-y-2">
+                  <FormLabel className="text-sm font-medium">Currency</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
-                      <Input placeholder="Project name" {...field} />
+                      <SelectTrigger className="w-full h-10">
+                        <SelectValue placeholder="Select project currency" />
+                      </SelectTrigger>
                     </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <Button type="submit" disabled={nameForm.formState.isSubmitting}>
-                {nameForm.formState.isSubmitting ? "Saving..." : "Save"}
+                    <SelectContent>
+                      <SelectItem value="USD">USD ($)</SelectItem>
+                      <SelectItem value="EUR">EUR (€)</SelectItem>
+                      <SelectItem value="PLN">PLN (zł)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <div className="pt-2">
+              <Button 
+                type="submit" 
+                disabled={settingsForm.formState.isSubmitting}
+                className="w-full h-10 text-base font-medium"
+              >
+                {settingsForm.formState.isSubmitting ? "Saving..." : "Save Changes"}
               </Button>
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
-      
+            </div>
+          </form>
+        </Form>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Members Tab
+function MembersTab({ project }: { project: { _id: Id<"projects">; teamId: Id<"teams">; name: string } }) {
+  return <ProjectMembers project={project} />;
+}
+
+// Task Status Tab
+function TaskStatusTab({ project }: { project: { _id: string; taskStatusSettings?: unknown } }) {
+  return (
+    <div>
+              {project && project.taskStatusSettings ? (
+          <TaskStatusSettings projectId={project._id as Id<"projects">} initialSettings={project.taskStatusSettings as { todo: { name: string; color: string }; in_progress: { name: string; color: string }; review: { name: string; color: string }; done: { name: string; color: string } }} />
+        ) : (
+        <Card>
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg lg:text-xl">Task Status Settings</CardTitle>
+            <CardDescription className="text-sm">
+              Configure custom task statuses for this project.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="px-4 lg:px-6">
+            <p className="text-muted-foreground text-sm">Task status settings will be available here.</p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// Advanced Tab with Danger Zone
+function AdvancedTab({
+  project,
+  deleteForm,
+  deleteDialogOpen,
+  setDeleteDialogOpen,
+  onDeleteSubmit
+}: {
+  project: { name: string };
+  deleteForm: UseFormReturn<z.infer<typeof deleteFormSchema>>;
+  deleteDialogOpen: boolean;
+  setDeleteDialogOpen: (open: boolean) => void;
+  onDeleteSubmit: (values: z.infer<typeof deleteFormSchema>) => void;
+}) {
+  return (
+    <div className="space-y-4 lg:space-y-6">
       <Card>
-        <CardHeader>
-          <CardTitle>Invite a Client</CardTitle>
-          <CardDescription>
-            Invite a client to view this project. They will only have access to this project.
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg lg:text-xl">Advanced Settings</CardTitle>
+          <CardDescription className="text-sm">
+            Advanced configuration options for this project.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <InviteClientForm projectId={project._id} />
+        <CardContent className="px-4 lg:px-6">
+          <p className="text-muted-foreground text-sm">Advanced settings will be available here in future updates.</p>
         </CardContent>
       </Card>
 
       <Card className="border-red-200">
-        <CardHeader>
-          <CardTitle className="text-red-600">Danger Zone</CardTitle>
-          <CardDescription>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-red-600 text-lg lg:text-xl">Danger Zone</CardTitle>
+          <CardDescription className="text-sm">
             Irreversible and destructive actions.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div>
-              <h4 className="text-sm font-medium text-red-600 mb-2">Delete Project</h4>
-              <p className="text-sm text-muted-foreground mb-4">
-                Once you delete a project, there is no going back. This will permanently delete the project,
-                all its tasks, files, comments, and related data.
-              </p>
-              <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="destructive">
-                    Delete Project
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Delete Project</DialogTitle>
-                    <DialogDescription>
-                      This action cannot be undone. This will permanently delete the "{project.name}" project
-                      and remove all associated data from our servers.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <Form {...deleteForm}>
-                    <form onSubmit={deleteForm.handleSubmit(onDeleteSubmit)} className="space-y-6">
-                      <FormField
-                        control={deleteForm.control}
-                        name="confirmName"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              Type <span className="font-mono font-semibold">{project.name}</span> to confirm:
-                            </FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder={project.name}
-                                {...field}
-                                autoComplete="off"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <DialogFooter>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setDeleteDialogOpen(false)}
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          type="submit"
-                          variant="destructive"
-                          disabled={deleteForm.formState.isSubmitting}
-                        >
-                          {deleteForm.formState.isSubmitting ? "Deleting..." : "Delete Project"}
-                        </Button>
-                      </DialogFooter>
-                    </form>
-                  </Form>
-                </DialogContent>
-              </Dialog>
-            </div>
+        <CardContent className="space-y-4 px-4 lg:px-6">
+          <div>
+            <h4 className="text-sm font-medium text-red-600 mb-2">Delete Project</h4>
+            <p className="text-sm text-muted-foreground mb-4">
+              Once you delete a project, there is no going back. This will permanently delete the project,
+              all its tasks, files, comments, and related data.
+            </p>
+            <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="destructive" className="w-full sm:w-auto">
+                  Delete Project
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[425px] mx-4">
+                <DialogHeader>
+                  <DialogTitle className="text-lg">Delete Project</DialogTitle>
+                  <DialogDescription className="text-sm">
+                    This action cannot be undone. This will permanently delete the "{project.name}" project
+                    and remove all associated data from our servers.
+                  </DialogDescription>
+                </DialogHeader>
+                <Form {...deleteForm}>
+                  <form onSubmit={deleteForm.handleSubmit(onDeleteSubmit)} className="space-y-4 lg:space-y-6">
+                    <FormField
+                      control={deleteForm.control}
+                      name="confirmName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-sm">
+                            Type <span className="font-mono font-semibold">{project.name}</span> to confirm:
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder={project.name}
+                              {...field}
+                              autoComplete="off"
+                              className="w-full"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <DialogFooter className="flex-col-reverse sm:flex-row gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setDeleteDialogOpen(false)}
+                        className="w-full sm:w-auto"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="submit"
+                        variant="destructive"
+                        disabled={deleteForm.formState.isSubmitting}
+                        className="w-full sm:w-auto"
+                      >
+                        {deleteForm.formState.isSubmitting ? "Deleting..." : "Delete Project"}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </Form>
+              </DialogContent>
+            </Dialog>
           </div>
         </CardContent>
       </Card>

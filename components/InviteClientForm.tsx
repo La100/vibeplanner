@@ -32,7 +32,7 @@ interface InviteClientFormProps {
 export function InviteClientForm({ projectId }: InviteClientFormProps) {
   const { organization } = useOrganization();
   const project = useQuery(api.myFunctions.getProject, { projectId });
-  const addClient = useMutation(api.myFunctions.addClientToProject);
+  const inviteClient = useMutation(api.myFunctions.inviteClientToProject);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -56,10 +56,9 @@ export function InviteClientForm({ projectId }: InviteClientFormProps) {
 
       if (existingMember) {
         // Użytkownik już jest w organizacji - po prostu dodaj do projektu
-        await addClient({
+        await inviteClient({
           email: values.email,
           projectId: projectId,
-          clerkOrgId: organization.id,
         });
 
         toast.success("Client Added to Project", {
@@ -72,10 +71,9 @@ export function InviteClientForm({ projectId }: InviteClientFormProps) {
           role: "org:member",
         });
 
-        await addClient({
+        await inviteClient({
           email: values.email,
           projectId: projectId,
-          clerkOrgId: organization.id,
         });
 
         toast.success("Client Invited", {

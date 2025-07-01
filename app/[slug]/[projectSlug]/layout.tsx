@@ -1,4 +1,11 @@
+"use client";
+
 import { ProjectSidebar } from "@/components/ProjectSidebar";
+import { 
+  SidebarProvider, 
+  SidebarInset, 
+  SidebarTrigger 
+} from "@/components/ui/sidebar";
 
 export default function ProjectLayout({
   children,
@@ -6,11 +13,16 @@ export default function ProjectLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen">
+    <SidebarProvider>
       <ProjectSidebar />
-      <main className="flex-1 p-8 bg-muted/30">
-        {children}
-      </main>
-    </div>
+      <SidebarInset>
+        <header className="flex h-16 items-center gap-2 px-4 border-b bg-background">
+          <SidebarTrigger className="-ml-1" />
+        </header>
+        <main className="flex-1 p-4 lg:p-8 bg-muted/30 overflow-auto">
+          {children}
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   );
 } 

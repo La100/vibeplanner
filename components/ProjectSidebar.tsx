@@ -4,65 +4,118 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Button } from "@/components/ui/button";
-import { Home, GanttChartSquare, CheckSquare, Folder, Users, Settings, ArrowLeft, Calendar } from "lucide-react";
+import { 
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  useSidebar
+} from "@/components/ui/sidebar";
+import { 
+  LayoutDashboard,
+  Settings, 
+  Calendar,
+  GanttChartSquare,
+  ShoppingCart,
+  ArrowLeft,
+  CheckSquare,
+  Files,
+  Home
+} from "lucide-react";
 
 export function ProjectSidebar() {
   const params = useParams<{ slug: string, projectSlug: string }>();
+  const { setOpenMobile } = useSidebar();
+  
   const project = useQuery(api.myFunctions.getProjectBySlug, { 
     teamSlug: params.slug, 
     projectSlug: params.projectSlug 
   });
 
-  if (!project) {
-    return (
-      <aside className="w-64 flex-shrink-0 border-r bg-background p-4 flex flex-col justify-between">
-        <div>
-          <div className="h-10 bg-muted rounded-md animate-pulse mb-4" />
-          <div className="h-8 bg-muted rounded-md animate-pulse w-3/4" />
-        </div>
-      </aside>
-    );
-  }
-
-  const navLinks = [
-    { href: `/${params.slug}/${params.projectSlug}`, label: "Overview", icon: Home },
+  const navItems = [
+    { href: `/${params.slug}/${params.projectSlug}`, label: "Overview", icon: LayoutDashboard },
     { href: `/${params.slug}/${params.projectSlug}/tasks`, label: "Tasks", icon: CheckSquare },
     { href: `/${params.slug}/${params.projectSlug}/calendar`, label: "Calendar", icon: Calendar },
-    { href: `/${params.slug}/${params.projectSlug}/files`, label: "Files", icon: Folder },
-    { href: `/${params.slug}/${params.projectSlug}/gantt`, label: "Gantt Chart", icon: GanttChartSquare },
-    { href: `/${params.slug}/${params.projectSlug}/members`, label: "Members", icon: Users },
+    { href: `/${params.slug}/${params.projectSlug}/gantt`, label: "Gantt", icon: GanttChartSquare },
+    { href: `/${params.slug}/${params.projectSlug}/files`, label: "Files", icon: Files },
+    { href: `/${params.slug}/${params.projectSlug}/shopping-list`, label: "Shopping List", icon: ShoppingCart },
     { href: `/${params.slug}/${params.projectSlug}/settings`, label: "Settings", icon: Settings },
   ];
 
-  return (
-    <aside className="w-72 flex-shrink-0 border-r bg-background p-6 flex flex-col justify-between">
-      <div>
-        <div className="mb-8">
-          <h2 className="text-xl font-bold">{project.name}</h2>
-          <p className="text-sm text-muted-foreground">{project.client || "Internal Project"}</p>
-        </div>
-        <nav className="flex flex-col gap-2">
-          {navLinks.map((link) => (
-            <Button key={link.label} variant="ghost" className="justify-start" asChild>
-              <Link href={link.href}>
-                <link.icon className="mr-3 h-5 w-5" />
-                {link.label}
-              </Link>
-            </Button>
-          ))}
-        </nav>
-      </div>
+  const handleLinkClick = () => {
+    setOpenMobile(false);
+  };
 
-      <div>
-        <div className="my-4 border-t border-border" />
-        <Button variant="outline" className="w-full justify-start" asChild>
-          <Link href={`/${params.slug}`}>
-            <ArrowLeft className="mr-3 h-5 w-5" />
-            Back to Team
-          </Link>
-        </Button>
-      </div>
-    </aside>
+  return (
+    <Sidebar variant="inset">
+      <SidebarHeader className="border-b border-sidebar-border">
+        <div className="flex flex-col gap-2 py-2 px-2">
+          <SidebarMenuButton asChild>
+            <Link 
+              href={`/${params.slug}`}
+              onClick={handleLinkClick}
+              className="flex items-center gap-2"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>Back to Team</span>
+            </Link>
+          </SidebarMenuButton>
+          
+          <div className="px-2 py-1">
+            <h2 className="text-lg font-semibold text-sidebar-foreground/90">
+              {project?.name || "Loading..."}
+            </h2>
+            <p className="text-sm text-sidebar-foreground/60">
+              Project Management
+            </p>
+          </div>
+        </div>
+      </SidebarHeader>
+
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {navItems.map((item) => (
+                <SidebarMenuItem key={item.href}>
+                  <SidebarMenuButton asChild>
+                    <Link 
+                      href={item.href}
+                      onClick={handleLinkClick}
+                    >
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.label}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+
+      <SidebarFooter className="border-t border-sidebar-border">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild>
+              <Link 
+                href={`/${params.slug}`}
+                onClick={handleLinkClick}
+              >
+                <Home className="h-4 w-4" />
+                <span>Dashboard</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+    </Sidebar>
   );
 } 

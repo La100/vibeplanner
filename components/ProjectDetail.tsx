@@ -30,7 +30,7 @@ interface ProjectDetailProps {
 export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps) {
   const [activeTab, setActiveTab] = useState<"overview" | "tasks" | "team">("overview");
   const [showNewTaskForm, setShowNewTaskForm] = useState(false);
-  const [taskFilter, setTaskFilter] = useState<"all" | "todo" | "in_progress" | "completed">("all");
+  const [taskFilter, setTaskFilter] = useState<"all" | "todo" | "in_progress" | "done">("all");
 
   const project = useQuery(api.myFunctions.getProject, { projectId });
   const tasks = useQuery(api.myFunctions.listProjectTasks, { projectId });
@@ -94,7 +94,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
     }
   };
 
-  const handleStatusChange = async (taskId: Id<"tasks">, newStatus: "todo" | "in_progress" | "review" | "completed" | "blocked") => {
+  const handleStatusChange = async (taskId: Id<"tasks">, newStatus: "todo" | "in_progress" | "review" | "done") => {
     try {
       await updateTaskStatus({ taskId, status: newStatus });
     } catch (error) {
@@ -104,7 +104,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "completed":
+      case "done":
         return <CheckCircle2 className="h-5 w-5 text-green-500" />;
       case "in_progress":
         return <Clock3 className="h-5 w-5 text-blue-500" />;
@@ -138,7 +138,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
   };
 
   const totalTasks = tasks?.length || 0;
-  const completedTasks = tasks?.filter(task => task.status === "completed").length || 0;
+  const completedTasks = tasks?.filter(task => task.status === "done").length || 0;
   const progress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
 
   return (
@@ -314,13 +314,13 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                     <Filter className="h-4 w-4 text-gray-400" />
                     <select 
                       value={taskFilter} 
-                      onChange={(e) => setTaskFilter(e.target.value as "all" | "todo" | "in_progress" | "completed")}
+                      onChange={(e) => setTaskFilter(e.target.value as "all" | "todo" | "in_progress" | "done")}
                       className="border border-gray-300 rounded-md px-3 py-1 text-sm"
                     >
                       <option value="all">Wszystkie zadania</option>
                       <option value="todo">Do zrobienia</option>
                       <option value="in_progress">W trakcie</option>
-                      <option value="completed">Ukończone</option>
+                      <option value="done">Ukończone</option>
                     </select>
                   </div>
                 </div>
@@ -426,9 +426,9 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                     <div className="flex items-start gap-3">
                       <button
                         onClick={() => {
-                          const newStatus = task.status === "completed" ? "todo" : 
+                          const newStatus = task.status === "done" ? "todo" : 
                                          task.status === "todo" ? "in_progress" :
-                                         task.status === "in_progress" ? "completed" : "todo";
+                                         task.status === "in_progress" ? "done" : "todo";
                           handleStatusChange(task._id, newStatus);
                         }}
                         className="mt-0.5"
@@ -439,7 +439,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                       <div className="flex-1">
                         <div className="flex items-start justify-between">
                           <div>
-                            <h4 className={`font-medium ${task.status === "completed" ? "line-through text-gray-500" : "text-gray-900"}`}>
+                            <h4 className={`font-medium ${task.status === "done" ? "line-through text-gray-500" : "text-gray-900"}`}>
                               {task.title}
                             </h4>
                             {task.description && (
@@ -467,14 +467,13 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                             </span>
                             <select
                               value={task.status}
-                              onChange={(e) => handleStatusChange(task._id, e.target.value as "todo" | "in_progress" | "review" | "completed" | "blocked")}
+                              onChange={(e) => handleStatusChange(task._id, e.target.value as "todo" | "in_progress" | "review" | "done")}
                               className="text-xs border border-gray-300 rounded px-2 py-1"
                             >
                               <option value="todo">Do zrobienia</option>
                               <option value="in_progress">W trakcie</option>
                               <option value="review">Na review</option>
-                              <option value="completed">Ukończone</option>
-                              <option value="blocked">Zablokowane</option>
+                              <option value="done">Ukończone</option>
                             </select>
                           </div>
                         </div>

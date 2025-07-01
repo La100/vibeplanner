@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation, query, mutation, action } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { Id, Doc } from "./_generated/dataModel";
 
 // Utility function to generate a slug from a string
 const generateSlug = (name: string) => {
@@ -11,12 +11,13 @@ const generateSlug = (name: string) => {
     .replace(/[^\w-]+/g, "");
 };
 
-// Create a new user or update an existing one
+// Create a new user or update an existing one from Clerk webhook
 export const createOrUpdateUser = internalMutation({
   args: {
     clerkUserId: v.string(),
     email: v.string(),
     name: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
   },
   async handler(ctx, args) {
     const user = await ctx.db
@@ -25,18 +26,23 @@ export const createOrUpdateUser = internalMutation({
       .unique();
 
     if (user) {
-      await ctx.db.patch(user._id, { email: args.email, name: args.name });
+      await ctx.db.patch(user._id, { 
+        email: args.email, 
+        name: args.name, 
+        imageUrl: args.imageUrl 
+      });
     } else {
       await ctx.db.insert("users", {
         clerkUserId: args.clerkUserId,
         email: args.email,
         name: args.name,
+        imageUrl: args.imageUrl,
       });
     }
   },
 });
 
-// Delete a user
+// Delete a user from Clerk webhook
 export const deleteUser = internalMutation({
     args: { clerkUserId: v.string() },
     async handler(ctx, args) {
@@ -186,20 +192,12 @@ export const createOrUpdateMembership = internalMutation({
             return;
         }
 
-        // Sprawdź czy to klient zaproszony do konkretnego projektu
-        let clientRecord = null;
-        if (user.email) {
-            // Szukaj po emailu (case-insensitive)
-            const allClients = await ctx.db
-                .query("clients")
-                .withIndex("by_org_and_user", q => q.eq("clerkOrgId", args.clerkOrgId))
-                .filter(q => q.eq(q.field("status"), "invited"))
-                .collect();
-            
-            clientRecord = allClients.find(c => 
-                c.email.toLowerCase() === user.email.toLowerCase()
-            );
-        }
+        // Sprawdź czy to klient zaproszony do konkretnego projektu, który już zaakceptował zaproszenie
+        let clientRecord = await ctx.db
+            .query("clients")
+            .withIndex("by_org_and_user", q => q.eq("clerkOrgId", args.clerkOrgId).eq("clerkUserId", args.clerkUserId))
+            .filter(q => q.eq(q.field("status"), "active")) // Szukaj aktywnego klienta
+            .first();
 
         const membership = await ctx.db
             .query("teamMembers")
@@ -387,7 +385,7 @@ export const listProjectsByClerkOrg = query({
           .withIndex("by_project", (q) => q.eq("projectId", project._id))
           .collect();
         const completedTasks = tasks.filter(
-          (task) => task.status === "completed"
+          (task) => task.status === "done"
         ).length;
         return {
           ...project,
@@ -406,6 +404,7 @@ export const createProjectInOrg = mutation({
     name: v.string(),
     description: v.optional(v.string()),
     clerkOrgId: v.string(),
+    teamId: v.id("teams"),
     priority: v.union(
       v.literal("low"),
       v.literal("medium"),
@@ -448,10 +447,17 @@ export const createProjectInOrg = mutation({
         counter++;
     }
 
+    const defaultStatusSettings = {
+      todo: { name: "To Do", color: "#808080" },
+      in_progress: { name: "In Progress", color: "#3b82f6" },
+      review: { name: "Review", color: "#a855f7" },
+      done: { name: "Done", color: "#22c55e" },
+    };
+
     const projectId = await ctx.db.insert("projects", {
       name: args.name,
       description: args.description,
-      teamId: team._id,
+      teamId: args.teamId,
       slug: slug,
       status: "planning",
       priority: args.priority,
@@ -460,8 +466,9 @@ export const createProjectInOrg = mutation({
       budget: args.budget,
       startDate: args.startDate,
       endDate: args.endDate,
-      createdBy: identity.subject, // Clerk user ID
+      createdBy: identity.subject,
       assignedTo: [],
+      taskStatusSettings: defaultStatusSettings,
     });
 
     return { id: projectId, slug: slug };
@@ -531,10 +538,26 @@ export const getProjectBySlug = query({
 export const listProjectTasks = query({
   args: { projectId: v.id("projects") },
   async handler(ctx, args) {
-    return await ctx.db
+    const tasks = await ctx.db
       .query("tasks")
       .withIndex("by_project", q => q.eq("projectId", args.projectId))
       .collect();
+
+    return Promise.all(
+      tasks.map(async (task) => {
+        let assignedToName: string | undefined;
+        let assignedToImageUrl: string | undefined;
+        if (task.assignedTo) {
+          const user = await ctx.db
+            .query("users")
+            .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.assignedTo!))
+            .unique();
+          assignedToName = user?.name ?? user?.email;
+          assignedToImageUrl = user?.imageUrl;
+        }
+        return { ...task, assignedToName, assignedToImageUrl };
+      })
+    );
   }
 });
 
@@ -589,16 +612,21 @@ export const listTeamTasks = query({
 
 export const createTask = mutation({
   args: {
-    projectId: v.id("projects"),
     title: v.string(),
+    projectId: v.id("projects"),
     description: v.optional(v.string()),
-    priority: v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent")),
-    endDate: v.optional(v.number()),
+    content: v.optional(v.string()),
+    status: v.optional(v.union(v.literal("todo"), v.literal("in_progress"), v.literal("review"), v.literal("done"))),
+    priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent"))),
     assignedTo: v.optional(v.string()),
-    tags: v.array(v.string()),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+    dueDate: v.optional(v.number()),
     estimatedHours: v.optional(v.number()),
+    tags: v.optional(v.array(v.string())),
+    cost: v.optional(v.number()),
   },
-  async handler(ctx, args) {
+  handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
@@ -606,30 +634,33 @@ export const createTask = mutation({
     if (!project) throw new Error("Project not found");
 
     return await ctx.db.insert("tasks", {
-      projectId: args.projectId,
-      teamId: project.teamId,
       title: args.title,
       description: args.description,
-      status: "todo",
-      priority: args.priority,
-      endDate: args.endDate,
+      content: args.content,
+      projectId: args.projectId,
+      teamId: project.teamId,
+      status: args.status || "todo",
+      priority: args.priority || "medium",
       assignedTo: args.assignedTo,
       createdBy: identity.subject,
-      tags: args.tags,
+      startDate: args.startDate,
+      endDate: args.endDate,
+      dueDate: args.dueDate,
       estimatedHours: args.estimatedHours,
+      tags: args.tags || [],
+      cost: args.cost,
     });
-  }
+  },
 });
 
 export const updateTaskStatus = mutation({
   args: {
     taskId: v.id("tasks"),
     status: v.union(
-      v.literal("todo"),
-      v.literal("in_progress"),
-      v.literal("review"),
-      v.literal("completed"),
-      v.literal("blocked")
+        v.literal("todo"),
+        v.literal("in_progress"),
+        v.literal("review"),
+        v.literal("done")
     ),
   },
   async handler(ctx, args) {
@@ -637,16 +668,6 @@ export const updateTaskStatus = mutation({
     if (!task) throw new Error("Task not found");
     await ctx.db.patch(args.taskId, { status: args.status });
   },
-});
-
-export const toggleTaskStatus = mutation({
-  args: { taskId: v.id("tasks") },
-  async handler(ctx, args) {
-    const task = await ctx.db.get(args.taskId);
-    if (!task) throw new Error("Task not found");
-    const newStatus = task.status === "completed" ? "todo" : "completed";
-    await ctx.db.patch(args.taskId, { status: newStatus });
-  }
 });
 
 export const getProject = query({
@@ -669,51 +690,73 @@ export const updateProject = mutation({
     projectId: v.id("projects"),
     name: v.optional(v.string()),
     description: v.optional(v.string()),
+    status: v.optional(v.union(
+      v.literal("planning"),
+      v.literal("active"),
+      v.literal("on_hold"),
+      v.literal("completed"),
+      v.literal("cancelled")
+    )),
+    priority: v.optional(v.union(
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high"),
+      v.literal("urgent")
+    )),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+    budget: v.optional(v.number()),
+    client: v.optional(v.string()),
+    location: v.optional(v.string()),
+    currency: v.optional(v.union(
+      v.literal("USD"),
+      v.literal("EUR"),
+      v.literal("PLN")
+    )),
+    taskStatusSettings: v.optional(v.any()), // Pozwalamy na dowolny obiekt dla uproszczenia
   },
-  async handler(ctx, args) {
-    const { projectId, name, description } = args;
-    
-    const updateData: any = {};
-    if (description !== undefined) {
-      updateData.description = description;
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const { projectId, name, ...rest } = args;
+
+    const existingProject = await ctx.db.get(projectId);
+    if (!existingProject) {
+      throw new Error("Project not found");
     }
+
+    // Sprawdzenie uprawnień (przykład)
+    // const member = await ctx.db.query("teamMembers").withIndex("by_team_and_user", q => q.eq("teamId", existingProject.teamId).eq("clerkUserId", identity.subject)).first();
+    // if (!member || (member.role !== 'admin' && member.role !== 'member')) {
+    //   throw new Error("You don't have permission to update this project.");
+    // }
     
-    // Jeśli zmienia się nazwa, wygeneruj nowy slug
-    if (name !== undefined) {
-      updateData.name = name;
-      
-      // Pobierz projekt żeby sprawdzić teamId
-      const project = await ctx.db.get(projectId);
-      if (!project) throw new Error("Project not found");
-      
-      // Wygeneruj unikalny slug dla tego zespołu
+    if (name && name !== existingProject.name) {
       const baseSlug = generateSlug(name);
       let slug = baseSlug;
       let counter = 1;
       
-      while (true) {
-        const existing = await ctx.db
+      let existing;
+      do {
+        existing = await ctx.db
           .query("projects")
           .withIndex("by_team_and_slug", (q) => 
-            q.eq("teamId", project.teamId).eq("slug", slug)
+            q.eq("teamId", existingProject.teamId).eq("slug", slug)
           )
-          .filter(q => q.neq(q.field("_id"), projectId)) // Wyklucz aktualny projekt
           .first();
-          
-        if (!existing) {
-          break;
+        if (existing) {
+          slug = `${baseSlug}-${counter}`;
+          counter++;
         }
-        slug = `${baseSlug}-${counter}`;
-        counter++;
-      }
+      } while (existing);
       
-      updateData.slug = slug;
+      await ctx.db.patch(projectId, { name, slug, ...rest });
+      return { slug };
+    } else {
+      await ctx.db.patch(projectId, rest);
+      return { slug: existingProject.slug };
     }
-    
-    await ctx.db.patch(projectId, updateData);
-    
-    // Zwróć nowy slug jeśli został zmieniony
-    return { slug: updateData.slug };
   }
 });
 
@@ -732,7 +775,7 @@ export const listTeamProjects = query({
           .withIndex("by_project", (q) => q.eq("projectId", project._id))
           .collect();
         const completedTasks = tasks.filter(
-          (task) => task.status === "completed"
+          (task) => task.status === "done"
         ).length;
         return {
           ...project,
@@ -746,47 +789,25 @@ export const listTeamProjects = query({
   }
 });
 
-export const createProject = mutation({
-  args: {
-    teamId: v.id("teams"),
-    name: v.string(),
-    description: v.optional(v.string()),
-    priority: v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent")),
-    client: v.optional(v.string()),
-    location: v.optional(v.string()),
-    budget: v.optional(v.number()),
-    startDate: v.optional(v.number()),
-    endDate: v.optional(v.number()),
-  },
-  async handler(ctx, args) {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-    
-    const slug = generateSlug(args.name);
-    return await ctx.db.insert("projects", {
-      ...args,
-      slug,
-      status: "planning",
-      createdBy: identity.subject,
-      assignedTo: [],
-    });
-  }
-});
-
-export const getTeam = query({
-  args: { teamId: v.id("teams") },
-  async handler(ctx, args) {
-    return ctx.db.get(args.teamId);
-  }
-});
-
 export const getTask = query({
   args: { taskId: v.id("tasks") },
   async handler(ctx, args) {
     const task = await ctx.db.get(args.taskId);
     if (!task) return null;
-    
-    return task;
+
+    let assignedToName: string | undefined;
+    let assignedToImageUrl: string | undefined;
+
+    if (task.assignedTo) {
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.assignedTo!))
+        .unique();
+      assignedToName = user?.name ?? user?.email;
+      assignedToImageUrl = user?.imageUrl;
+    }
+
+    return { ...task, assignedToName, assignedToImageUrl };
   }
 });
 
@@ -796,8 +817,18 @@ export const updateTask = mutation({
     title: v.optional(v.string()),
     description: v.optional(v.string()),
     content: v.optional(v.string()),
+    status: v.optional(v.union(v.literal("todo"), v.literal("in_progress"), v.literal("review"), v.literal("done"))),
+    priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent"))),
+    assignedTo: v.optional(v.string()),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+    dueDate: v.optional(v.number()),
+    estimatedHours: v.optional(v.number()),
+    actualHours: v.optional(v.number()),
+    tags: v.optional(v.array(v.string())),
+    cost: v.optional(v.number()),
   },
-  async handler(ctx, args) {
+  handler: async (ctx, args) => {
     const { taskId, ...rest } = args;
     await ctx.db.patch(taskId, rest);
   }
@@ -866,35 +897,12 @@ export const acceptClientInvitation = mutation({
 
     await ctx.db.patch(invitation._id, { status: "accepted" });
 
-    // Sprawdź czy user już jest w teamMembers
-    const teamMember = await ctx.db
-      .query("teamMembers")
-      .withIndex("by_team_and_user", q => q.eq("teamId", invitation.teamId).eq("clerkUserId", identity.subject))
-      .unique();
-
-    if (!teamMember) {
-      // Tworzenie nowego członka z dostępem tylko do projektu z zaproszenia
-      await ctx.db.insert("teamMembers", {
-        teamId: invitation.teamId,
-        clerkUserId: identity.subject,
-        clerkOrgId: (await ctx.db.get(invitation.teamId))!.clerkOrgId,
-        role: "client",
-        projectIds: invitation.projectId ? [invitation.projectId] : undefined,
-        isActive: true,
-        joinedAt: Date.now(),
-        permissions: [],
-      });
-    } else {
-      // Jeśli już jest członkiem, dodaj projekt do jego listy (jeśli jest klientem)
-      if (teamMember.role === "client" && invitation.projectId) {
-        const currentProjectIds = teamMember.projectIds || [];
-        if (!currentProjectIds.includes(invitation.projectId)) {
-          await ctx.db.patch(teamMember._id, {
-            projectIds: [...currentProjectIds, invitation.projectId],
-          });
-        }
-      }
-    }
+    // Wywołaj addClientToProject, aby dodać użytkownika jako klienta do projektu
+    await ctx.runMutation(internal.myFunctions.addClientToProject, {
+      email: identity.email!,
+      projectId: invitation.projectId!,
+      clerkOrgId: (await ctx.db.get(invitation.teamId))!.clerkOrgId,
+    });
   }
 });
 
@@ -1180,7 +1188,7 @@ export const activateClient = mutation({
 });
 
 // Dodawanie klienta do projektu
-export const addClientToProject = mutation({
+export const addClientToProject = internalMutation({
   args: {
     email: v.string(),
     projectId: v.id("projects"),
@@ -1220,29 +1228,20 @@ export const addClientToProject = mutation({
       return existingClient._id;
     }
 
-    // Sprawdź czy użytkownik już istnieje w systemie (ma konto)
-    const existingUser = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", identity.subject))
-      .unique();
-
     let status: "invited" | "active" = "invited";
     let clerkUserId: string | undefined = undefined;
     let joinedAt: number | undefined = undefined;
 
-    // Jeśli zapraszający ma dostęp do organizacji, sprawdź czy zapraszany już jest członkiem
-    if (existingUser) {
-      // Sprawdź czy istnieje użytkownik z tym emailem
-      const userWithEmail = await ctx.db
-        .query("users")
-        .filter(q => q.eq(q.field("email"), args.email.toLowerCase()))
-        .first();
-      
-      if (userWithEmail) {
-        status = "active";
-        clerkUserId = userWithEmail.clerkUserId;
-        joinedAt = Date.now();
-      }
+    // Sprawdź czy użytkownik już istnieje w systemie (ma konto) i czy jest w naszej tabeli users
+    const userWithEmail = await ctx.db
+      .query("users")
+      .filter(q => q.eq(q.field("email"), args.email.toLowerCase()))
+      .first();
+    
+    if (userWithEmail) {
+      clerkUserId = userWithEmail.clerkUserId;
+      joinedAt = Date.now();
+      status = "active";
     }
 
     // Dodaj klienta
@@ -1302,13 +1301,33 @@ export const updateTaskDates = mutation({
   },
   async handler(ctx, args) {
     const { taskId, startDate, endDate } = args;
-    const task = await ctx.db.get(taskId);
-    if (!task) {
-      throw new Error("Task not found");
-    }
     await ctx.db.patch(taskId, { startDate, endDate });
   },
 });
+
+export const updateTaskPriority = mutation({
+  args: {
+    taskId: v.id("tasks"),
+    priority: v.union(
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high"),
+      v.literal("urgent")
+    ),
+  },
+  async handler(ctx, args) {
+    const { taskId, priority } = args;
+    await ctx.db.patch(taskId, { priority });
+  },
+});
+
+export const deleteTask = mutation({
+  args: { taskId: v.id("tasks") },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.taskId);
+  },
+});
+
 
 // Delete a project and all its related data
 export const deleteProject = mutation({
@@ -1437,7 +1456,7 @@ export const parseTaskFromChat = action({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'gpt-4',
+          model: 'gpt-4o',
           messages: [
             {
               role: 'system',
@@ -1448,13 +1467,17 @@ export const parseTaskFromChat = action({
                 "title": string,
                 "description": string,
                 "priority": "low" | "medium" | "high" | "urgent" | null,
+                "status": "todo" | "in_progress" | "review" | "done" | null,
                 "dueDate": ISO date string or null,
+                "cost": number or null,
                 "tags": string[]
               }
               
               IMPORTANT RULES:
               - If the message is not about creating a task, set "isTask" to false
               - For priority, default to "medium" unless specified
+              - For status, default to "todo" unless specified
+              - For cost, parse it if mentioned, otherwise null.
               - KEEP THE SAME LANGUAGE as the input message (don't translate Polish to English!)
               - For dates, use current time context and return proper ISO date strings (YYYY-MM-DD)
               - Polish date parsing:
@@ -1505,4 +1528,417 @@ export const parseTaskFromChat = action({
       throw new Error("Failed to process message with AI");
     }
   }
+});
+
+export const getTeamMembers = query({
+  args: { teamId: v.id("teams") },
+  async handler(ctx, args) {
+    const members = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+      .collect();
+    
+    return Promise.all(
+      members.map(async (member) => {
+        const user = await ctx.db
+          .query("users")
+          .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", member.clerkUserId))
+          .unique();
+        return {
+          ...member,
+          name: user?.name ?? "Użytkownik bez nazwy",
+          email: user?.email ?? "Brak emaila",
+          imageUrl: user?.imageUrl,
+        };
+      })
+    );
+  },
+});
+
+export const assignTask = mutation({
+  args: {
+    taskId: v.id("tasks"),
+    userId: v.optional(v.string()), // Clerk User ID - optional and single
+  },
+  async handler(ctx, args) {
+    await ctx.db.patch(args.taskId, { assignedTo: args.userId });
+  },
+});
+
+export const updateProjectTaskStatusSettings = mutation({
+  args: {
+    projectId: v.id("projects"),
+    settings: v.object({
+      todo: v.object({ name: v.string(), color: v.string() }),
+      in_progress: v.object({ name: v.string(), color: v.string() }),
+      review: v.object({ name: v.string(), color: v.string() }),
+      done: v.object({ name: v.string(), color: v.string() }),
+    }),
+  },
+  async handler(ctx, args) {
+    await ctx.db.patch(args.projectId, { taskStatusSettings: args.settings });
+  }
+});
+
+export const internalDeleteAllProjectsAndTasks = internalMutation({
+  args: {},
+  async handler(ctx) {
+    const allProjects = await ctx.db.query("projects").collect();
+    const projectDeletionPromises = allProjects.map(p => ctx.db.delete(p._id));
+    await Promise.all(projectDeletionPromises);
+
+    const allTasks = await ctx.db.query("tasks").collect();
+    const taskDeletionPromises = allTasks.map(t => ctx.db.delete(t._id));
+    await Promise.all(taskDeletionPromises);
+
+    console.log(`Deleted ${allProjects.length} projects and ${allTasks.length} tasks.`);
+    return {
+      deletedProjects: allProjects.length,
+      deletedTasks: allTasks.length
+    };
+  }
+});
+
+// Shopping List Functions
+
+// --- Sections ---
+
+export const listShoppingListSections = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("shoppingListSections")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .order("asc")
+      .collect();
+  },
+});
+
+export const createShoppingListSection = mutation({
+  args: {
+    name: v.string(),
+    projectId: v.id("projects"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const project = await ctx.db.get(args.projectId);
+    if (!project) throw new Error("Project not found");
+
+    const existingSections = await ctx.db.query("shoppingListSections").withIndex("by_project", q => q.eq("projectId", args.projectId)).collect();
+
+    return await ctx.db.insert("shoppingListSections", {
+      name: args.name,
+      projectId: args.projectId,
+      teamId: project.teamId,
+      order: existingSections.length,
+      createdBy: identity.subject,
+    });
+  },
+});
+
+export const deleteShoppingListSection = mutation({
+  args: { sectionId: v.id("shoppingListSections") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const section = await ctx.db.get(args.sectionId);
+    if (!section) throw new Error("Section not found");
+    
+    // You might want to check for user permissions here
+    
+    const itemsInSection = await ctx.db
+      .query("shoppingListItems")
+      .withIndex("by_section", (q) => q.eq("sectionId", args.sectionId))
+      .collect();
+
+    for (const item of itemsInSection) {
+      await ctx.db.patch(item._id, { sectionId: undefined });
+    }
+
+    await ctx.db.delete(args.sectionId);
+  },
+});
+
+
+// --- Items ---
+
+export const listShoppingListItems = query({
+    args: { projectId: v.id("projects") },
+    handler: async (ctx, args) => {
+      return await ctx.db
+        .query("shoppingListItems")
+        .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+        .collect();
+    },
+});
+
+export const createShoppingListItem = mutation({
+    args: {
+        projectId: v.id("projects"),
+        name: v.string(),
+        notes: v.optional(v.string()),
+        buyBefore: v.optional(v.number()),
+        priority: v.union(v.literal("LOW"), v.literal("MEDIUM"), v.literal("HIGH"), v.literal("URGENT")),
+        imageUrl: v.optional(v.string()),
+        productLink: v.optional(v.string()),
+        supplier: v.optional(v.string()),
+        catalogNumber: v.optional(v.string()),
+        category: v.optional(v.string()),
+        dimensions: v.optional(v.string()),
+        quantity: v.number(),
+        unitPrice: v.optional(v.number()),
+        realizationStatus: v.union(v.literal("PLANNED"), v.literal("ORDERED"), v.literal("IN_TRANSIT"), v.literal("DELIVERED"), v.literal("COMPLETED"), v.literal("CANCELLED")),
+        sectionId: v.optional(v.id("shoppingListSections")),
+        assignedTo: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Not authenticated");
+
+        const project = await ctx.db.get(args.projectId);
+        if (!project) throw new Error("Project not found");
+
+        const totalPrice = args.unitPrice ? args.quantity * args.unitPrice : undefined;
+
+        return await ctx.db.insert("shoppingListItems", {
+            name: args.name,
+            notes: args.notes,
+            completed: false,
+            buyBefore: args.buyBefore,
+            priority: args.priority,
+            imageUrl: args.imageUrl,
+            productLink: args.productLink,
+            supplier: args.supplier,
+            catalogNumber: args.catalogNumber,
+            category: args.category,
+            dimensions: args.dimensions,
+            quantity: args.quantity,
+            unitPrice: args.unitPrice,
+            totalPrice,
+            realizationStatus: args.realizationStatus,
+            sectionId: args.sectionId,
+            projectId: args.projectId,
+            teamId: project.teamId,
+            createdBy: identity.subject,
+            assignedTo: args.assignedTo,
+        });
+    },
+});
+
+export const updateShoppingListItem = mutation({
+    args: {
+        itemId: v.id("shoppingListItems"),
+        name: v.optional(v.string()),
+        notes: v.optional(v.string()),
+        buyBefore: v.optional(v.number()),
+        priority: v.optional(v.union(v.literal("LOW"), v.literal("MEDIUM"), v.literal("HIGH"), v.literal("URGENT"))),
+        imageUrl: v.optional(v.string()),
+        productLink: v.optional(v.string()),
+        supplier: v.optional(v.string()),
+        catalogNumber: v.optional(v.string()),
+        category: v.optional(v.string()),
+        dimensions: v.optional(v.string()),
+        quantity: v.optional(v.number()),
+        unitPrice: v.optional(v.number()),
+        realizationStatus: v.optional(v.union(v.literal("PLANNED"), v.literal("ORDERED"), v.literal("IN_TRANSIT"), v.literal("DELIVERED"), v.literal("COMPLETED"), v.literal("CANCELLED"))),
+        sectionId: v.optional(v.id("shoppingListSections")),
+        assignedTo: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Not authenticated");
+
+        const { itemId, ...updates } = args;
+        
+        const item = await ctx.db.get(itemId);
+        if (!item) throw new Error("Item not found");
+
+        let totalPrice = item.totalPrice;
+        const quantity = updates.quantity ?? item.quantity;
+        const unitPrice = updates.unitPrice ?? item.unitPrice;
+
+        if (updates.quantity !== undefined || updates.unitPrice !== undefined) {
+             totalPrice = unitPrice ? quantity * unitPrice : undefined;
+        }
+
+        await ctx.db.patch(itemId, {...updates, totalPrice });
+    },
+});
+
+export const deleteShoppingListItem = mutation({
+    args: { itemId: v.id("shoppingListItems") },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Not authenticated");
+        await ctx.db.delete(args.itemId);
+    },
+});
+
+export const listProjectsByTeamSlug = query({
+  args: { teamSlug: v.string() },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const team = await ctx.db
+      .query("teams")
+      .withIndex("by_slug", (q) => q.eq("slug", args.teamSlug))
+      .unique();
+
+    if (!team) {
+      return [];
+    }
+    
+    const projects = await ctx.db
+      .query("projects")
+      .withIndex("by_team", (q) => q.eq("teamId", team._id))
+      .collect();
+
+    const projectsWithCosts = await Promise.all(
+      projects.map(async (project) => {
+        const tasks = await ctx.db
+          .query("tasks")
+          .withIndex("by_project", (q) => q.eq("projectId", project._id))
+          .collect();
+        const totalCost = tasks.reduce((sum, task) => sum + (task.cost || 0), 0);
+        return {
+          ...project,
+          totalCost,
+        };
+      })
+    );
+    
+    return projectsWithCosts;
+  },
+});
+
+export const getAllTasksByTeam = query({
+  args: { teamSlug: v.string() },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const team = await ctx.db
+      .query("teams")
+      .withIndex("by_slug", (q) => q.eq("slug", args.teamSlug))
+      .unique();
+
+    if (!team) {
+      return [];
+    }
+
+    const projects = await ctx.db
+      .query("projects")
+      .withIndex("by_team", (q) => q.eq("teamId", team._id))
+      .collect();
+
+    const tasksArrays = await Promise.all(
+      projects.map(project => 
+        ctx.db
+          .query("tasks")
+          .withIndex("by_project", q => q.eq("projectId", project._id))
+          .collect()
+      )
+    );
+    
+    return tasksArrays.flat();
+  }
+});
+
+export const getShoppingListItemsByProject = query({
+  args: { projectId: v.id("projects") },
+  async handler(ctx, args) {
+    const items = await ctx.db
+      .query("shoppingListItems")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+    return items;
+  },
+});
+
+export const getTeamsForCurrentUser = query({
+  async handler(ctx) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return [];
+    }
+    const clerkUserId = identity.subject;
+
+    const memberships = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_user", (q) => q.eq("clerkUserId", clerkUserId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
+
+    if (memberships.length === 0) {
+      return [];
+    }
+
+    const teamIds = [...new Set(memberships.map((m) => m.teamId))];
+
+    const teamPromises = teamIds.map((teamId) => ctx.db.get(teamId));
+    const teams = (await Promise.all(teamPromises)).filter(
+      (t): t is Doc<"teams"> => t !== null
+    );
+
+    teams.sort((a, b) => a.name.localeCompare(b.name));
+    
+    return teams;
+  },
+});
+
+export const getProjectsForTeam = query({
+  args: { teamId: v.id("teams") },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return [];
+    }
+
+    const clerkUserId = identity.subject;
+
+    const membership = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", (q) =>
+        q.eq("teamId", args.teamId).eq("clerkUserId", clerkUserId)
+      )
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .first();
+
+    if (!membership) {
+      return [];
+    }
+
+    let projects: Doc<"projects">[] = [];
+
+    if (
+      membership.role === "client" &&
+      membership.projectIds &&
+      membership.projectIds.length > 0
+    ) {
+      const clientProjects = await Promise.all(
+        membership.projectIds.map((id) => ctx.db.get(id))
+      );
+      projects = clientProjects.filter((p): p is Doc<"projects"> => p !== null);
+    } else if (
+      membership.role === "admin" ||
+      membership.role === "member" ||
+      membership.role === "viewer"
+    ) {
+      projects = await ctx.db
+        .query("projects")
+        .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+        .collect();
+    }
+
+    projects.sort((a, b) => a.name.localeCompare(b.name));
+    return projects;
+  },
 });

@@ -29,7 +29,7 @@ export default function CollaborativeEditorComponent({
     return (
       <div className="task-detail-main">
         <AdvancedEditor
-          content={sync.initialContent}
+          content={typeof sync.initialContent === 'string' ? sync.initialContent : JSON.stringify(sync.initialContent)}
           extensions={[sync.extension]}
           editable={true}
           onUpdate={(content: string) => {

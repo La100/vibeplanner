@@ -1,13 +1,15 @@
 "use client";
 
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Id } from "@/convex/_generated/dataModel";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { 
   Upload, 
   Image, 
@@ -15,43 +17,35 @@ import {
   Trash2, 
   Download,
   Eye,
-  FolderOpen
+  FolderOpen,
+  FolderPlus,
+  ArrowLeft
 } from "lucide-react";
 import { useUploadFile } from "@convex-dev/r2/react";
 import { toast } from "sonner";
-
-type FileCategory = "inspiration" | "moodboard" | "floor_plan" | "technical_drawing" | "product_photo" | "client_photo" | "progress_photo" | "document" | "other";
-
-const fileCategories: { value: FileCategory; label: string; icon: string }[] = [
-  { value: "inspiration", label: "Inspiration", icon: "💡" },
-  { value: "moodboard", label: "Mood Board", icon: "🎨" },
-  { value: "floor_plan", label: "Floor Plan", icon: "📐" },
-  { value: "technical_drawing", label: "Technical Drawing", icon: "📋" },
-  { value: "product_photo", label: "Product Photo", icon: "📦" },
-  { value: "client_photo", label: "Client Photo", icon: "📸" },
-  { value: "progress_photo", label: "Progress Photo", icon: "🏠" },
-  { value: "document", label: "Document", icon: "📄" },
-  { value: "other", label: "Other", icon: "📁" },
-];
-
-const roomCategories = [
-  "Living Room", "Kitchen", "Master Bedroom", "Guest Bedroom", 
-  "Bathroom", "Home Office", "Dining Room", "Entryway", "Outdoor"
-];
+import { formatDistanceToNow } from "date-fns";
 
 export default function FilesView() {
   const params = useParams<{ slug: string, projectSlug: string }>();
-  const [selectedCategory, setSelectedCategory] = useState<FileCategory>("inspiration");
-  const [selectedRoom, setSelectedRoom] = useState<string>("all");
-  const [filterCategory, setFilterCategory] = useState<FileCategory | "all">("all");
+  const [currentFolderId, setCurrentFolderId] = useState<Id<"folders"> | undefined>(undefined);
+  const [showCreateFolder, setShowCreateFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [fileForPreview, setFileForPreview] = useState<{
+    _id: string;
+    name: string;
+    fileType: string;
+    url: string | null;
+    _creationTime: number;
+  } | null>(null);
 
   const project = useQuery(api.myFunctions.getProjectBySlug, {
     teamSlug: params.slug,
     projectSlug: params.projectSlug,
   });
 
-  const files = useQuery(api.files.getProjectFiles, 
-    project ? { projectId: project._id } : "skip"
+  const content = useQuery(
+    api.files.getProjectContent,
+    project ? { projectId: project._id, folderId: currentFolderId } : "skip"
   );
 
   const hasAccess = useQuery(api.myFunctions.checkUserProjectAccess, 
@@ -60,9 +54,11 @@ export default function FilesView() {
 
   const uploadFile = useUploadFile(api.files);
   const attachFile = useMutation(api.files.attachFileToProject);
+  const createFolder = useMutation(api.files.createFolder);
   const deleteFile = useMutation(api.files.deleteFile);
+  const deleteFolder = useMutation(api.files.deleteFolder);
 
-  if (project === undefined || files === undefined || hasAccess === undefined) {
+  if (project === undefined || content === undefined || hasAccess === undefined) {
     return <div>Loading...</div>;
   }
 
@@ -90,11 +86,11 @@ export default function FilesView() {
       // Attach file to project
       await attachFile({
         projectId: project!._id,
+        folderId: currentFolderId,
         fileKey,
         fileName: file.name,
         fileType: file.type,
-        category: selectedCategory,
-        roomCategory: selectedRoom === "all" ? undefined : selectedRoom,
+        fileSize: file.size,
       });
 
       toast.success("File uploaded successfully");
@@ -106,9 +102,29 @@ export default function FilesView() {
     }
   };
 
-  const handleDeleteFile = async (fileId: string) => {
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) return;
+
     try {
-      await deleteFile({ fileId: fileId as any });
+      await createFolder({
+        projectId: project!._id,
+        name: newFolderName.trim(),
+        parentFolderId: currentFolderId,
+      });
+
+      toast.success("Folder created successfully");
+      setNewFolderName("");
+      setShowCreateFolder(false);
+    } catch (error) {
+      toast.error("Failed to create folder", {
+        description: (error as Error).message
+      });
+    }
+  };
+
+  const handleDeleteFile = async (fileId: Id<"files">) => {
+    try {
+      await deleteFile({ fileId });
       toast.success("File deleted successfully");
     } catch (error) {
       toast.error("Failed to delete file", {
@@ -117,103 +133,131 @@ export default function FilesView() {
     }
   };
 
-  const filteredFiles = files?.filter(file => {
-    if (filterCategory === "all") return true;
-    // Since we don't have category in the file schema, we'll filter by fileType for now
-    return true; // TODO: Add proper filtering when category is added to schema
-  }) || [];
+  const handleDeleteFolder = async (folderId: Id<"folders">) => {
+    try {
+      await deleteFolder({ folderId });
+      toast.success("Folder deleted successfully");
+    } catch (error) {
+      toast.error("Failed to delete folder", {
+        description: (error as Error).message
+      });
+    }
+  };
 
-  const getCategoryIcon = (fileType: string) => {
-    if (fileType === "image") return <Image className="h-4 w-4" />;
-    if (fileType === "document") return <FileText className="h-4 w-4" />;
-    return <FolderOpen className="h-4 w-4" />;
+  const getFileTypeIcon = (fileType: string) => {
+    if (fileType === "image") return <Image className="h-8 w-8" />;
+    if (fileType === "document") return <FileText className="h-8 w-8" />;
+    return <FileText className="h-8 w-8" />;
   };
 
   return (
     <div className="max-w-7xl mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-3xl font-bold">{project.name} - Files</h1>
-          <p className="text-muted-foreground">Manage project files and inspiration</p>
+          <div className="flex items-center gap-2 mb-2">
+            {currentFolderId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCurrentFolderId(undefined)}
+                className="p-1"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+            )}
+            <h1 className="text-3xl font-bold">{project.name} - Files</h1>
+          </div>
+          <p className="text-muted-foreground">Organize your project files in folders</p>
         </div>
       </div>
 
-      {/* Upload Section */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Upload className="h-5 w-5" />
-            Upload Files
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Category</label>
-              <Select value={selectedCategory} onValueChange={(value: FileCategory) => setSelectedCategory(value)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {fileCategories.map((category) => (
-                    <SelectItem key={category.value} value={category.value}>
-                      {category.icon} {category.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">Room (Optional)</label>
-              <Select value={selectedRoom} onValueChange={setSelectedRoom}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select room" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Rooms</SelectItem>
-                  {roomCategories.map((room) => (
-                    <SelectItem key={room} value={room}>
-                      {room}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-end">
-              <div className="w-full">
-                <label className="block text-sm font-medium mb-2">Choose File</label>
-                <input
-                  type="file"
-                  onChange={handleFileUpload}
-                  accept="image/*,application/pdf,.dwg,.dxf,.doc,.docx"
-                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
-                />
+      {/* Actions */}
+      <div className="flex gap-4 mb-6">
+        <Dialog open={showCreateFolder} onOpenChange={setShowCreateFolder}>
+          <DialogTrigger asChild>
+            <Button variant="outline">
+              <FolderPlus className="h-4 w-4 mr-2" />
+              New Folder
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create New Folder</DialogTitle>
+              <DialogDescription>
+                Create a new folder to organize your files.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Input
+                placeholder="Folder name"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleCreateFolder()}
+              />
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setShowCreateFolder(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleCreateFolder} disabled={!newFolderName.trim()}>
+                  Create Folder
+                </Button>
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </DialogContent>
+        </Dialog>
 
-      {/* Filter Section */}
-      <div className="flex gap-4 mb-6">
-        <Select value={filterCategory} onValueChange={(value: FileCategory | "all") => setFilterCategory(value)}>
-          <SelectTrigger className="w-48">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {fileCategories.map((category) => (
-              <SelectItem key={category.value} value={category.value}>
-                {category.icon} {category.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="relative">
+          <input
+            type="file"
+            onChange={handleFileUpload}
+            accept="image/*,application/pdf,.dwg,.dxf,.doc,.docx"
+            className="absolute inset-0 opacity-0 cursor-pointer"
+            id="file-upload"
+          />
+          <Button asChild>
+            <label htmlFor="file-upload" className="cursor-pointer">
+              <Upload className="h-4 w-4 mr-2" />
+              Upload File
+            </label>
+          </Button>
+        </div>
       </div>
 
-      {/* Files Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filteredFiles.map((file) => (
+      {/* Content Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+        {/* Folders */}
+        {content.folders.map((folder) => (
+          <Card 
+            key={folder._id} 
+            className="group hover:shadow-lg transition-shadow cursor-pointer"
+            onClick={() => setCurrentFolderId(folder._id)}
+          >
+            <CardContent className="p-4 text-center">
+              <div className="flex flex-col items-center space-y-2">
+                <FolderOpen className="h-12 w-12 text-blue-500" />
+                <h3 className="font-medium text-sm truncate w-full" title={folder.name}>
+                  {folder.name}
+                </h3>
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 w-8 p-0 text-red-600 hover:bg-red-50"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteFolder(folder._id);
+                    }}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+
+        {/* Files */}
+        {content.files.map((file) => (
           <Card key={file._id} className="group hover:shadow-lg transition-shadow">
             <CardContent className="p-4">
               <div className="aspect-square bg-gray-100 rounded-lg mb-3 flex items-center justify-center overflow-hidden">
@@ -221,11 +265,12 @@ export default function FilesView() {
                   <img
                     src={file.url}
                     alt={file.name}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover cursor-pointer"
+                    onClick={() => setFileForPreview(file)}
                   />
                 ) : (
                   <div className="text-gray-400">
-                    {getCategoryIcon(file.fileType)}
+                    {getFileTypeIcon(file.fileType)}
                   </div>
                 )}
               </div>
@@ -239,7 +284,7 @@ export default function FilesView() {
                   <Badge variant="secondary" className="text-xs">
                     {file.fileType}
                   </Badge>
-                  {file.size && (
+                  {file.size > 0 && (
                     <Badge variant="outline" className="text-xs">
                       {(file.size / 1024 / 1024).toFixed(1)}MB
                     </Badge>
@@ -287,16 +332,56 @@ export default function FilesView() {
         ))}
       </div>
 
-      {filteredFiles.length === 0 && (
+      {/* Empty State */}
+      {content.folders.length === 0 && content.files.length === 0 && (
         <Card className="p-8 text-center">
           <div className="text-gray-400 mb-4">
             <FolderOpen className="h-12 w-12 mx-auto" />
           </div>
-          <p className="text-muted-foreground">
-            No files uploaded yet. Upload your first file to get started.
+          <p className="text-muted-foreground mb-4">
+            This folder is empty. Create a folder or upload files to get started.
           </p>
+          <div className="flex gap-2 justify-center">
+            <Button variant="outline" onClick={() => setShowCreateFolder(true)}>
+              <FolderPlus className="h-4 w-4 mr-2" />
+              Create Folder
+            </Button>
+            <Button asChild>
+              <label htmlFor="file-upload" className="cursor-pointer">
+                <Upload className="h-4 w-4 mr-2" />
+                Upload File
+              </label>
+            </Button>
+          </div>
         </Card>
       )}
+
+      {/* File Preview Dialog */}
+      <Dialog open={!!fileForPreview} onOpenChange={() => setFileForPreview(null)}>
+        <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>{fileForPreview?.name}</DialogTitle>
+            <DialogDescription>
+              {fileForPreview?.fileType} - Uploaded {fileForPreview && formatDistanceToNow(new Date(fileForPreview._creationTime), { addSuffix: true })}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto">
+            {fileForPreview?.fileType === 'image' && fileForPreview?.url && (
+              <img
+                src={fileForPreview.url}
+                alt={fileForPreview.name}
+                className="max-w-full max-h-full object-contain mx-auto"
+              />
+            )}
+            {fileForPreview?.fileType === 'document' && fileForPreview?.url && (
+              <iframe 
+                src={`https://docs.google.com/gview?url=${encodeURIComponent(fileForPreview.url)}&embedded=true`} 
+                className="w-full h-full" 
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 } 

@@ -86,11 +86,17 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!team?._id) {
+      console.error("Team not available");
+      return;
+    }
+    
     try {
       const projectId = await createProject({
         name: newProject.name,
         description: newProject.description,
         clerkOrgId: organization.id,
+        teamId: team._id,
         priority: newProject.priority,
         client: newProject.client,
         location: newProject.location,
@@ -152,7 +158,7 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
         
         <Dialog open={showNewProjectForm} onOpenChange={setShowNewProjectForm}>
           <DialogTrigger asChild>
-            <Button>
+            <Button disabled={!team?._id}>
               <Plus className="mr-2 h-4 w-4" />
               Nowy projekt
             </Button>

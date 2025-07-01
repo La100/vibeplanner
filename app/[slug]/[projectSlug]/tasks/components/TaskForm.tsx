@@ -1,300 +1,295 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { format } from "date-fns";
+import { CalendarIcon, Loader2, Wand2 } from "lucide-react";
+
 import { useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Doc, Id } from "@/convex/_generated/dataModel";
+
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { toast } from "sonner";
-import { Send, Bot, X, Plus } from "lucide-react";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { cn } from "@/lib/utils";
 
-interface ParsedTask {
-  isTask: boolean;
-  title: string;
-  description: string;
-  priority: "low" | "medium" | "high" | "urgent" | null;
-  dueDate: string | null;
-  tags: string[];
-}
-
-interface TaskFormProps {
-  projectId: Id<"projects">;
-  onTaskCreated: () => void;
-}
 
 const taskFormSchema = z.object({
-  title: z.string().min(2, "Title must be at least 2 characters"),
-  description: z.string().optional(),
-  priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
-  dueDate: z.string().optional(),
+    title: z.string().min(1, "Title is required"),
+    description: z.string().optional(),
+    priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+    status: z.enum(["todo", "in_progress", "review", "done"]).optional(),
+    assignedTo: z.string().optional(),
+    dueDate: z.date().optional(),
+    cost: z.coerce.number().optional(),
 });
-
-export default function TaskForm({ projectId, onTaskCreated }: TaskFormProps) {
-  const [message, setMessage] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [isAIMode, setIsAIMode] = useState(false);
   
-  const parseTask = useAction(api.myFunctions.parseTaskFromChat);
-  const createTask = useMutation(api.myFunctions.createTask);
+type TaskFormValues = z.infer<typeof taskFormSchema>;
 
-  const form = useForm<z.infer<typeof taskFormSchema>>({
-    resolver: zodResolver(taskFormSchema),
-    defaultValues: {
-      title: "",
-      description: "",
-      priority: undefined,
-      dueDate: "",
-    },
-  });
+interface TaskFormProps {
+    projectId: Id<"projects">;
+    task?: Doc<"tasks">;
+    onTaskCreated?: () => void;
+    setIsOpen: (isOpen: boolean) => void;
+}
+  
+export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: TaskFormProps) {
+    const [aiMessage, setAiMessage] = useState("");
+    const [isParsing, setIsParsing] = useState(false);
 
-  const handleAISubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!message.trim() || isLoading) return;
+    const updateTask = useMutation(api.myFunctions.updateTask);
+    const createTask = useMutation(api.myFunctions.createTask);
+    const parseTask = useAction(api.myFunctions.parseTaskFromChat);
 
-    setIsLoading(true);
-    try {
-      const result = await parseTask({
-        message: message.trim(),
-        projectId,
-      });
-
-      if (result.isTask) {
-        // Wypełnij formularz danymi z AI
-        form.setValue("title", result.title);
-        form.setValue("description", result.description || "");
-        form.setValue("priority", result.priority || undefined);
-        
-        // Poprawne formatowanie daty dla input type="date"
-        if (result.dueDate) {
-          let dateValue = "";
-          try {
-            // Sprawdź czy to już jest w formacie YYYY-MM-DD
-            if (result.dueDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
-              dateValue = result.dueDate;
-            } else {
-              // Spróbuj sparsować jako ISO date i przekonwertować
-              const date = new Date(result.dueDate);
-              if (!isNaN(date.getTime())) {
-                dateValue = date.toISOString().split('T')[0];
-              }
-            }
-          } catch (e) {
-            console.warn("Failed to parse date:", result.dueDate);
+    const form = useForm<TaskFormValues>({
+      resolver: zodResolver(taskFormSchema),
+      defaultValues: task
+        ? {
+            ...task,
+            dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
           }
-          form.setValue("dueDate", dateValue);
-        } else {
-          form.setValue("dueDate", "");
-        }
-        
-        setShowForm(true);
-        setIsAIMode(true);
-      } else {
-        toast.info("Nie rozpoznano zadania w tej wiadomości");
+        : {
+            title: "",
+            description: "",
+            priority: "medium",
+            status: "todo",
+            assignedTo: "",
+            dueDate: undefined,
+            cost: undefined,
+          },
+    });
+  
+    useEffect(() => {
+      if (task) {
+        form.reset({
+            ...task,
+            dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
+        });
       }
-    } catch (error) {
-      toast.error("Błąd podczas analizowania wiadomości", {
-        description: (error as Error).message
-      });
-    } finally {
-      setIsLoading(false);
+    }, [task, form]);
+  
+    const handleParse = async () => {
+        setIsParsing(true);
+        try {
+            const result = await parseTask({ message: aiMessage, projectId });
+            if (result && result.isTask) {
+                form.reset({
+                    title: result.title || "",
+                    description: result.description || "",
+                    priority: result.priority || "medium",
+                    status: result.status || "todo",
+                    dueDate: result.dueDate ? new Date(result.dueDate) : undefined,
+                    cost: result.cost || undefined,
+                });
+                toast.success("Task parsed from message!");
+            } else {
+                toast.info("Could not find a task in the message.");
+            }
+        } catch (error) {
+            toast.error("AI parsing failed.");
+            console.error(error);
+        } finally {
+            setIsParsing(false);
+        }
     }
-  };
 
-  const handleManualAdd = () => {
-    form.reset();
-    setShowForm(true);
-    setIsAIMode(false);
-  };
+    const onSubmit = async (values: TaskFormValues) => {
+      try {
+        const submissionData = {
+            ...values,
+            dueDate: values.dueDate ? values.dueDate.getTime() : undefined,
+        };
 
-  const onTaskSubmit = async (values: z.infer<typeof taskFormSchema>) => {
-    try {
-      await createTask({
-        projectId,
-        title: values.title,
-        description: values.description,
-        priority: values.priority || "medium",
-        endDate: values.dueDate ? new Date(values.dueDate).getTime() : undefined,
-        estimatedHours: undefined,
-        tags: [],
-      });
-
-      toast.success("Zadanie zostało utworzone!");
-      handleCancel();
-      onTaskCreated();
-    } catch (error) {
-      toast.error("Błąd podczas tworzenia zadania", {
-        description: (error as Error).message
-      });
-    }
-  };
-
-  const handleCancel = () => {
-    setShowForm(false);
-    setIsAIMode(false);
-    form.reset();
-    setMessage("");
-  };
-
-  return (
-    <div className="mb-6">
-      {!showForm ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>Dodaj nowe zadanie</span>
-              <div className="flex gap-2">
-                <Button onClick={handleManualAdd} size="sm">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Ręcznie
-                </Button>
-              </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Bot className="h-4 w-4 text-blue-600" />
-                <span>Lub skorzystaj z asystenta AI:</span>
-              </div>
-              <form onSubmit={handleAISubmit} className="flex gap-2">
-                <Input
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Napisz zadanie, np. 'dodaj task spotkanie jutro o 10'"
-                  disabled={isLoading}
-                  className="flex-1"
+        if (task) {
+          await updateTask({
+            taskId: task._id,
+            ...submissionData,
+          });
+          toast.success("Task updated");
+        } else {
+          await createTask({
+            projectId,
+            ...submissionData,
+            tags: [], 
+          });
+          toast.success("Task created");
+          form.reset();
+        }
+        onTaskCreated?.();
+        setIsOpen(false);
+      } catch (error) {
+        toast.error("Something went wrong");
+        console.error(error);
+      }
+    };
+  
+    return (
+        <div>
+            <div className="flex gap-2 mb-4">
+                <Input 
+                    value={aiMessage}
+                    onChange={(e) => setAiMessage(e.target.value)}
+                    placeholder="Create a task for 'Design review' due tomorrow with high priority and cost 150..."
+                    disabled={isParsing}
                 />
-                <Button type="submit" disabled={isLoading || !message.trim()}>
-                  {isLoading ? (
-                    <div className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
+                <Button onClick={handleParse} disabled={isParsing || !aiMessage}>
+                    {isParsing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
                 </Button>
-              </form>
             </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="border-blue-200 bg-blue-50">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg flex items-center gap-2">
-                {isAIMode && <Bot className="h-5 w-5 text-blue-600" />}
-                {isAIMode ? "Edytuj zadanie z AI" : "Nowe zadanie"}
-              </CardTitle>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={handleCancel}
-                className="h-8 w-8 p-0"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
+
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(onTaskSubmit)} className="space-y-4">
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <FormField
-                  control={form.control}
-                  name="title"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Tytuł</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Tytuł zadania" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Opis</FormLabel>
-                      <FormControl>
-                        <Textarea 
-                          placeholder="Opis zadania (opcjonalne)" 
-                          {...field} 
-                          rows={3}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
                     control={form.control}
-                    name="priority"
+                    name="title"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Priorytet (opcjonalne)</FormLabel>
-                        <Select onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} value={field.value || "none"}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Wybierz priorytet" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="none">Brak</SelectItem>
-                            <SelectItem value="low">Niski</SelectItem>
-                            <SelectItem value="medium">Średni</SelectItem>
-                            <SelectItem value="high">Wysoki</SelectItem>
-                            <SelectItem value="urgent">Pilny</SelectItem>
-                          </SelectContent>
-                        </Select>
+                    <FormItem>
+                        <FormLabel>Title</FormLabel>
+                        <FormControl>
+                        <Input placeholder="e.g. Implement new feature" {...field} />
+                        </FormControl>
                         <FormMessage />
-                      </FormItem>
+                    </FormItem>
                     )}
-                  />
-
-                  <FormField
+                />
+                <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                        control={form.control}
+                        name="status"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Status</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                                <SelectTrigger>
+                                <SelectValue placeholder="Select status" />
+                                </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                                <SelectItem value="todo">To Do</SelectItem>
+                                <SelectItem value="in_progress">In Progress</SelectItem>
+                                <SelectItem value="review">Review</SelectItem>
+                                <SelectItem value="done">Done</SelectItem>
+                            </SelectContent>
+                            </Select>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                    <FormField
+                        control={form.control}
+                        name="priority"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Priority</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                                <SelectTrigger>
+                                <SelectValue placeholder="Select priority" />
+                                </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                                <SelectItem value="low">Low</SelectItem>
+                                <SelectItem value="medium">Medium</SelectItem>
+                                <SelectItem value="high">High</SelectItem>
+                                <SelectItem value="urgent">Urgent</SelectItem>
+                            </SelectContent>
+                            </Select>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                </div>
+                <FormField
                     control={form.control}
                     name="dueDate"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Data wykonania</FormLabel>
+                    <FormItem className="flex flex-col">
+                        <FormLabel>Due Date</FormLabel>
+                        <Popover>
+                        <PopoverTrigger asChild>
+                            <FormControl>
+                            <Button
+                                variant={"outline"}
+                                className={cn(
+                                "pl-3 text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                                )}
+                            >
+                                {field.value ? (
+                                format(field.value, "PPP")
+                                ) : (
+                                <span>Pick a date</span>
+                                )}
+                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            </Button>
+                            </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            initialFocus
+                            />
+                        </PopoverContent>
+                        </Popover>
+                        <FormMessage />
+                    </FormItem>
+                    )}
+                />
+                <FormField
+                    control={form.control}
+                    name="cost"
+                    render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Cost</FormLabel>
                         <FormControl>
-                          <Input type="date" {...field} />
+                        <Input type="number" placeholder="Task cost" {...field} onChange={e => field.onChange(e.target.valueAsNumber)} />
                         </FormControl>
                         <FormMessage />
-                      </FormItem>
+                    </FormItem>
                     )}
-                  />
-                </div>
-
-                <div className="flex gap-2 pt-2">
-                  <Button type="submit">
-                    Utwórz zadanie
-                  </Button>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={handleCancel}
-                  >
-                    Anuluj
-                  </Button>
-                </div>
-              </form>
+                />
+                <FormField
+                    control={form.control}
+                    name="description"
+                    render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Description</FormLabel>
+                        <FormControl>
+                        <Textarea placeholder="Add a more detailed description..." {...field} />
+                        </FormControl>
+                        <FormMessage />
+                    </FormItem>
+                    )}
+                />
+                <Button type="submit" disabled={form.formState.isSubmitting}>
+                    {form.formState.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : (task ? "Save Changes" : "Create Task")}
+                </Button>
+                </form>
             </Form>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  );
+        </div>
+    );
 } 
