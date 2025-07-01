@@ -114,13 +114,13 @@ export default function TasksView() {
   })) || [];
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
-      <div className="flex justify-end mb-4">
-        <Button onClick={() => setIsTaskFormOpen(true)}>Add Task</Button>
+    <div className="max-w-7xl mx-auto p-4 md:p-6">
+      <div className="flex flex-col sm:flex-row justify-between gap-4 mb-4">
+        <Button onClick={() => setIsTaskFormOpen(true)} className="w-full sm:w-auto">Add Task</Button>
       </div>
       
       <Dialog open={isTaskFormOpen} onOpenChange={setIsTaskFormOpen}>
-        <DialogContent>
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
                 <DialogTitle>New Task</DialogTitle>
             </DialogHeader>
@@ -128,22 +128,22 @@ export default function TasksView() {
         </DialogContent>
       </Dialog>
 
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold">{project.name} - Tasks</h1>
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-6">
+        <div className="min-w-0">
+          <h1 className="text-2xl md:text-3xl font-bold truncate">{project.name} - Tasks</h1>
           <p className="text-muted-foreground">Manage tasks for this project</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="text-right">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="text-left sm:text-right">
             <p className="text-sm text-muted-foreground">Total Cost</p>
             <p className="text-xl font-bold">{currencySymbol}{totalCost.toFixed(2)}</p>
           </div>
-          <div className="flex rounded-md border">
+          <div className="flex rounded-md border w-full sm:w-auto">
             <Button
               variant={viewMode === "kanban" ? "default" : "ghost"}
               size="sm"
               onClick={() => setViewMode("kanban")}
-              className="rounded-r-none"
+              className="rounded-r-none flex-1 sm:flex-none"
             >
               <LayoutGrid className="h-4 w-4 mr-2" />
               Kanban
@@ -152,18 +152,17 @@ export default function TasksView() {
               variant={viewMode === "list" ? "default" : "ghost"}
               size="sm"
               onClick={() => setViewMode("list")}
-              className="rounded-l-none"
+              className="rounded-l-none flex-1 sm:flex-none"
             >
               <List className="h-4 w-4 mr-2" />
               List
             </Button>
           </div>
-
         </div>
       </div>
 
       {viewMode === "kanban" ? (
-        <div className="flex gap-6 overflow-x-auto">
+        <div className="flex gap-3 md:gap-6 overflow-x-auto pb-4">
           <KanbanProvider
             columns={columns}
             data={kanbanTasks}
@@ -180,12 +179,12 @@ export default function TasksView() {
                     <KanbanCard key={task.id} id={task.id} name={task.name} column={task.column}>
                         <Link href={`/${params.slug}/${params.projectSlug}/tasks/${task.id}`} className="block w-full">
                             <div className="w-full hover:bg-muted/50 rounded p-2 -m-2 transition-colors">
-                                <h4 className="font-medium">{task.title}</h4>
+                                <h4 className="font-medium text-sm md:text-base">{task.title}</h4>
                                 {task.description && (
-                                <p className="text-sm text-muted-foreground mt-1">{task.description}</p>
+                                <p className="text-xs md:text-sm text-muted-foreground mt-1 line-clamp-2">{task.description}</p>
                                 )}
-                                <div className="flex flex-wrap items-center gap-2 mt-2">
-                                    <Badge className={priorityColors[task.priority as TaskPriority]}>
+                                <div className="flex flex-wrap items-center gap-1 md:gap-2 mt-2">
+                                    <Badge className={`text-xs ${priorityColors[task.priority as TaskPriority]}`}>
                                         {task.priority}
                                     </Badge>
                                     {task.cost && (
@@ -197,7 +196,8 @@ export default function TasksView() {
                                     {task.endDate && (
                                         <Badge variant="outline" className="text-xs">
                                         <Calendar className="h-3 w-3 mr-1" />
-                                        {new Date(task.endDate).toLocaleDateString()}
+                                        <span className="hidden sm:inline">{new Date(task.endDate).toLocaleDateString()}</span>
+                                        <span className="sm:hidden">{new Date(task.endDate).toLocaleDateString('en', { month: 'short', day: 'numeric' })}</span>
                                         </Badge>
                                     )}
                                     {task.estimatedHours && (
@@ -216,7 +216,8 @@ export default function TasksView() {
                                         ) : (
                                             <User className="h-3 w-3 mr-1" />
                                         )}
-                                        {task.assignedToName}
+                                        <span className="hidden sm:inline">{task.assignedToName}</span>
+                                        <span className="sm:hidden">{task.assignedToName.charAt(0)}</span>
                                         </Badge>
                                     )}
                                 </div>
@@ -242,32 +243,80 @@ export default function TasksView() {
                   <span className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: column.color }}></span>
                   {column.name} ({columnTasks.length})
                 </h3>
-                <div className="space-y-3">
+                <div className="grid gap-3 sm:gap-4">
                   {columnTasks.map((task) => (
                     <Card key={task._id} className="hover:shadow-md transition-shadow">
                       <Link href={`/${params.slug}/${params.projectSlug}/tasks/${task._id}`}>
-                        <div className="p-4 grid grid-cols-6 gap-4 items-center">
-                          <div className="col-span-4">
-                            <div className="flex items-center gap-2 mb-2">
-                              <h4 className="font-medium hover:text-primary transition-colors">{task.title}</h4>
-                              <Badge className={priorityColors[task.priority as TaskPriority]}>
+                        <div className="p-4">
+                          {/* Mobile Layout */}
+                          <div className="block md:hidden space-y-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <h4 className="font-medium hover:text-primary transition-colors flex-1 min-w-0">{task.title}</h4>
+                              <Badge className={`text-xs shrink-0 ${priorityColors[task.priority as TaskPriority]}`}>
                                 {task.priority}
                               </Badge>
                             </div>
                             {task.description && (
-                              <p className="text-sm text-muted-foreground mb-2">{task.description}</p>
+                              <p className="text-sm text-muted-foreground line-clamp-2">{task.description}</p>
                             )}
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                              {task.cost && (
+                                <span className="bg-muted px-2 py-1 rounded text-muted-foreground">
+                                  {currencySymbol}{task.cost.toFixed(2)}
+                                </span>
+                              )}
+                              {task.endDate && (
+                                <span className="bg-muted px-2 py-1 rounded text-muted-foreground flex items-center gap-1">
+                                  <Calendar className="h-3 w-3" />
+                                  {new Date(task.endDate).toLocaleDateString('en', { month: 'short', day: 'numeric' })}
+                                </span>
+                              )}
+                              {task.estimatedHours && (
+                                <span className="bg-muted px-2 py-1 rounded text-muted-foreground flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  {task.estimatedHours}h
+                                </span>
+                              )}
+                              {task.assignedToName && task.assignedToName !== "Unassigned" && (
+                                <span className="bg-muted px-2 py-1 rounded text-muted-foreground flex items-center gap-1">
+                                  {task.assignedToImageUrl ? (
+                                    <Avatar className="h-3 w-3">
+                                      <AvatarImage src={task.assignedToImageUrl} />
+                                      <AvatarFallback>{task.assignedToName.charAt(0)}</AvatarFallback>
+                                    </Avatar>
+                                  ) : (
+                                    <User className="h-3 w-3" />
+                                  )}
+                                  {task.assignedToName}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          <div className="col-span-1 text-sm text-muted-foreground text-right">
-                            {task.cost ? `${currencySymbol}${task.cost.toFixed(2)}` : "-"}
-                          </div>
-                          <div className="col-span-1 text-sm text-muted-foreground text-right">
-                            {task.endDate && (
-                                <div className="flex items-center justify-end gap-1">
-                                    <Calendar className="h-4 w-4" />
-                                    {new Date(task.endDate).toLocaleDateString()}
-                                </div>
-                            )}
+                          
+                          {/* Desktop Layout */}
+                          <div className="hidden md:grid md:grid-cols-6 gap-4 items-center">
+                            <div className="col-span-4">
+                              <div className="flex items-center gap-2 mb-2">
+                                <h4 className="font-medium hover:text-primary transition-colors">{task.title}</h4>
+                                <Badge className={priorityColors[task.priority as TaskPriority]}>
+                                  {task.priority}
+                                </Badge>
+                              </div>
+                              {task.description && (
+                                <p className="text-sm text-muted-foreground mb-2 line-clamp-2">{task.description}</p>
+                              )}
+                            </div>
+                            <div className="col-span-1 text-sm text-muted-foreground text-right">
+                              {task.cost ? `${currencySymbol}${task.cost.toFixed(2)}` : "-"}
+                            </div>
+                            <div className="col-span-1 text-sm text-muted-foreground text-right">
+                              {task.endDate && (
+                                  <div className="flex items-center justify-end gap-1">
+                                      <Calendar className="h-4 w-4" />
+                                      {new Date(task.endDate).toLocaleDateString()}
+                                  </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </Link>

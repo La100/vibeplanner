@@ -11,6 +11,15 @@ const generateSlug = (name: string) => {
     .replace(/[^\w-]+/g, "");
 };
 
+// Utility function to generate next project ID
+const generateNextProjectId = async (ctx: any) => {
+  const projects = await ctx.db.query("projects").collect();
+  const maxProjectId = projects.reduce((max: number, project: any) => {
+    return (project.projectId || 0) > max ? (project.projectId || 0) : max;
+  }, 0);
+  return maxProjectId + 1;
+};
+
 // Create a new user or update an existing one from Clerk webhook
 export const createOrUpdateUser = internalMutation({
   args: {
@@ -454,11 +463,14 @@ export const createProjectInOrg = mutation({
       done: { name: "Done", color: "#22c55e" },
     };
 
+    const nextProjectId = await generateNextProjectId(ctx);
+
     const projectId = await ctx.db.insert("projects", {
       name: args.name,
       description: args.description,
       teamId: args.teamId,
       slug: slug,
+      projectId: nextProjectId,
       status: "planning",
       priority: args.priority,
       client: args.client,
@@ -532,6 +544,45 @@ export const getProjectBySlug = query({
       .unique();
     
     return project;
+  },
+});
+
+export const getProjectByProjectId = query({
+  args: { 
+    projectId: v.number(),
+  },
+  async handler(ctx, args) {
+    const project = await ctx.db
+      .query("projects")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .unique();
+    
+    return project;
+  },
+});
+
+// Funkcja migracji dla istniejących projektów - uruchom raz aby nadać projectId
+export const migrateProjectIds = mutation({
+  args: {},
+  async handler(ctx, args) {
+    const projectsWithoutId = await ctx.db
+      .query("projects")
+      .filter((q) => q.eq(q.field("projectId"), undefined))
+      .collect();
+
+    let nextId = 1;
+    const existingProjects = await ctx.db.query("projects").collect();
+    const maxId = existingProjects.reduce((max: number, project: any) => {
+      return (project.projectId || 0) > max ? (project.projectId || 0) : max;
+    }, 0);
+    nextId = maxId + 1;
+
+    for (const project of projectsWithoutId) {
+      await ctx.db.patch(project._id, { projectId: nextId });
+      nextId++;
+    }
+
+    return `Migrated ${projectsWithoutId.length} projects`;
   },
 });
 

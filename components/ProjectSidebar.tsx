@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { 
@@ -28,9 +28,11 @@ import {
   Files,
   Home
 } from "lucide-react";
+import { Suspense } from "react";
 
-export function ProjectSidebar() {
+function ProjectSidebarContent() {
   const params = useParams<{ slug: string, projectSlug: string }>();
+  const router = useRouter();
   const { setOpenMobile } = useSidebar();
   
   const project = useQuery(api.myFunctions.getProjectBySlug, { 
@@ -52,6 +54,11 @@ export function ProjectSidebar() {
     setOpenMobile(false);
   };
 
+  const handleLinkHover = (href: string) => {
+    // Prefetch the route when user hovers over the link
+    router.prefetch(href);
+  };
+
   return (
     <Sidebar variant="inset">
       <SidebarHeader className="border-b border-sidebar-border">
@@ -60,6 +67,7 @@ export function ProjectSidebar() {
             <Link 
               href={`/${params.slug}`}
               onClick={handleLinkClick}
+              onMouseEnter={() => handleLinkHover(`/${params.slug}`)}
               className="flex items-center gap-2"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -72,7 +80,7 @@ export function ProjectSidebar() {
               {project?.name || "Loading..."}
             </h2>
             <p className="text-sm text-sidebar-foreground/60">
-              Project Management
+              Project Management {project?.projectId && `(Project #${project.projectId})`}
             </p>
           </div>
         </div>
@@ -89,6 +97,7 @@ export function ProjectSidebar() {
                     <Link 
                       href={item.href}
                       onClick={handleLinkClick}
+                      onMouseEnter={() => handleLinkHover(item.href)}
                     >
                       <item.icon className="h-4 w-4" />
                       <span>{item.label}</span>
@@ -108,6 +117,7 @@ export function ProjectSidebar() {
               <Link 
                 href={`/${params.slug}`}
                 onClick={handleLinkClick}
+                onMouseEnter={() => handleLinkHover(`/${params.slug}`)}
               >
                 <Home className="h-4 w-4" />
                 <span>Dashboard</span>
@@ -117,5 +127,38 @@ export function ProjectSidebar() {
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
+  );
+}
+
+export function ProjectSidebar() {
+  return (
+    <Suspense fallback={
+      <Sidebar variant="inset">
+        <SidebarHeader className="border-b border-sidebar-border">
+          <div className="flex flex-col gap-2 py-2 px-2">
+            <div className="px-2 py-1">
+              <div className="h-7 bg-muted rounded animate-pulse mb-1" />
+              <div className="h-4 bg-muted rounded animate-pulse w-2/3" />
+            </div>
+          </div>
+        </SidebarHeader>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {Array.from({ length: 7 }).map((_, i) => (
+                  <SidebarMenuItem key={i}>
+                    <div className="h-10 bg-muted rounded animate-pulse mx-2 mb-1" />
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+      </Sidebar>
+    }>
+      <ProjectSidebarContent />
+    </Suspense>
   );
 } 

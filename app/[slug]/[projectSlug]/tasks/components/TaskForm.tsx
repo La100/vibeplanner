@@ -145,16 +145,22 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
     };
   
     return (
-        <div>
-            <div className="flex gap-2 mb-4">
+        <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row gap-2 mb-4">
                 <Input 
                     value={aiMessage}
                     onChange={(e) => setAiMessage(e.target.value)}
                     placeholder="Create a task for 'Design review' due tomorrow with high priority and cost 150..."
                     disabled={isParsing}
+                    className="flex-1"
                 />
-                <Button onClick={handleParse} disabled={isParsing || !aiMessage}>
+                <Button 
+                    onClick={handleParse} 
+                    disabled={isParsing || !aiMessage}
+                    className="w-full sm:w-auto shrink-0"
+                >
                     {isParsing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                    <span className="ml-2 sm:hidden">Parse</span>
                 </Button>
             </div>
 
@@ -173,7 +179,7 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
                     </FormItem>
                     )}
                 />
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <FormField
                         control={form.control}
                         name="status"
@@ -221,57 +227,59 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
                         )}
                     />
                 </div>
-                <FormField
-                    control={form.control}
-                    name="dueDate"
-                    render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                        <FormLabel>Due Date</FormLabel>
-                        <Popover>
-                        <PopoverTrigger asChild>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FormField
+                        control={form.control}
+                        name="dueDate"
+                        render={({ field }) => (
+                        <FormItem className="flex flex-col">
+                            <FormLabel>Due Date</FormLabel>
+                            <Popover>
+                            <PopoverTrigger asChild>
+                                <FormControl>
+                                <Button
+                                    variant={"outline"}
+                                    className={cn(
+                                    "pl-3 text-left font-normal w-full",
+                                    !field.value && "text-muted-foreground"
+                                    )}
+                                >
+                                    {field.value ? (
+                                    format(field.value, "PPP")
+                                    ) : (
+                                    <span>Pick a date</span>
+                                    )}
+                                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                </Button>
+                                </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar
+                                mode="single"
+                                selected={field.value}
+                                onSelect={field.onChange}
+                                initialFocus
+                                />
+                            </PopoverContent>
+                            </Popover>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                    <FormField
+                        control={form.control}
+                        name="cost"
+                        render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Cost</FormLabel>
                             <FormControl>
-                            <Button
-                                variant={"outline"}
-                                className={cn(
-                                "pl-3 text-left font-normal",
-                                !field.value && "text-muted-foreground"
-                                )}
-                            >
-                                {field.value ? (
-                                format(field.value, "PPP")
-                                ) : (
-                                <span>Pick a date</span>
-                                )}
-                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                            </Button>
+                            <Input type="number" placeholder="Task cost" {...field} onChange={e => field.onChange(e.target.valueAsNumber)} />
                             </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                            <Calendar
-                            mode="single"
-                            selected={field.value}
-                            onSelect={field.onChange}
-                            initialFocus
-                            />
-                        </PopoverContent>
-                        </Popover>
-                        <FormMessage />
-                    </FormItem>
-                    )}
-                />
-                <FormField
-                    control={form.control}
-                    name="cost"
-                    render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>Cost</FormLabel>
-                        <FormControl>
-                        <Input type="number" placeholder="Task cost" {...field} onChange={e => field.onChange(e.target.valueAsNumber)} />
-                        </FormControl>
-                        <FormMessage />
-                    </FormItem>
-                    )}
-                />
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                </div>
                 <FormField
                     control={form.control}
                     name="description"
@@ -279,14 +287,19 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
                     <FormItem>
                         <FormLabel>Description</FormLabel>
                         <FormControl>
-                        <Textarea placeholder="Add a more detailed description..." {...field} />
+                        <Textarea 
+                            placeholder="Add a more detailed description..." 
+                            {...field} 
+                            className="min-h-[100px] resize-none"
+                        />
                         </FormControl>
                         <FormMessage />
                     </FormItem>
                     )}
                 />
-                <Button type="submit" disabled={form.formState.isSubmitting}>
-                    {form.formState.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : (task ? "Save Changes" : "Create Task")}
+                <Button type="submit" disabled={form.formState.isSubmitting} className="w-full sm:w-auto">
+                    {form.formState.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    {task ? "Save Changes" : "Create Task"}
                 </Button>
                 </form>
             </Form>

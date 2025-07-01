@@ -35,6 +35,7 @@ export default defineSchema({
     description: v.optional(v.string()),
     teamId: v.id("teams"),
     slug: v.string(),
+    projectId: v.number(), // Numeryczne ID projektu dla użytkowników
     status: v.union(
       v.literal("planning"),
       v.literal("active"),
@@ -69,6 +70,7 @@ export default defineSchema({
   })
     .index("by_team", ["teamId"])
     .index("by_team_and_slug", ["teamId", "slug"])
+    .index("by_project_id", ["projectId"])
     .index("by_status", ["status"])
     .index("by_created_by", ["createdBy"]),
 

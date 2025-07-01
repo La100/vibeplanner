@@ -6,8 +6,9 @@ import { api } from "@/convex/_generated/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, AlertTriangle, Calendar, TrendingUp } from "lucide-react";
+import { Suspense } from "react";
 
-export default function ProjectOverview() {
+function ProjectOverviewContent() {
   const params = useParams<{ slug: string, projectSlug: string }>();
   
   const project = useQuery(api.myFunctions.getProjectBySlug, 
@@ -27,7 +28,20 @@ export default function ProjectOverview() {
   );
 
   if (project === undefined || hasAccess === undefined || tasks === undefined || shoppingListItems === undefined) {
-    return <div>Loading project details...</div>;
+    return (
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <div className="h-8 bg-muted rounded animate-pulse w-1/3" />
+          <div className="h-4 bg-muted rounded animate-pulse w-1/2" />
+        </div>
+        
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="h-32 bg-muted rounded animate-pulse" />
+          ))}
+        </div>
+      </div>
+    );
   }
 
   if (project === null) {
@@ -72,7 +86,9 @@ export default function ProjectOverview() {
     <div className="px-4 lg:px-0">
       <div className="mb-4 lg:mb-6">
         <h1 className="text-2xl lg:text-3xl font-bold">Project Overview</h1>
-        <p className="text-muted-foreground text-sm lg:text-base">A summary of {project.name}.</p>
+        <p className="text-muted-foreground text-sm lg:text-base">
+          A summary of {project.name} {project.projectId && `(Project #${project.projectId})`}.
+        </p>
       </div>
 
       <div className="grid gap-4 lg:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-6 lg:mb-8">
@@ -243,5 +259,26 @@ export default function ProjectOverview() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function ProjectOverview() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <div className="h-8 bg-muted rounded animate-pulse w-1/3" />
+          <div className="h-4 bg-muted rounded animate-pulse w-1/2" />
+        </div>
+        
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="h-32 bg-muted rounded animate-pulse" />
+          ))}
+        </div>
+      </div>
+    }>
+      <ProjectOverviewContent />
+    </Suspense>
   );
 } 
