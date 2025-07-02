@@ -691,7 +691,7 @@ export const createTask = mutation({
       projectId: args.projectId,
       teamId: project.teamId,
       status: args.status || "todo",
-      priority: args.priority || "medium",
+      priority: args.priority,
       assignedTo: args.assignedTo,
       createdBy: identity.subject,
       startDate: args.startDate,

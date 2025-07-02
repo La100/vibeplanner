@@ -91,7 +91,7 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
         : {
             title: "",
             description: "",
-            priority: "medium",
+            priority: undefined,
             status: "todo",
             assignedTo: "",
             dateRange: undefined,
@@ -129,7 +129,7 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
                 form.reset({
                     title: result.title || "",
                     description: result.description || "",
-                    priority: result.priority || "medium",
+                    priority: result.priority,
                     status: result.status || "todo",
                     dateRange: {
                       from: startDate,
@@ -250,13 +250,14 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
                         render={({ field }) => (
                         <FormItem>
                             <FormLabel>Priority</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <Select onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} value={field.value || "none"}>
                             <FormControl>
                                 <SelectTrigger>
                                 <SelectValue placeholder="Select priority" />
                                 </SelectTrigger>
                             </FormControl>
                             <SelectContent>
+                                <SelectItem value="none">No priority</SelectItem>
                                 <SelectItem value="low">Low</SelectItem>
                                 <SelectItem value="medium">Medium</SelectItem>
                                 <SelectItem value="high">High</SelectItem>

@@ -87,12 +87,12 @@ export default defineSchema({
         v.literal("review"),
         v.literal("done")
     ),
-    priority: v.union(
+    priority: v.optional(v.union(
       v.literal("low"),
       v.literal("medium"),
       v.literal("high"),
       v.literal("urgent")
-    ),
+    )),
     assignedTo: v.optional(v.string()), // Clerk user ID
     createdBy: v.string(), // Clerk user ID
     startDate: v.optional(v.number()),
@@ -137,7 +137,7 @@ export default defineSchema({
       v.literal("model"),
       v.literal("other")
     ),
-    storageId: v.id("_storage"), // Convex storage ID
+    storageId: v.string(), // R2 storage key
     size: v.number(),
     mimeType: v.string(),
     uploadedBy: v.string(), // Clerk user ID

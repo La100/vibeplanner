@@ -23,15 +23,21 @@ import {
   type DragEndEvent,
 } from "@/components/ui/kibo-ui/kanban";
 import TaskForm from "./TaskForm";
+import { getTaskPreview } from "@/lib/utils";
 
 type TaskStatusLiterals = "todo" | "in_progress" | "review" | "done";
-type TaskPriority = "low" | "medium" | "high" | "urgent";
+type TaskPriority = "low" | "medium" | "high" | "urgent" | undefined;
 
-const priorityColors: Record<TaskPriority, string> = {
+const priorityColors: Record<NonNullable<TaskPriority>, string> = {
   low: "bg-gray-100 text-gray-600",
   medium: "bg-blue-100 text-blue-600",
   high: "bg-orange-100 text-orange-600",
   urgent: "bg-red-100 text-red-600",
+};
+
+const getPriorityDisplay = (priority: TaskPriority) => {
+  if (!priority) return { label: "No priority", color: "bg-gray-50 text-gray-400" };
+  return { label: priority, color: priorityColors[priority] };
 };
 
 export default function TasksView() {
@@ -104,6 +110,7 @@ export default function TasksView() {
     column: task.status,
     title: task.title,
     description: task.description,
+    content: task.content,
     priority: task.priority as TaskPriority,
     endDate: task.endDate,
     estimatedHours: task.estimatedHours,
@@ -180,13 +187,15 @@ export default function TasksView() {
                         <Link href={`/${params.slug}/${params.projectSlug}/tasks/${task.id}`} className="block w-full">
                             <div className="w-full hover:bg-muted/50 rounded p-2 -m-2 transition-colors">
                                 <h4 className="font-medium text-sm md:text-base">{task.title}</h4>
-                                {task.description && (
-                                <p className="text-xs md:text-sm text-muted-foreground mt-1 line-clamp-2">{task.description}</p>
+                                {(task.content || task.description) && (
+                                <p className="text-xs md:text-sm text-muted-foreground mt-1 line-clamp-2">{getTaskPreview(task, 15)}</p>
                                 )}
                                 <div className="flex flex-wrap items-center gap-1 md:gap-2 mt-2">
-                                    <Badge className={`text-xs ${priorityColors[task.priority as TaskPriority]}`}>
-                                        {task.priority}
-                                    </Badge>
+                                    {task.priority && (
+                                      <Badge className={`text-xs ${getPriorityDisplay(task.priority).color}`}>
+                                          {getPriorityDisplay(task.priority).label}
+                                      </Badge>
+                                    )}
                                     {task.cost && (
                                       <Badge variant="outline" className="text-xs">
                                           <DollarSign className="h-3 w-3 mr-1" />
@@ -252,12 +261,14 @@ export default function TasksView() {
                           <div className="block md:hidden space-y-3">
                             <div className="flex items-start justify-between gap-2">
                               <h4 className="font-medium hover:text-primary transition-colors flex-1 min-w-0">{task.title}</h4>
-                              <Badge className={`text-xs shrink-0 ${priorityColors[task.priority as TaskPriority]}`}>
-                                {task.priority}
-                              </Badge>
+                              {task.priority && (
+                                <Badge className={`text-xs shrink-0 ${getPriorityDisplay(task.priority).color}`}>
+                                  {getPriorityDisplay(task.priority).label}
+                                </Badge>
+                              )}
                             </div>
-                            {task.description && (
-                              <p className="text-sm text-muted-foreground line-clamp-2">{task.description}</p>
+                            {(task.content || task.description) && (
+                              <p className="text-sm text-muted-foreground line-clamp-2">{getTaskPreview(task, 20)}</p>
                             )}
                             <div className="flex flex-wrap items-center gap-2 text-xs">
                               {task.cost && (
@@ -298,12 +309,14 @@ export default function TasksView() {
                             <div className="col-span-4">
                               <div className="flex items-center gap-2 mb-2">
                                 <h4 className="font-medium hover:text-primary transition-colors">{task.title}</h4>
-                                <Badge className={priorityColors[task.priority as TaskPriority]}>
-                                  {task.priority}
-                                </Badge>
+                                {task.priority && (
+                                  <Badge className={getPriorityDisplay(task.priority).color}>
+                                    {getPriorityDisplay(task.priority).label}
+                                  </Badge>
+                                )}
                               </div>
-                              {task.description && (
-                                <p className="text-sm text-muted-foreground mb-2 line-clamp-2">{task.description}</p>
+                              {(task.content || task.description) && (
+                                <p className="text-sm text-muted-foreground mb-2 line-clamp-2">{getTaskPreview(task, 25)}</p>
                               )}
                             </div>
                             <div className="col-span-1 text-sm text-muted-foreground text-right">

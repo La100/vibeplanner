@@ -119,6 +119,38 @@
   body {
     @apply bg-background text-foreground;
   }
+  
+  /* Global cursor pointer for interactive elements */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  a:not([aria-disabled="true"]),
+  [role="link"]:not([aria-disabled="true"]),
+  [tabindex="0"]:not([aria-disabled="true"]),
+  .cursor-pointer,
+  select:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="file"]:not(:disabled),
+  [role="tab"]:not([aria-disabled="true"]),
+  [role="menuitem"]:not([aria-disabled="true"]),
+  [role="option"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+  
+  /* Specifically for shadcn/ui Button components */
+  button[class*="inline-flex"]:not(:disabled),
+  button[class*="items-center"]:not(:disabled) {
+    cursor: pointer;
+  }
+  
+  /* Disabled state - explicit not-allowed cursor */
+  button:disabled,
+  [role="button"][aria-disabled="true"],
+  input:disabled,
+  select:disabled,
+  textarea:disabled {
+    cursor: not-allowed;
+  }
 }
 
 /* Line clamp utility for text truncation */

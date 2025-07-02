@@ -10,25 +10,11 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { 
   ArrowLeft, 
-  Trash2,
-  Edit,
 } from "lucide-react";
-import { format } from "date-fns";
 import { useState } from "react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import TaskForm from "../../components/TaskForm";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import SimpleTextEditor from './SimpleTextEditor';
+import TaskEditor from '@/components/ui/advanced-editor/TaskEditor';
+import TaskDetailSidebar from './TaskDetailSidebar';
+import { Input } from "@/components/ui/input";
 
 type TaskPriority = "low" | "medium" | "high" | "urgent";
 
@@ -49,7 +35,8 @@ const statusColors = {
 export default function TaskDetail() {
   const params = useParams<{ slug: string, projectSlug: string, taskId: string }>();
   const router = useRouter();
-  const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleValue, setTitleValue] = useState('');
 
   const task = useQuery(api.myFunctions.getTask, 
     params.taskId ? { taskId: params.taskId as Id<"tasks"> } : "skip"
@@ -60,7 +47,7 @@ export default function TaskDetail() {
     projectSlug: params.projectSlug,
   });
 
-  const deleteTask = useMutation(api.myFunctions.deleteTask);
+  const updateTask = useMutation(api.myFunctions.updateTask);
   
   if (!task || !project) {
     return (
@@ -70,28 +57,38 @@ export default function TaskDetail() {
     );
   }
 
-  const currencySymbol = project.currency === "EUR" ? "€" : project.currency === "PLN" ? "zł" : "$";
 
-  const handleDeleteTask = async () => {
-    if (!task) return;
+
+  const handleDeleteTask = () => {
+    router.back();
+  };
+
+  const handleTitleUpdate = async () => {
+    if (!titleValue.trim() || titleValue === task.title) {
+      setIsEditingTitle(false);
+      setTitleValue('');
+      return;
+    }
+
     try {
-      await deleteTask({ taskId: task._id });
-      toast.success("Zadanie zostało usunięte");
-      router.back();
+      await updateTask({
+        taskId: task._id,
+        title: titleValue.trim(),
+      });
+      toast.success("Tytuł został zaktualizowany");
+      setIsEditingTitle(false);
+      setTitleValue('');
     } catch {
-      toast.error("Błąd podczas usuwania zadania");
+      toast.error("Błąd podczas aktualizacji tytułu");
     }
   };
 
-  const formatDate = (timestamp?: number) => {
-    if (!timestamp) return "";
-    const date = new Date(timestamp);
-    // Sprawdź czy czas jest ustawiony (inny niż północ)
-    if (date.getHours() !== 0 || date.getMinutes() !== 0) {
-      return format(date, "PPP p"); // Format z datą i godziną
-    }
-    return format(date, "PPP"); // Format z samą datą
+  const startEditingTitle = () => {
+    setTitleValue(task.title);
+    setIsEditingTitle(true);
   };
+
+
 
   return (
     <div className="task-detail-container">
@@ -136,105 +133,57 @@ export default function TaskDetail() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Main content */}
           <div className="lg:col-span-3">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">{task.title}</h1>
+            {/* Editable Title */}
+            {isEditingTitle ? (
+              <div className="mb-4">
+                <Input
+                  value={titleValue}
+                  onChange={(e) => setTitleValue(e.target.value)}
+                  onBlur={handleTitleUpdate}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleTitleUpdate();
+                    } else if (e.key === 'Escape') {
+                      setIsEditingTitle(false);
+                      setTitleValue('');
+                    }
+                  }}
+                  className="text-3xl font-bold bg-transparent border-none p-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  autoFocus
+                />
+                <p className="text-xs text-gray-500 mt-1">Naciśnij Enter aby zapisać, Escape aby anulować</p>
+              </div>
+            ) : (
+              <h1 
+                className="text-3xl font-bold text-gray-900 mb-2 cursor-pointer hover:bg-gray-50 rounded p-2 -m-2 transition-colors"
+                onClick={startEditingTitle}
+                title="Kliknij aby edytować tytuł"
+              >
+                {task.title}
+              </h1>
+            )}
+            
             <div className="max-w-none mb-8">
-              <SimpleTextEditor 
+              <TaskEditor 
                 taskId={params.taskId} 
-                initialContent={task.description || ""} 
+                initialContent={task.content || task.description || ""} 
+                placeholder="Opisz szczegóły tego zadania..."
               />
             </div>
           </div>
 
-          {/* Sidebar with metadata */}
+          {/* Editable Sidebar */}
           <aside className="lg:col-span-1">
-            <div className="task-detail-sidebar p-6 sticky top-24 rounded-lg border">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold text-gray-900">Details</h2>
-                <Button variant="outline" size="sm" onClick={() => setIsTaskFormOpen(true)}>
-                  <Edit className="h-4 w-4 mr-2" />
-                  Edit Task
-                </Button>
-              </div>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Status</label>
-                  <p className="text-base text-gray-800">{task.status}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Priority</label>
-                  <p className="text-base text-gray-800">{task.priority}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Cost</label>
-                  <p className="text-base text-gray-800">{task.cost ? `${currencySymbol}${task.cost.toFixed(2)}` : "Not set"}</p>
-                </div>
-
-                {(task.startDate || task.endDate) && (
-                  <div>
-                    <label className="text-sm font-medium text-gray-500">
-                      {task.startDate && task.endDate ? "Date Range" : 
-                       task.startDate ? "Start Date" : "End Date"}
-                    </label>
-                    <p className="text-sm text-gray-800">
-                      {task.startDate && task.endDate ? (
-                        <>{formatDate(task.startDate)} - {formatDate(task.endDate)}</>
-                      ) : task.startDate ? (
-                        <>Start: {formatDate(task.startDate)}</>
-                      ) : task.endDate ? (
-                        <>End: {formatDate(task.endDate)}</>
-                      ) : null}
-                    </p>
-                  </div>
-                )}
-                
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Assigned to</label>
-                   <p className="text-base text-gray-800">{task.assignedToName || "Unassigned"}</p>
-                </div>
-              </div>
-
-              <div className="mt-6">
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="destructive" className="w-full">
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete Task
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This will permanently delete the task. This action cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleDeleteTask}>
-                        Delete
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
-            </div>
+            <TaskDetailSidebar 
+              task={task} 
+              project={project} 
+              onDelete={handleDeleteTask} 
+            />
           </aside>
         </div>
       </div>
 
-      <Dialog open={isTaskFormOpen} onOpenChange={setIsTaskFormOpen}>
-        <DialogContent>
-            <DialogHeader>
-                <DialogTitle>Edit Task</DialogTitle>
-            </DialogHeader>
-            <TaskForm 
-              projectId={project._id} 
-              task={task} 
-              setIsOpen={setIsTaskFormOpen} 
-            />
-        </DialogContent>
-      </Dialog>
+
     </div>
   );
 } 

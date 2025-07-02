@@ -120,7 +120,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
     }
   };
 
-  const getPriorityColor = (priority: string) => {
+  const getPriorityColor = (priority?: string) => {
     switch (priority) {
       case "urgent":
         return "bg-red-100 text-red-800";

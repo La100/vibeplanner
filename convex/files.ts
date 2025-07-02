@@ -24,6 +24,55 @@ export const { generateUploadUrl, syncMetadata } = r2.clientApi({
   },
 });
 
+// Generate upload URL with custom folder structure: org/project/file
+export const generateUploadUrlWithCustomKey = mutation({
+  args: {
+    projectId: v.id("projects"),
+    fileName: v.string(),
+  },
+  returns: v.object({
+    url: v.string(),
+    key: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const project = await ctx.db.get(args.projectId);
+    if (!project) throw new Error("Project not found");
+
+    const team = await ctx.db.get(project.teamId);
+    if (!team) throw new Error("Team not found");
+
+    // Check access
+    const hasAccess = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!hasAccess || !hasAccess.isActive) {
+      throw new Error("No access to this project");
+    }
+
+    // Generate folder structure: team/project/uuid-filename
+    const fileExtension = args.fileName.includes('.') 
+      ? args.fileName.split('.').pop() 
+      : '';
+    const baseName = args.fileName.replace(/\.[^/.]+$/, ""); // Remove extension
+    const uuid = crypto.randomUUID();
+    const customKey = `${team.slug}/${project.slug}/${uuid}-${baseName}${fileExtension ? '.' + fileExtension : ''}`;
+
+    const uploadData = await r2.generateUploadUrl(customKey);
+    
+    return {
+      url: uploadData.url,
+      key: customKey,
+    };
+  },
+});
+
 // Utwórz folder
 export const createFolder = mutation({
   args: {
@@ -112,7 +161,7 @@ export const attachFileToProject = mutation({
       projectId: args.projectId,
       folderId: args.folderId,
       fileType: getFileType(args.fileType),
-      storageId: args.fileKey as any, // R2 key stored as storageId
+      storageId: args.fileKey, // R2 key stored as string
       size: args.fileSize || 0,
       mimeType: args.fileType,
       uploadedBy: identity.subject,
@@ -346,5 +395,32 @@ export const getFileMetadata = query({
   args: { fileKey: v.string() },
   handler: async (ctx, args) => {
     return await r2.getMetadata(ctx, args.fileKey);
+  },
+});
+
+// Pobierz informacje o konkretnym folderze
+export const getFolder = query({
+  args: { folderId: v.id("folders") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const folder = await ctx.db.get(args.folderId);
+    if (!folder) return null;
+
+    // Sprawdź uprawnienia
+    const project = await ctx.db.get(folder.projectId!);
+    if (!project) return null;
+
+    const hasAccess = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!hasAccess || !hasAccess.isActive) return null;
+
+    return folder;
   },
 }); 

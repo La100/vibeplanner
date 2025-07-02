@@ -22,7 +22,7 @@ import {
   FolderPlus,
   ArrowLeft
 } from "lucide-react";
-import { useUploadFile } from "@convex-dev/r2/react";
+
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 
@@ -49,17 +49,23 @@ export default function FilesView() {
     project ? { projectId: project._id, folderId: currentFolderId } : "skip"
   );
 
+  const currentFolder = useQuery(
+    api.files.getFolder,
+    currentFolderId ? { folderId: currentFolderId } : "skip"
+  );
+
   const hasAccess = useQuery(api.myFunctions.checkUserProjectAccess, 
     project ? { projectId: project._id } : "skip"
   );
 
-  const uploadFile = useUploadFile(api.files);
+  const generateUploadUrl = useMutation(api.files.generateUploadUrlWithCustomKey);
   const attachFile = useMutation(api.files.attachFileToProject);
   const createFolder = useMutation(api.files.createFolder);
   const deleteFile = useMutation(api.files.deleteFile);
   const deleteFolder = useMutation(api.files.deleteFolder);
 
-  if (project === undefined || content === undefined || hasAccess === undefined) {
+  if (project === undefined || content === undefined || hasAccess === undefined || 
+      (currentFolderId && currentFolder === undefined)) {
     return <div>Loading...</div>;
   }
 
@@ -81,10 +87,29 @@ export default function FilesView() {
     if (!file) return;
 
     try {
-      // Upload file to R2
-      const fileKey = await uploadFile(file);
+      // 1. Generate upload URL with custom folder structure
+      const uploadData = await generateUploadUrl({
+        projectId: project!._id,
+        fileName: file.name,
+      });
+
+      // 2. Upload file to R2 using the presigned URL
+      const response = await fetch(uploadData.url, {
+        method: 'PUT',
+        body: file,
+        headers: {
+          'Content-Type': file.type,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+      }
+
+      // 3. Extract the file key from the URL (everything after the last slash and before query params)
+      const fileKey = uploadData.key;
       
-      // Attach file to project
+      // 4. Attach file to project
       await attachFile({
         projectId: project!._id,
         folderId: currentFolderId,
@@ -166,10 +191,29 @@ export default function FilesView() {
                 <ArrowLeft className="h-4 w-4" />
               </Button>
             )}
-            <h1 className="text-3xl font-bold">{project.name} - Files</h1>
+            <h1 className="text-3xl font-bold">
+              {project.name} - Files
+              {currentFolder && ` / ${currentFolder.name}`}
+            </h1>
           </div>
           <p className="text-muted-foreground">Organize your project files in folders</p>
         </div>
+        
+        {/* Delete folder button when inside a folder */}
+        {currentFolderId && currentFolder && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-red-600 hover:bg-red-50 border-red-200"
+            onClick={() => {
+              handleDeleteFolder(currentFolderId);
+              setCurrentFolderId(currentFolder.parentFolderId);
+            }}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete Folder
+          </Button>
+        )}
       </div>
 
       {/* Actions */}
@@ -230,7 +274,7 @@ export default function FilesView() {
         {content.folders.map((folder) => (
           <Card 
             key={folder._id} 
-            className="group hover:shadow-lg transition-shadow cursor-pointer"
+            className="hover:shadow-lg transition-shadow cursor-pointer"
             onClick={() => setCurrentFolderId(folder._id)}
           >
             <CardContent className="p-4 text-center">
@@ -239,19 +283,6 @@ export default function FilesView() {
                 <h3 className="font-medium text-sm truncate w-full" title={folder.name}>
                   {folder.name}
                 </h3>
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 w-8 p-0 text-red-600 hover:bg-red-50"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteFolder(folder._id);
-                    }}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
               </div>
             </CardContent>
           </Card>
