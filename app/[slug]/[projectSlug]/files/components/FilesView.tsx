@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import Image from "next/image";
 import PDFThumbnail from "@/components/ui/PDFThumbnail";
 import PDFViewer from "@/components/ui/PDFViewer";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import { 
   Upload, 
   Image as ImageIcon, 
@@ -31,6 +32,7 @@ import { formatDistanceToNow } from "date-fns";
 export default function FilesView() {
   const params = useParams<{ slug: string, projectSlug: string }>();
   const [currentFolderId, setCurrentFolderId] = useState<Id<"folders"> | undefined>(undefined);
+  const [folderPath, setFolderPath] = useState<Array<{id: Id<"folders"> | undefined, name: string}>>([]);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [fileForPreview, setFileForPreview] = useState<{
@@ -66,6 +68,51 @@ export default function FilesView() {
   const createFolder = useMutation(api.files.createFolder);
   const deleteFile = useMutation(api.files.deleteFile);
   const deleteFolder = useMutation(api.files.deleteFolder);
+
+  // Navigation functions
+  const navigateToFolder = (folderId: Id<"folders"> | undefined, folderName: string) => {
+    setCurrentFolderId(folderId);
+    
+    if (folderId === undefined) {
+      // Going to root
+      setFolderPath([]);
+    } else {
+      // Find if folder is already in path (going back)
+      const existingIndex = folderPath.findIndex(f => f.id === folderId);
+      if (existingIndex >= 0) {
+        // Going back to a parent folder
+        setFolderPath(folderPath.slice(0, existingIndex + 1));
+      } else {
+        // Going deeper into a new folder
+        setFolderPath([...folderPath, { id: folderId, name: folderName }]);
+      }
+    }
+  };
+
+  const navigateToBreadcrumb = (index: number) => {
+    if (index === 0) {
+      // Going to root
+      navigateToFolder(undefined, "Files");
+    } else {
+      const targetFolder = folderPath[index - 1];
+      if (targetFolder) {
+        navigateToFolder(targetFolder.id, targetFolder.name);
+      }
+    }
+  };
+
+  // Build breadcrumbs
+  const breadcrumbItems = [
+    {
+      name: "Files",
+      onClick: () => navigateToBreadcrumb(0)
+    },
+    ...folderPath.map((folder, index) => ({
+      id: folder.id,
+      name: folder.name,
+      onClick: index < folderPath.length - 1 ? () => navigateToBreadcrumb(index + 1) : undefined
+    }))
+  ];
 
   if (project === undefined || content === undefined || hasAccess === undefined || 
       (currentFolderId && currentFolder === undefined)) {
@@ -182,23 +229,13 @@ export default function FilesView() {
   return (
     <div className="max-w-7xl mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            {currentFolderId && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setCurrentFolderId(undefined)}
-                className="p-1"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            )}
-            <h1 className="text-3xl font-bold">
-              {project.name} - Files
-              {currentFolder && ` / ${currentFolder.name}`}
-            </h1>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-3">
+            <h1 className="text-3xl font-bold">{project.name} - Files</h1>
           </div>
+          
+          <Breadcrumbs items={breadcrumbItems} className="mb-2" />
+          
           <p className="text-muted-foreground">Organize your project files in folders</p>
         </div>
         
@@ -208,9 +245,15 @@ export default function FilesView() {
             variant="outline"
             size="sm"
             className="text-red-600 hover:bg-red-50 border-red-200"
-            onClick={() => {
-              handleDeleteFolder(currentFolderId);
-              setCurrentFolderId(currentFolder.parentFolderId);
+            onClick={async () => {
+              await handleDeleteFolder(currentFolderId);
+              // Go back to parent folder
+              if (folderPath.length > 1) {
+                const parentFolder = folderPath[folderPath.length - 2];
+                navigateToFolder(parentFolder.id, parentFolder.name);
+              } else {
+                navigateToFolder(undefined, "Files");
+              }
             }}
           >
             <Trash2 className="h-4 w-4 mr-2" />
@@ -272,18 +315,20 @@ export default function FilesView() {
       </div>
 
       {/* Content Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
         {/* Folders */}
         {content.folders.map((folder) => (
           <Card 
             key={folder._id} 
-            className="hover:shadow-lg transition-shadow cursor-pointer"
-            onClick={() => setCurrentFolderId(folder._id)}
+            className="hover:shadow-lg transition-shadow cursor-pointer aspect-square"
+            onClick={() => navigateToFolder(folder._id, folder.name)}
           >
-            <CardContent className="p-4 text-center">
-              <div className="flex flex-col items-center space-y-2">
-                <FolderOpen className="h-12 w-12 text-blue-500" />
-                <h3 className="font-medium text-sm truncate w-full" title={folder.name}>
+            <CardContent className="p-4 h-full flex flex-col justify-center items-center">
+              <div className="flex flex-col items-center space-y-3 text-center">
+                <div className="w-16 h-16 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <FolderOpen className="h-8 w-8 text-blue-600" />
+                </div>
+                <h3 className="font-medium text-sm leading-tight truncate w-full" title={folder.name}>
                   {folder.name}
                 </h3>
               </div>
@@ -295,12 +340,12 @@ export default function FilesView() {
         {content.files.map((file) => (
           <Card key={file._id} className="group hover:shadow-lg transition-shadow">
             <CardContent className="p-4">
-              <div className="aspect-square bg-gray-100 rounded-lg mb-3 flex items-center justify-center overflow-hidden">
+              <div className="aspect-square bg-gray-50 rounded-lg mb-3 flex items-center justify-center overflow-hidden">
                 {file.fileType === "image" && file.url ? (
                   <Image
                     src={file.url}
                     alt={file.name}
-                    className="w-full h-full object-cover cursor-pointer"
+                    className="w-full h-full object-cover cursor-pointer rounded-lg"
                     width={100}
                     height={100}
                     onClick={() => setFileForPreview(file)}
