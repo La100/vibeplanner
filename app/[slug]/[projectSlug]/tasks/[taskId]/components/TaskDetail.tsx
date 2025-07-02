@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import TaskForm from "../../components/TaskForm";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import dynamic from 'next/dynamic';
+import SimpleTextEditor from './SimpleTextEditor';
 
 type TaskPriority = "low" | "medium" | "high" | "urgent";
 
@@ -45,20 +45,6 @@ const statusColors = {
   review: "bg-purple-100 text-purple-700",
   completed: "bg-green-100 text-green-700",
 };
-
-// Dynamic import for collaborative editor
-const CollaborativeEditor = dynamic(
-  () => import('./CollaborativeEditorComponent'),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <span className="ml-3 text-muted-foreground">Ładowanie najlepszego edytora na świecie...</span>
-      </div>
-    )
-  }
-) as React.ComponentType<{ taskId: string }>;
 
 export default function TaskDetail() {
   const params = useParams<{ slug: string, projectSlug: string, taskId: string }>();
@@ -151,8 +137,11 @@ export default function TaskDetail() {
           {/* Main content */}
           <div className="lg:col-span-3">
             <h1 className="text-3xl font-bold text-gray-900 mb-2">{task.title}</h1>
-            <div className="prose prose-lg max-w-none mb-8">
-              <CollaborativeEditor taskId={params.taskId} />
+            <div className="max-w-none mb-8">
+              <SimpleTextEditor 
+                taskId={params.taskId} 
+                initialContent={task.description || ""} 
+              />
             </div>
           </div>
 
@@ -183,17 +172,18 @@ export default function TaskDetail() {
 
                 {(task.startDate || task.endDate) && (
                   <div>
-                    <label className="text-sm font-medium text-gray-500">Dates</label>
+                    <label className="text-sm font-medium text-gray-500">
+                      {task.startDate && task.endDate ? "Date Range" : 
+                       task.startDate ? "Start Date" : "End Date"}
+                    </label>
                     <p className="text-sm text-gray-800">
-                      {formatDate(task.startDate)} - {formatDate(task.endDate)}
-                    </p>
-                  </div>
-                )}
-                {task.dueDate && !task.startDate && (
-                  <div>
-                    <label className="text-sm font-medium text-gray-500">Due Date</label>
-                    <p className="text-sm text-gray-800">
-                      {formatDate(task.dueDate)}
+                      {task.startDate && task.endDate ? (
+                        <>{formatDate(task.startDate)} - {formatDate(task.endDate)}</>
+                      ) : task.startDate ? (
+                        <>Start: {formatDate(task.startDate)}</>
+                      ) : task.endDate ? (
+                        <>End: {formatDate(task.endDate)}</>
+                      ) : null}
                     </p>
                   </div>
                 )}

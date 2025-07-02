@@ -41,8 +41,19 @@ const taskFormSchema = z.object({
     priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
     status: z.enum(["todo", "in_progress", "review", "done"]).optional(),
     assignedTo: z.string().optional(),
-    dueDate: z.date().optional(),
+    dateRange: z.object({
+        from: z.date(),
+        to: z.date().optional(),
+    }).optional(),
     cost: z.coerce.number().optional(),
+}).refine((data) => {
+    if (data.dateRange?.from && data.dateRange?.to) {
+        return data.dateRange.from <= data.dateRange.to;
+    }
+    return true;
+}, {
+    message: "Start date must be before or equal to end date",
+    path: ["dateRange"],
 });
   
 type TaskFormValues = z.infer<typeof taskFormSchema>;
@@ -66,8 +77,16 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
       resolver: zodResolver(taskFormSchema),
       defaultValues: task
         ? {
-            ...task,
-            dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
+            title: task.title,
+            description: task.description,
+            priority: task.priority as TaskFormValues["priority"],
+            status: task.status as TaskFormValues["status"],
+            assignedTo: task.assignedTo,
+            dateRange: {
+              from: task.startDate ? new Date(task.startDate) : undefined,
+              to: task.endDate ? new Date(task.endDate) : undefined,
+            },
+            cost: task.cost,
           }
         : {
             title: "",
@@ -75,16 +94,26 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
             priority: "medium",
             status: "todo",
             assignedTo: "",
-            dueDate: undefined,
+            dateRange: undefined,
             cost: undefined,
           },
     });
+
+
   
     useEffect(() => {
       if (task) {
         form.reset({
-            ...task,
-            dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
+            title: task.title,
+            description: task.description,
+            priority: task.priority as TaskFormValues["priority"],
+            status: task.status as TaskFormValues["status"],
+            assignedTo: task.assignedTo,
+            dateRange: {
+              from: task.startDate ? new Date(task.startDate) : undefined,
+              to: task.endDate ? new Date(task.endDate) : undefined,
+            },
+            cost: task.cost,
         });
       }
     }, [task, form]);
@@ -94,12 +123,18 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
         try {
             const result = await parseTask({ message: aiMessage, projectId });
             if (result && result.isTask) {
+                const startDate = result.startDate ? new Date(result.startDate) : undefined;
+                const endDate = result.endDate ? new Date(result.endDate) : undefined;
+                
                 form.reset({
                     title: result.title || "",
                     description: result.description || "",
                     priority: result.priority || "medium",
                     status: result.status || "todo",
-                    dueDate: result.dueDate ? new Date(result.dueDate) : undefined,
+                    dateRange: {
+                      from: startDate,
+                      to: endDate,
+                    },
                     cost: result.cost || undefined,
                 });
                 toast.success("Task parsed from message!");
@@ -117,8 +152,14 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
     const onSubmit = async (values: TaskFormValues) => {
       try {
         const submissionData = {
-            ...values,
-            dueDate: values.dueDate ? values.dueDate.getTime() : undefined,
+            title: values.title,
+            description: values.description,
+            priority: values.priority,
+            status: values.status,
+            assignedTo: values.assignedTo,
+            cost: values.cost,
+            startDate: values.dateRange?.from ? values.dateRange.from.getTime() : undefined,
+            endDate: values.dateRange?.to ? values.dateRange.to.getTime() : undefined,
         };
 
         if (task) {
@@ -150,7 +191,7 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
                 <Input 
                     value={aiMessage}
                     onChange={(e) => setAiMessage(e.target.value)}
-                    placeholder="Create a task for 'Design review' due tomorrow with high priority and cost 150..."
+                    placeholder="Create a task for 'Design review' on Monday or from tomorrow to next Friday with high priority and cost 150..."
                     disabled={isParsing}
                     className="flex-1"
                 />
@@ -227,59 +268,70 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
                         )}
                     />
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <FormField
-                        control={form.control}
-                        name="dueDate"
-                        render={({ field }) => (
-                        <FormItem className="flex flex-col">
-                            <FormLabel>Due Date</FormLabel>
-                            <Popover>
-                            <PopoverTrigger asChild>
-                                <FormControl>
-                                <Button
-                                    variant={"outline"}
-                                    className={cn(
-                                    "pl-3 text-left font-normal w-full",
-                                    !field.value && "text-muted-foreground"
-                                    )}
-                                >
-                                    {field.value ? (
-                                    format(field.value, "PPP")
-                                    ) : (
-                                    <span>Pick a date</span>
-                                    )}
-                                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                                </Button>
-                                </FormControl>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
-                                <Calendar
-                                mode="single"
-                                selected={field.value}
-                                onSelect={field.onChange}
-                                initialFocus
-                                />
-                            </PopoverContent>
-                            </Popover>
-                            <FormMessage />
-                        </FormItem>
-                        )}
-                    />
-                    <FormField
-                        control={form.control}
-                        name="cost"
-                        render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Cost</FormLabel>
+                
+                {/* Date Range Picker */}
+                <FormField
+                    control={form.control}
+                    name="dateRange"
+                    render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                        <FormLabel>Date Range</FormLabel>
+                        <Popover>
+                        <PopoverTrigger asChild>
                             <FormControl>
-                            <Input type="number" placeholder="Task cost" {...field} onChange={e => field.onChange(e.target.valueAsNumber)} />
+                            <Button
+                                variant={"outline"}
+                                className={cn(
+                                "pl-3 text-left font-normal w-full",
+                                !field.value?.from && "text-muted-foreground"
+                                )}
+                            >
+                                {field.value?.from ? (
+                                field.value.to ? (
+                                    <>
+                                    {format(field.value.from, "LLL dd, y")} -{" "}
+                                    {format(field.value.to, "LLL dd, y")}
+                                    </>
+                                ) : (
+                                    format(field.value.from, "LLL dd, y")
+                                )
+                                ) : (
+                                <span>Pick a date or date range</span>
+                                )}
+                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            </Button>
                             </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                        )}
-                    />
-                </div>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                            mode="range"
+                            defaultMonth={field.value?.from}
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            numberOfMonths={2}
+                            showOutsideDays={false}
+                            initialFocus
+                            />
+                        </PopoverContent>
+                        </Popover>
+                        <FormMessage />
+                    </FormItem>
+                    )}
+                />
+
+                <FormField
+                    control={form.control}
+                    name="cost"
+                    render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Cost</FormLabel>
+                        <FormControl>
+                        <Input type="number" placeholder="Task cost" {...field} onChange={e => field.onChange(e.target.valueAsNumber)} />
+                        </FormControl>
+                        <FormMessage />
+                    </FormItem>
+                    )}
+                />
                 <FormField
                     control={form.control}
                     name="description"

@@ -42,7 +42,8 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
     title: "",
     description: "",
     priority: "medium" as "low" | "medium" | "high" | "urgent",
-    dueDate: "",
+    startDate: "",
+    endDate: "",
     estimatedHours: "",
     tags: "",
   });
@@ -75,7 +76,8 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
         description: newTask.description || undefined,
         projectId,
         priority: newTask.priority,
-        endDate: newTask.dueDate ? new Date(newTask.dueDate).getTime() : undefined,
+        startDate: newTask.startDate ? new Date(newTask.startDate).getTime() : undefined,
+        endDate: newTask.endDate ? new Date(newTask.endDate).getTime() : undefined,
         estimatedHours: newTask.estimatedHours ? parseFloat(newTask.estimatedHours) : undefined,
         tags: newTask.tags.split(",").map(tag => tag.trim()).filter(tag => tag),
       });
@@ -84,7 +86,8 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
         title: "",
         description: "",
         priority: "medium",
-        dueDate: "",
+        startDate: "",
+        endDate: "",
         estimatedHours: "",
         tags: "",
       });
@@ -355,49 +358,62 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                         className="w-full px-3 py-2 border border-gray-300 rounded-md h-20 resize-none"
                       />
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Priorytet</label>
-                        <select
-                          value={newTask.priority}
-                          onChange={(e) => setNewTask({ ...newTask, priority: e.target.value as "low" | "medium" | "high" | "urgent" })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                        >
-                          <option value="low">Niski</option>
-                          <option value="medium">Średni</option>
-                          <option value="high">Wysoki</option>
-                          <option value="urgent">Pilny</option>
-                        </select>
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Priorytet</label>
+                          <select
+                            value={newTask.priority}
+                            onChange={(e) => setNewTask({ ...newTask, priority: e.target.value as "low" | "medium" | "high" | "urgent" })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                          >
+                            <option value="low">Niski</option>
+                            <option value="medium">Średni</option>
+                            <option value="high">Wysoki</option>
+                            <option value="urgent">Pilny</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Data rozpoczęcia</label>
+                          <input
+                            type="date"
+                            value={newTask.startDate}
+                            onChange={(e) => setNewTask({ ...newTask, startDate: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Data zakończenia</label>
+                          <input
+                            type="date"
+                            value={newTask.endDate}
+                            onChange={(e) => setNewTask({ ...newTask, endDate: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Termin</label>
-                        <input
-                          type="date"
-                          value={newTask.dueDate}
-                          onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Szacowane godziny</label>
-                        <input
-                          type="number"
-                          step="0.5"
-                          placeholder="8"
-                          value={newTask.estimatedHours}
-                          onChange={(e) => setNewTask({ ...newTask, estimatedHours: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Tagi</label>
-                        <input
-                          type="text"
-                          placeholder="projektowanie, dokumentacja"
-                          value={newTask.tags}
-                          onChange={(e) => setNewTask({ ...newTask, tags: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                        />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Szacowane godziny</label>
+                          <input
+                            type="number"
+                            step="0.5"
+                            placeholder="8"
+                            value={newTask.estimatedHours}
+                            onChange={(e) => setNewTask({ ...newTask, estimatedHours: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Tagi</label>
+                          <input
+                            type="text"
+                            placeholder="projektowanie, dokumentacja"
+                            value={newTask.tags}
+                            onChange={(e) => setNewTask({ ...newTask, tags: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                          />
+                        </div>
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -446,10 +462,16 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                               <p className="text-sm text-gray-600 mt-1">{task.description}</p>
                             )}
                             <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                              {task.endDate && (
+                              {(task.startDate || task.endDate) && (
                                 <span className="flex items-center gap-1">
                                   <Calendar className="h-3 w-3" />
-                                  {formatDate(task.endDate)}
+                                  {task.startDate && task.endDate ? (
+                                    <>{formatDate(task.startDate)} - {formatDate(task.endDate)}</>
+                                  ) : task.startDate ? (
+                                    <>Start: {formatDate(task.startDate)}</>
+                                  ) : task.endDate ? (
+                                    <>End: {formatDate(task.endDate)}</>
+                                  ) : null}
                                 </span>
                               )}
                               {task.estimatedHours && (

@@ -7,10 +7,8 @@ import { api } from "@/convex/_generated/api";
 import { 
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -25,8 +23,7 @@ import {
   ShoppingCart,
   ArrowLeft,
   CheckSquare,
-  Files,
-  Home
+  Files
 } from "lucide-react";
 import { Suspense } from "react";
 

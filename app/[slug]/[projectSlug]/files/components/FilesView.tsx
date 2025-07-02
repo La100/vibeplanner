@@ -10,9 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import Image from "next/image";
 import { 
   Upload, 
-  Image, 
+  Image as ImageIcon, 
   FileText, 
   Trash2, 
   Download,
@@ -145,7 +146,7 @@ export default function FilesView() {
   };
 
   const getFileTypeIcon = (fileType: string) => {
-    if (fileType === "image") return <Image className="h-8 w-8" />;
+    if (fileType === "image") return <ImageIcon className="h-8 w-8" />;
     if (fileType === "document") return <FileText className="h-8 w-8" />;
     return <FileText className="h-8 w-8" />;
   };
@@ -262,10 +263,12 @@ export default function FilesView() {
             <CardContent className="p-4">
               <div className="aspect-square bg-gray-100 rounded-lg mb-3 flex items-center justify-center overflow-hidden">
                 {file.fileType === "image" && file.url ? (
-                  <img
+                  <Image
                     src={file.url}
                     alt={file.name}
                     className="w-full h-full object-cover cursor-pointer"
+                    width={100}
+                    height={100}
                     onClick={() => setFileForPreview(file)}
                   />
                 ) : (
@@ -367,10 +370,12 @@ export default function FilesView() {
           </DialogHeader>
           <div className="flex-1 overflow-auto">
             {fileForPreview?.fileType === 'image' && fileForPreview?.url && (
-              <img
+              <Image
                 src={fileForPreview.url}
                 alt={fileForPreview.name}
                 className="max-w-full max-h-full object-contain mx-auto"
+                width={800}
+                height={800}
               />
             )}
             {fileForPreview?.fileType === 'document' && fileForPreview?.url && (

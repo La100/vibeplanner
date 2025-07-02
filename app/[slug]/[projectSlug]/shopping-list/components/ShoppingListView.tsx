@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Doc, Id } from '@/convex/_generated/dataModel';
+import Image from 'next/image';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -703,7 +704,7 @@ export default function ShoppingListView() {
                           <div className="flex items-start gap-4">
                             <div className="w-16 h-16 bg-gray-100 rounded-lg flex-shrink-0 flex items-center justify-center overflow-hidden">
                               {item.imageUrl ? (
-                                <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                                <Image src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" width={64} height={64} />
                               ) : (
                                 <ShoppingCartIcon className="h-6 w-6 text-gray-400" />
                               )}

@@ -64,17 +64,36 @@ export default function ProjectCalendar() {
     );
   }
 
-  // Filtruj zadania z datami
-  const tasksWithDates = allTasks.filter(task => task.endDate);
+  // Filtruj zadania z datami (muszą mieć przynajmniej endDate lub startDate)
+  const tasksWithDates = allTasks.filter(task => task.startDate || task.endDate);
 
-  // Grupuj zadania po datach
+  // Funkcja pomocnicza do generowania dat w zakresie
+  const getDateRange = (startDate: number | undefined, endDate: number | undefined): Date[] => {
+    if (!startDate && !endDate) return [];
+    
+    const start = startDate ? new Date(startDate) : new Date(endDate!);
+    const end = endDate ? new Date(endDate) : new Date(startDate!);
+    
+    const dates: Date[] = [];
+    const currentDate = new Date(start);
+    
+    while (currentDate <= end) {
+      dates.push(new Date(currentDate));
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    return dates;
+  };
+
+  // Grupuj zadania po datach (włączając zakresy dat)
   const tasksByDate: Record<string, typeof tasksWithDates> = {};
   tasksWithDates.forEach(task => {
-    if (task.endDate) {
-      const dateKey = new Date(task.endDate).toDateString();
+    const dateRange = getDateRange(task.startDate, task.endDate);
+    dateRange.forEach(date => {
+      const dateKey = date.toDateString();
       if (!tasksByDate[dateKey]) tasksByDate[dateKey] = [];
       tasksByDate[dateKey].push(task);
-    }
+    });
   });
 
   // Znajdź zadania dla wybranej daty
@@ -83,22 +102,25 @@ export default function ProjectCalendar() {
   // Daty z zadaniami dla podświetlenia w kalendarzu
   const datesWithTasks = Object.keys(tasksByDate).map(dateStr => new Date(dateStr));
 
-  // Nadchodzące zadania (następne 7 dni)
+  // Nadchodzące zadania (rozpoczynające się w następne 7 dni)
   const upcomingTasks = tasksWithDates
     .filter(task => {
-      if (!task.endDate) return false;
-      const endDate = new Date(task.endDate);
+      const taskDate = task.startDate || task.endDate;
+      if (!taskDate) return false;
+      const date = new Date(taskDate);
       const now = new Date();
       const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-      return endDate >= now && endDate <= nextWeek;
+      return date >= now && date <= nextWeek;
     })
-    .sort((a, b) => (a.endDate || 0) - (b.endDate || 0));
+    .sort((a, b) => (a.startDate || a.endDate || 0) - (b.startDate || b.endDate || 0));
 
-  // Przeterminowane zadania
+  // Przeterminowane zadania (zakończone w przeszłości ale nie completed)
   const overdueTasks = tasksWithDates
     .filter(task => {
-      if (!task.endDate || task.status === "done") return false;
-      return new Date(task.endDate) < new Date();
+      if (task.status === "done") return false;
+      const endDate = task.endDate;
+      if (!endDate) return false;
+      return new Date(endDate) < new Date();
     })
     .sort((a, b) => (a.endDate || 0) - (b.endDate || 0));
 
@@ -106,7 +128,7 @@ export default function ProjectCalendar() {
     <div className="max-w-7xl mx-auto p-6">
       <div className="mb-6">
         <h1 className="text-3xl font-bold">{project.name} - Calendar</h1>
-        <p className="text-muted-foreground">View tasks by due date</p>
+        <p className="text-muted-foreground">View tasks by date ranges</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -121,7 +143,7 @@ export default function ProjectCalendar() {
               <div className="flex items-center gap-4 mb-4 text-sm">
                 <div className="flex items-center gap-1">
                   <div className="h-2 w-2 rounded-full bg-blue-500" />
-                  <span>Has tasks</span>
+                  <span>Active tasks</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="h-2 w-2 rounded-full bg-red-500" />
@@ -130,6 +152,10 @@ export default function ProjectCalendar() {
                 <div className="flex items-center gap-1">
                   <div className="h-2 w-2 rounded-full bg-gray-400" />
                   <span>Multiple tasks</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="h-1 w-4 bg-green-500" />
+                  <span>Task ranges</span>
                 </div>
               </div>
               
@@ -210,6 +236,11 @@ export default function ProjectCalendar() {
                                         {task.status.replace("_", " ")}
                                       </Badge>
                                     </div>
+                                    {task.startDate && task.endDate && (
+                                      <p className="text-muted-foreground mt-1 text-xs">
+                                        {new Date(task.startDate).toLocaleDateString()} - {new Date(task.endDate).toLocaleDateString()}
+                                      </p>
+                                    )}
                                     {task.description && (
                                       <p className="text-muted-foreground mt-1 text-xs">
                                         {task.description.substring(0, 60)}
@@ -263,7 +294,15 @@ export default function ProjectCalendar() {
                             )}
                             <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
                               <Clock className="h-3 w-3" />
-                              Due: {new Date(task.endDate!).toLocaleDateString()}
+                              {task.startDate && task.endDate ? (
+                                <>
+                                  {new Date(task.startDate).toLocaleDateString()} - {new Date(task.endDate).toLocaleDateString()}
+                                </>
+                              ) : task.startDate ? (
+                                <>Start: {new Date(task.startDate).toLocaleDateString()}</>
+                              ) : task.endDate ? (
+                                <>Due: {new Date(task.endDate).toLocaleDateString()}</>
+                              ) : null}
                               {task.estimatedHours && (
                                 <>
                                   <span>•</span>
@@ -313,7 +352,11 @@ export default function ProjectCalendar() {
                     >
                       <h5 className="font-medium text-sm text-red-800">{task.title}</h5>
                       <p className="text-xs text-red-600">
-                        Due: {new Date(task.endDate!).toLocaleDateString()}
+                        {task.startDate && task.endDate ? (
+                          <>{new Date(task.startDate).toLocaleDateString()} - {new Date(task.endDate).toLocaleDateString()}</>
+                        ) : task.endDate ? (
+                          <>Due: {new Date(task.endDate).toLocaleDateString()}</>
+                        ) : null}
                       </p>
                       <Badge className="mt-1 text-xs bg-red-100 text-red-700">
                         {task.status.replace("_", " ")}
@@ -348,7 +391,13 @@ export default function ProjectCalendar() {
                     >
                       <h5 className="font-medium text-sm">{task.title}</h5>
                       <p className="text-xs text-muted-foreground">
-                        Due: {new Date(task.endDate!).toLocaleDateString()}
+                        {task.startDate && task.endDate ? (
+                          <>{new Date(task.startDate).toLocaleDateString()} - {new Date(task.endDate).toLocaleDateString()}</>
+                        ) : task.startDate ? (
+                          <>Start: {new Date(task.startDate).toLocaleDateString()}</>
+                        ) : task.endDate ? (
+                          <>Due: {new Date(task.endDate).toLocaleDateString()}</>
+                        ) : null}
                       </p>
                       <Badge className={`mt-1 text-xs ${statusColors[task.status as TaskStatus]}`}>
                         {task.status.replace("_", " ")}
