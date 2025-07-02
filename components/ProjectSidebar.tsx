@@ -79,16 +79,14 @@ function ProjectSidebarContent() {
             <h2 className="text-lg font-semibold text-sidebar-foreground/90">
               {project?.name || "Loading..."}
             </h2>
-            <p className="text-sm text-sidebar-foreground/60">
-              Project Management {project?.projectId && `(Project #${project.projectId})`}
-            </p>
+            
           </div>
         </div>
       </SidebarHeader>
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+  
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.map((item) => (
@@ -110,22 +108,6 @@ function ProjectSidebarContent() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild>
-              <Link 
-                href={`/${params.slug}`}
-                onClick={handleLinkClick}
-                onMouseEnter={() => handleLinkHover(`/${params.slug}`)}
-              >
-                <Home className="h-4 w-4" />
-                <span>Dashboard</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
     </Sidebar>
   );
 }
@@ -144,7 +126,7 @@ export function ProjectSidebar() {
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
-            <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+          
             <SidebarGroupContent>
               <SidebarMenu>
                 {Array.from({ length: 7 }).map((_, i) => (
