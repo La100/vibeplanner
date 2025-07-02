@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import Image from "next/image";
+import PDFThumbnail from "@/components/ui/PDFThumbnail";
+import PDFViewer from "@/components/ui/PDFViewer";
 import { 
   Upload, 
   Image as ImageIcon, 
@@ -37,6 +39,7 @@ export default function FilesView() {
     fileType: string;
     url: string | null;
     _creationTime: number;
+    mimeType: string;
   } | null>(null);
 
   const project = useQuery(api.myFunctions.getProjectBySlug, {
@@ -302,6 +305,12 @@ export default function FilesView() {
                     height={100}
                     onClick={() => setFileForPreview(file)}
                   />
+                ) : file.fileType === "document" && file.url && file.mimeType === "application/pdf" ? (
+                  <PDFThumbnail
+                    url={file.url}
+                    className="w-full h-full"
+                    onClick={() => setFileForPreview(file)}
+                  />
                 ) : (
                   <div className="text-gray-400">
                     {getFileTypeIcon(file.fileType)}
@@ -409,7 +418,13 @@ export default function FilesView() {
                 height={800}
               />
             )}
-            {fileForPreview?.fileType === 'document' && fileForPreview?.url && (
+            {fileForPreview?.fileType === 'document' && fileForPreview?.url && fileForPreview?.mimeType === 'application/pdf' && (
+              <PDFViewer 
+                url={fileForPreview.url}
+                fileName={fileForPreview.name}
+              />
+            )}
+            {fileForPreview?.fileType === 'document' && fileForPreview?.url && fileForPreview?.mimeType !== 'application/pdf' && (
               <iframe 
                 src={`https://docs.google.com/gview?url=${encodeURIComponent(fileForPreview.url)}&embedded=true`} 
                 className="w-full h-full" 

@@ -32,6 +32,18 @@ const nextConfig: NextConfig = {
       ],
     });
 
+    // PDF.js configuration
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      canvas: false,
+    };
+
+    // Handle PDF.js worker
+    config.module.rules.push({
+      test: /\.pdf$/,
+      type: 'asset/resource',
+    });
+
     return config;
   },
   // Exclude backup and chrome-extension from page directory scanning
