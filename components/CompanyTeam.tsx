@@ -2,16 +2,12 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { useOrganization, useOrganizationList } from "@clerk/nextjs";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useOrganization } from "@clerk/nextjs";
 
-import { Users, Mail, Shield, Search, Plus, UserPlus, Settings, Crown, User } from "lucide-react";
+import { Users, Mail, Shield, Search, Plus, UserPlus, Settings, Crown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -20,21 +16,10 @@ export default function CompanyTeam() {
   const { organization, isLoaded } = useOrganization();
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
-  
-  // Check if team exists first
-  const team = useQuery(api.myFunctions.getTeamBySlug, 
-    params.slug ? { slug: params.slug } : "skip"
-  );
 
   if (!isLoaded || !organization) {
     return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
   }
-
-  // Filter members based on search and role
-  const filteredMembers = organization.membersCount ? 
-    // This is a simplified version as we don't have direct access to member details through Clerk
-    // In a real app, you'd need to fetch member details properly
-    [] : [];
 
   return (
     <div className="flex flex-col flex-1 min-h-0">

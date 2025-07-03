@@ -15,6 +15,14 @@ interface AddFromOrganizationFormProps {
   projectId: Id<"projects">;
 }
 
+interface OrganizationMember {
+  clerkUserId: string;
+  name: string;
+  email: string;
+  imageUrl?: string;
+  role: string;
+}
+
 export function AddFromOrganizationForm({ projectId }: AddFromOrganizationFormProps) {
   const [addingUserId, setAddingUserId] = useState<string | null>(null);
   
@@ -92,7 +100,7 @@ export function AddFromOrganizationForm({ projectId }: AddFromOrganizationFormPr
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 px-4 lg:px-6">
-        {availableMembers.map((member: any) => (
+        {availableMembers.map((member: OrganizationMember) => (
           <div 
             key={member.clerkUserId} 
             className="flex items-center justify-between p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors"

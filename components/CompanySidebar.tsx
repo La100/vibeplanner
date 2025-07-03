@@ -21,7 +21,6 @@ import {
   Settings, 
   Users,
   FolderOpen,
-  Building2,
   ArrowLeft,
   BarChart3
 } from "lucide-react";

@@ -23,7 +23,6 @@ import {
   Eye,
   FolderOpen,
   FolderPlus,
-  ArrowLeft,
   Play
 } from "lucide-react";
 

@@ -1,12 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useParams } from "next/navigation";
 import { useOrganization } from "@clerk/nextjs";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 
-import { Settings, Users, Shield, Bell, Globe, Save, Trash2, Edit, AlertTriangle, CreditCard } from "lucide-react";
+import { Settings, Users, Save, Trash2, AlertTriangle, CreditCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,14 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 
 export default function CompanySettings() {
-  const params = useParams<{ slug: string }>();
   const { organization, isLoaded } = useOrganization();
   
-  // Check if team exists first
-  const team = useQuery(api.myFunctions.getTeamBySlug, 
-    params.slug ? { slug: params.slug } : "skip"
-  );
-
   const [companySettings, setCompanySettings] = useState({
     name: organization?.name || "",
     description: "",
