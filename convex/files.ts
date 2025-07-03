@@ -149,6 +149,7 @@ export const attachFileToProject = mutation({
     // Określ typ pliku na podstawie MIME type
     const getFileType = (mimeType: string) => {
       if (mimeType.startsWith("image/")) return "image";
+      if (mimeType.startsWith("video/")) return "video";
       if (mimeType === "application/pdf" || mimeType.includes("document")) return "document";
       if (mimeType.includes("dwg") || mimeType.includes("dxf")) return "drawing";
       return "other";
@@ -380,8 +381,20 @@ export const deleteFile = mutation({
       }
     }
 
-    // TODO: Usuń z R2 - implementować później
-    // await r2.deleteByKey(ctx, file.storageId as string);
+    // Usuń z R2 używając komponentu
+    try {
+      await ctx.runMutation(components.r2.lib.deleteObject, {
+        accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+        bucket: process.env.R2_BUCKET!,
+        endpoint: process.env.R2_ENDPOINT!,
+        key: file.storageId,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+      });
+    } catch (error) {
+      console.error(`Failed to delete file from R2: ${error}`);
+      // Continue with database deletion even if R2 deletion fails
+      // This prevents orphaned database records if R2 service is temporarily unavailable
+    }
     
     // Usuń z bazy danych
     await ctx.db.delete(args.fileId);

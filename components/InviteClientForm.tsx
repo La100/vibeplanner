@@ -68,7 +68,7 @@ export function InviteClientForm({ projectId }: InviteClientFormProps) {
         // Nowy użytkownik - zaproś do organizacji i dodaj do projektu
         await organization.inviteMember({
           emailAddress: values.email,
-          role: "org:member",
+          role: "org:customer",
         });
 
         await inviteClient({
@@ -77,7 +77,7 @@ export function InviteClientForm({ projectId }: InviteClientFormProps) {
         });
 
         toast.success("Client Invited", {
-          description: `${values.email} has been invited to the organization and will have access to this project once they join.`,
+          description: `${values.email} has been invited to the organization as a customer and will have access to this project once they join.`,
         });
       }
 
@@ -111,7 +111,7 @@ export function InviteClientForm({ projectId }: InviteClientFormProps) {
           )}
         />
         <p className="text-sm text-muted-foreground">
-          The client will be invited to join the organization and will have access only to the project "{project.name}".
+          The client will be invited to join the organization as a customer and will have access only to the project "{project.name}".
         </p>
         <Button type="submit" disabled={form.formState.isSubmitting}>
           {form.formState.isSubmitting ? "Sending..." : "Send Organization Invitation"}

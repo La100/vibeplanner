@@ -109,45 +109,166 @@ export const deleteTeamInternal = internalMutation({
     if (team) {
       console.log(`Found team to delete: ${team.name} (ID: ${team._id})`);
 
-      // 1. Find and delete all members of the team
-      const members = await ctx.db
-        .query("teamMembers")
-        .withIndex("by_team", (q) => q.eq("teamId", team._id))
-        .collect();
-      const memberDeletionPromises = members.map((member) =>
-        ctx.db.delete(member._id)
-      );
-      await Promise.all(memberDeletionPromises);
-      console.log(`Deleted ${members.length} members from team ${team.name}.`);
-
-      // 2. Find and delete all projects and their tasks
+      // 1. Find all projects for this team
       const projects = await ctx.db
         .query("projects")
         .withIndex("by_team", (q) => q.eq("teamId", team._id))
         .collect();
       console.log(`Found ${projects.length} projects to delete for team ${team.name}.`);
 
-      const projectDeletionPromises = projects.map(async (project) => {
-        // Delete tasks for each project
+      // 2. For each project, delete all related data using the same logic as deleteProject
+      for (const project of projects) {
+        // Delete all tasks associated with the project
         const tasks = await ctx.db
           .query("tasks")
-          .withIndex("by_project", (q) => q.eq("projectId", project._id))
+          .withIndex("by_project", q => q.eq("projectId", project._id))
           .collect();
-        const taskDeletionPromises = tasks.map((task) =>
-          ctx.db.delete(task._id)
-        );
-        await Promise.all(taskDeletionPromises);
-        console.log(`Deleted ${tasks.length} tasks for project ${project.name}.`);
+        
+        // Delete all comments related to the project or its tasks
+        const projectComments = await ctx.db
+          .query("comments")
+          .withIndex("by_project", q => q.eq("projectId", project._id))
+          .collect();
 
-        // Delete the project itself
-        await ctx.db.delete(project._id);
-        console.log(`Deleted project ${project.name}.`);
-      });
-      await Promise.all(projectDeletionPromises);
+        const taskComments = await Promise.all(
+          tasks.map(task => 
+            ctx.db
+              .query("comments")
+              .withIndex("by_task", q => q.eq("taskId", task._id))
+              .collect()
+          )
+        ).then(results => results.flat());
 
-      // 3. Delete the team itself
+        // Delete all files related to the project or its tasks
+        const projectFiles = await ctx.db
+          .query("files")
+          .withIndex("by_project", q => q.eq("projectId", project._id))
+          .collect();
+
+        const taskFiles = await Promise.all(
+          tasks.map(task => 
+            ctx.db
+              .query("files")
+              .withIndex("by_task", q => q.eq("taskId", task._id))
+              .collect()
+          )
+        ).then(results => results.flat());
+
+        // Delete all invitations related to the project
+        const projectInvitations = await ctx.db
+          .query("invitations")
+          .filter(q => q.eq(q.field("projectId"), project._id))
+          .collect();
+
+        // Delete all pending client invitations for this project
+        const pendingInvitations = await ctx.db
+          .query("pendingClientInvitations")
+          .filter(q => q.eq(q.field("projectId"), project._id))
+          .collect();
+
+        // Delete all client records associated with this project
+        const projectClients = await ctx.db
+          .query("clients")
+          .filter(q => q.eq(q.field("projectId"), project._id))
+          .collect();
+
+        // Delete all folders related to the project
+        const projectFolders = await ctx.db
+          .query("folders")
+          .withIndex("by_project", q => q.eq("projectId", project._id))
+          .collect();
+
+        // Delete all shopping list sections and items for this project
+        const shoppingListSections = await ctx.db
+          .query("shoppingListSections")
+          .withIndex("by_project", q => q.eq("projectId", project._id))
+          .collect();
+
+        const shoppingListItems = await ctx.db
+          .query("shoppingListItems")
+          .withIndex("by_project", q => q.eq("projectId", project._id))
+          .collect();
+
+        // Execute all deletions for this project
+        await Promise.all([
+          ...tasks.map(task => ctx.db.delete(task._id)),
+          ...projectComments.map(comment => ctx.db.delete(comment._id)),
+          ...taskComments.map(comment => ctx.db.delete(comment._id)),
+          ...projectFiles.map(file => ctx.db.delete(file._id)),
+          ...taskFiles.map(file => ctx.db.delete(file._id)),
+          ...projectInvitations.map(invitation => ctx.db.delete(invitation._id)),
+          ...pendingInvitations.map(invitation => ctx.db.delete(invitation._id)),
+          ...projectClients.map(client => ctx.db.delete(client._id)),
+          ...projectFolders.map(folder => ctx.db.delete(folder._id)),
+          ...shoppingListSections.map(section => ctx.db.delete(section._id)),
+          ...shoppingListItems.map(item => ctx.db.delete(item._id)),
+        ]);
+
+        console.log(`Deleted all data for project ${project.name}.`);
+      }
+
+      // 3. Delete all remaining team-level data that wasn't project-specific
+
+      // Delete all team-level folders
+      const teamFolders = await ctx.db
+        .query("folders")
+        .withIndex("by_team", q => q.eq("teamId", team._id))
+        .filter(q => q.eq(q.field("projectId"), undefined))
+        .collect();
+
+      // Delete all team-level files
+      const teamFiles = await ctx.db
+        .query("files")
+        .withIndex("by_team", q => q.eq("teamId", team._id))
+        .filter(q => q.eq(q.field("projectId"), undefined))
+        .collect();
+
+      // Delete all team-level comments
+      const teamComments = await ctx.db
+        .query("comments")
+        .filter(q => q.and(
+          q.eq(q.field("teamId"), team._id),
+          q.eq(q.field("projectId"), undefined)
+        ))
+        .collect();
+
+      // Delete all team-level invitations
+      const teamInvitations = await ctx.db
+        .query("invitations")
+        .withIndex("by_team", q => q.eq("teamId", team._id))
+        .filter(q => q.eq(q.field("projectId"), undefined))
+        .collect();
+
+      // Delete all remaining clients for this team
+      const remainingClients = await ctx.db
+        .query("clients")
+        .withIndex("by_team", q => q.eq("teamId", team._id))
+        .collect();
+
+      // Execute team-level deletions
+      await Promise.all([
+        ...teamFolders.map(folder => ctx.db.delete(folder._id)),
+        ...teamFiles.map(file => ctx.db.delete(file._id)),
+        ...teamComments.map(comment => ctx.db.delete(comment._id)),
+        ...teamInvitations.map(invitation => ctx.db.delete(invitation._id)),
+        ...remainingClients.map(client => ctx.db.delete(client._id)),
+      ]);
+
+      // 4. Delete all projects
+      await Promise.all(projects.map(project => ctx.db.delete(project._id)));
+
+      // 5. Delete all team members
+      const members = await ctx.db
+        .query("teamMembers")
+        .withIndex("by_team", (q) => q.eq("teamId", team._id))
+        .collect();
+      await Promise.all(members.map(member => ctx.db.delete(member._id)));
+
+      // 6. Finally, delete the team itself
       await ctx.db.delete(team._id);
-      console.log(`Team, members, projects, and tasks deleted successfully.`);
+      
+      console.log(`Team ${team.name} and ALL related data deleted successfully.`);
+      console.log(`Deleted: ${projects.length} projects, ${members.length} members, and all associated data.`);
     } else {
       console.warn(
         `Webhook for deleteTeamInternal was called, but no team found with clerkOrgId: ${args.clerkOrgId}`
@@ -196,9 +317,18 @@ export const createOrUpdateMembership = internalMutation({
             .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", args.clerkUserId))
             .unique();
         
-        if(!user) {
-            console.error(`User not found for webhook processing: clerkUserId=${args.clerkUserId}`);
-            return;
+        if(!user && args.userEmail && args.userEmail !== "unknown@example.com") {
+            console.warn(`User not found for webhook processing: clerkUserId=${args.clerkUserId}. Creating user from membership webhook.`);
+            
+            // Stwórz użytkownika tylko jeśli mamy poprawny email
+            await ctx.db.insert("users", {
+                clerkUserId: args.clerkUserId,
+                email: args.userEmail,
+                name: undefined, // Będzie zaktualizowane przy webhook user.created/updated
+                imageUrl: undefined,
+            });
+        } else if (!user) {
+            console.warn(`User not found and no valid email for clerkUserId=${args.clerkUserId}. Skipping user creation - will be created by user.created webhook.`);
         }
 
         // Sprawdź czy to klient zaproszony do konkretnego projektu, który już zaakceptował zaproszenie
@@ -208,15 +338,53 @@ export const createOrUpdateMembership = internalMutation({
             .filter(q => q.eq(q.field("status"), "active")) // Szukaj aktywnego klienta
             .first();
 
+        // Jeśli nie znaleziono po clerkUserId, spróbuj po email (dla nowych użytkowników)
+        if (!clientRecord && args.userEmail) {
+            clientRecord = await ctx.db
+                .query("clients")
+                .withIndex("by_email", q => q.eq("email", args.userEmail!))
+                .filter(q => q.and(
+                    q.eq(q.field("clerkOrgId"), args.clerkOrgId),
+                    q.or(
+                        q.eq(q.field("status"), "invited"),
+                        q.eq(q.field("status"), "active")
+                    )
+                ))
+                .first();
+        }
+
         const membership = await ctx.db
             .query("teamMembers")
             .withIndex("by_team_and_user", (q) => q.eq("teamId", team._id).eq("clerkUserId", args.clerkUserId))
             .unique();
         
-        // Jeśli znaleziono zaproszenie do projektu, ustaw rolę "client"
-        let role: "admin" | "member" | "client" = args.role === "admin" ? "admin" : "member";
+        // Określ rolę użytkownika w zespole
+        let role: "admin" | "member" | "client" = "member"; // domyślna rola
         let projectIds: Id<"projects">[] | undefined = undefined;
 
+        // 1. Sprawdź rolę z Clerk
+        if (args.role === "admin") {
+            role = "admin";
+        } else if (args.role === "org:customer") {
+            role = "client";
+        } else {
+            role = "member"; // org:member, basic_member, itp.
+        }
+
+        // 1.5. Sprawdź czy to pierwszy członek organizacji (powinien być adminem)
+        if (!membership && !clientRecord) {
+            const existingMembers = await ctx.db
+                .query("teamMembers")
+                .withIndex("by_team", q => q.eq("teamId", team._id))
+                .collect();
+            
+            // Jeśli to pierwszy członek organizacji, zrób go adminem
+            if (existingMembers.length === 0) {
+                role = "admin";
+            }
+        }
+
+        // 2. Jeśli znaleziono zaproszenie do konkretnego projektu, ustaw rolę "client"
         if (clientRecord) {
             role = "client";
             projectIds = [clientRecord.projectId];
@@ -281,15 +449,11 @@ export const deleteMembership = internalMutation({
 
 export const deleteTeam = internalMutation({
     args: { clerkOrgId: v.string() },
-    async handler(ctx, args) {
-        const team = await ctx.db
-            .query("teams")
-            .withIndex("by_clerk_org", q => q.eq("clerkOrgId", args.clerkOrgId))
-            .unique();
-
-        if (team) {
-            await ctx.db.delete(team._id);
-        }
+    async handler(ctx, args): Promise<void> {
+        // Use the same complete deletion logic as deleteTeamInternal
+        await ctx.runMutation(internal.myFunctions.deleteTeamInternal, {
+            clerkOrgId: args.clerkOrgId
+        });
     }
 });
 
@@ -366,8 +530,13 @@ export const listProjectsByClerkOrg = query({
         .query("projects")
         .withIndex("by_team", (q) => q.eq("teamId", team._id))
         .collect();
+    } else if (membership && membership.isActive && membership.role === "client" && membership.projectIds) {
+      // Client z określonymi projectIds w teamMembers
+      const projectPromises = membership.projectIds.map(id => ctx.db.get(id));
+      const projectResults = await Promise.all(projectPromises);
+      projects = projectResults.filter(p => p !== null);
     } else {
-      // Sprawdź czy użytkownik jest klientem z dostępem do konkretnych projektów
+      // Sprawdź czy użytkownik jest klientem z dostępem do konkretnych projektów (legacy)
       const clientAccess = await ctx.db
         .query("clients")
         .withIndex("by_clerk_user", q => q.eq("clerkUserId", identity.subject))
@@ -465,6 +634,28 @@ export const createProjectInOrg = mutation({
 
     const nextProjectId = await generateNextProjectId(ctx);
 
+    // Sprawdź czy twórca jest już członkiem zespołu
+    let creatorMembership = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", (q) => q.eq("teamId", team._id).eq("clerkUserId", identity.subject))
+      .unique();
+
+    if (!creatorMembership) {
+      // Jeśli nie jest członkiem, dodaj jako admina
+      await ctx.db.insert("teamMembers", {
+        teamId: team._id,
+        clerkUserId: identity.subject,
+        clerkOrgId: args.clerkOrgId,
+        role: "admin",
+        isActive: true,
+        joinedAt: Date.now(),
+        permissions: [],
+      });
+    } else if (creatorMembership.role !== "admin") {
+      // Jeśli już jest członkiem ale nie jest adminem, podwyższ do admina
+      await ctx.db.patch(creatorMembership._id, { role: "admin" });
+    }
+
     const projectId = await ctx.db.insert("projects", {
       name: args.name,
       description: args.description,
@@ -487,34 +678,7 @@ export const createProjectInOrg = mutation({
   },
 });
 
-export const createUser = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Called createUser without authentication present");
-    }
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_user_id", (q) =>
-        q.eq("clerkUserId", identity.subject)
-      )
-      .unique();
-
-    if (user !== null) {
-      return user._id;
-    }
-    
-    const userId = await ctx.db.insert("users", {
-      clerkUserId: identity.subject,
-      email: identity.email!,
-      name: identity.name,
-    });
-
-    return userId;
-  },
-});
 
 export const getTeamBySlug = query({
     args: { slug: v.string() },
@@ -547,44 +711,9 @@ export const getProjectBySlug = query({
   },
 });
 
-export const getProjectByProjectId = query({
-  args: { 
-    projectId: v.number(),
-  },
-  async handler(ctx, args) {
-    const project = await ctx.db
-      .query("projects")
-      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
-      .unique();
-    
-    return project;
-  },
-});
 
-// Funkcja migracji dla istniejących projektów - uruchom raz aby nadać projectId
-export const migrateProjectIds = mutation({
-  args: {},
-  async handler(ctx, args) {
-    const projectsWithoutId = await ctx.db
-      .query("projects")
-      .filter((q) => q.eq(q.field("projectId"), undefined))
-      .collect();
 
-    let nextId = 1;
-    const existingProjects = await ctx.db.query("projects").collect();
-    const maxId = existingProjects.reduce((max: number, project: any) => {
-      return (project.projectId || 0) > max ? (project.projectId || 0) : max;
-    }, 0);
-    nextId = maxId + 1;
 
-    for (const project of projectsWithoutId) {
-      await ctx.db.patch(project._id, { projectId: nextId });
-      nextId++;
-    }
-
-    return `Migrated ${projectsWithoutId.length} projects`;
-  },
-});
 
 export const listProjectTasks = query({
   args: { projectId: v.id("projects") },
@@ -901,6 +1030,25 @@ export const inviteClientToProject = mutation({
       throw new Error("Project not found");
     }
 
+    // Sprawdź uprawnienia
+    const teamMember = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!teamMember || (teamMember.role !== "admin" && teamMember.role !== "member")) {
+      throw new Error("Insufficient permissions");
+    }
+
+    // Dodaj do tabeli clients (to jest kluczowe!)
+    await ctx.runMutation(internal.myFunctions.addClientToProject, {
+      email: args.email,
+      projectId: args.projectId,
+      clerkOrgId: (await ctx.db.get(project.teamId))!.clerkOrgId,
+    });
+
     // Generate a simple random token
     const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
@@ -919,43 +1067,7 @@ export const inviteClientToProject = mutation({
   }
 });
 
-export const acceptClientInvitation = mutation({
-  args: {
-    token: v.string(),
-  },
-  async handler(ctx, args) {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated. Please sign up or log in to accept the invitation.");
-    }
 
-    const invitation = await ctx.db
-      .query("invitations")
-      .withIndex("by_token", (q) => q.eq("token", args.token))
-      .unique();
-
-    if (!invitation) {
-      throw new Error("Invitation not found or expired.");
-    }
-
-    if (invitation.status !== "pending") {
-      throw new Error(`Invitation is already ${invitation.status}.`);
-    }
-
-    if (invitation.email !== identity.email) {
-      throw new Error("This invitation is for a different email address.");
-    }
-
-    await ctx.db.patch(invitation._id, { status: "accepted" });
-
-    // Wywołaj addClientToProject, aby dodać użytkownika jako klienta do projektu
-    await ctx.runMutation(internal.myFunctions.addClientToProject, {
-      email: identity.email!,
-      projectId: invitation.projectId!,
-      clerkOrgId: (await ctx.db.get(invitation.teamId))!.clerkOrgId,
-    });
-  }
-});
 
 export const syncTeamWithClerkOrg = mutation({
   args: {
@@ -990,20 +1102,7 @@ export const syncTeamWithClerkOrg = mutation({
   },
 });
 
-export const syncAndCleanUpTeams = action({
-  args: {},
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      console.error("No user identity, skipping sync.");
-      return;
-    }
 
-    console.log(`Starting team sync for user: ${identity.subject}`);
-    // More logic will be added here to call the Clerk API
-    // and sync data with internal mutations.
-  },
-});
 
 // Sprawdzanie uprawnień użytkownika do projektu
 export const checkUserProjectAccess = query({
@@ -1044,58 +1143,7 @@ export const checkUserProjectAccess = query({
   }
 });
 
-// Przypisywanie projektu klientowi
-export const assignProjectToClient = mutation({
-  args: {
-    clerkUserId: v.string(),
-    projectId: v.id("projects"),
-  },
-  async handler(ctx, args) {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
 
-    const project = await ctx.db.get(args.projectId);
-    if (!project) throw new Error("Project not found");
-
-    // Sprawdź czy wywołujący ma uprawnienia (admin/member)
-    const callerMember = await ctx.db
-      .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
-        q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
-      )
-      .unique();
-
-    if (!callerMember || (callerMember.role !== "admin" && callerMember.role !== "member")) {
-      throw new Error("Insufficient permissions");
-    }
-
-    // Znajdź członka zespołu który ma być przypisany
-    const targetMember = await ctx.db
-      .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
-        q.eq("teamId", project.teamId).eq("clerkUserId", args.clerkUserId)
-      )
-      .unique();
-
-    if (!targetMember) {
-      throw new Error("User is not a member of this team");
-    }
-
-    if (targetMember.role !== "client") {
-      throw new Error("Can only assign projects to clients");
-    }
-
-    // Dodaj projekt do listy klienta
-    const currentProjectIds = targetMember.projectIds || [];
-    if (!currentProjectIds.includes(args.projectId)) {
-      await ctx.db.patch(targetMember._id, {
-        projectIds: [...currentProjectIds, args.projectId],
-      });
-    }
-
-    return { success: true };
-  }
-});
 
 // Usuwanie dostępu klienta do projektu
 export const removeProjectFromClient = mutation({
@@ -1146,52 +1194,7 @@ export const removeProjectFromClient = mutation({
   }
 });
 
-// Lista projektów dostępnych dla aktualnego użytkownika
-export const listUserProjects = query({
-  args: {
-    teamId: v.id("teams"),
-  },
-  async handler(ctx, args) {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return [];
 
-    // Sprawdź członkostwo w zespole
-    const teamMember = await ctx.db
-      .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
-        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
-      )
-      .unique();
-
-    // Admin i member widzą wszystkie projekty zespołu
-    if (teamMember && teamMember.isActive && (teamMember.role === "admin" || teamMember.role === "member")) {
-      return await ctx.db
-        .query("projects")
-        .withIndex("by_team", q => q.eq("teamId", args.teamId))
-        .collect();
-    }
-
-    // Sprawdź czy użytkownik jest klientem z dostępem do konkretnych projektów
-    const clientAccess = await ctx.db
-      .query("clients")
-      .withIndex("by_clerk_user", q => q.eq("clerkUserId", identity.subject))
-      .filter(q => q.and(
-        q.eq(q.field("teamId"), args.teamId),
-        q.eq(q.field("status"), "active")
-      ))
-      .collect();
-
-    if (clientAccess.length > 0) {
-      const projectIds = clientAccess.map(c => c.projectId);
-      const projects = await Promise.all(
-        projectIds.map(id => ctx.db.get(id))
-      );
-      return projects.filter(p => p !== null);
-    }
-
-    return [];
-  }
-});
 
 // Pobieranie informacji o członkostwie aktualnego użytkownika w zespole
 export const getCurrentUserTeamMember = query({
@@ -1212,31 +1215,7 @@ export const getCurrentUserTeamMember = query({
 });
 
 
-// Aktualizacja statusu klienta (gdy dołącza do organizacji)
-export const activateClient = mutation({
-  args: {
-    email: v.string(),
-    clerkUserId: v.string(),
-  },
-  async handler(ctx, args) {
-    const client = await ctx.db
-      .query("clients")
-      .withIndex("by_email", q => q.eq("email", args.email))
-      .filter(q => q.eq(q.field("status"), "invited"))
-      .first();
 
-    if (client) {
-      await ctx.db.patch(client._id, {
-        status: "active",
-        clerkUserId: args.clerkUserId,
-        joinedAt: Date.now(),
-      });
-      return { success: true, clientId: client._id };
-    }
-    
-    return { success: false, message: "Client invitation not found" };
-  }
-});
 
 // Dodawanie klienta do projektu
 export const addClientToProject = internalMutation({
@@ -1356,21 +1335,7 @@ export const updateTaskDates = mutation({
   },
 });
 
-export const updateTaskPriority = mutation({
-  args: {
-    taskId: v.id("tasks"),
-    priority: v.union(
-      v.literal("low"),
-      v.literal("medium"),
-      v.literal("high"),
-      v.literal("urgent")
-    ),
-  },
-  async handler(ctx, args) {
-    const { taskId, priority } = args;
-    await ctx.db.patch(taskId, { priority });
-  },
-});
+
 
 export const deleteTask = mutation({
   args: { taskId: v.id("tasks") },
@@ -1393,7 +1358,7 @@ export const deleteProject = mutation({
     const project = await ctx.db.get(args.projectId);
     if (!project) throw new Error("Project not found");
 
-    // Check if user has permission to delete (admin or member role)
+    // Check if user has permission to delete (only admin role)
     const teamMember = await ctx.db
       .query("teamMembers")
       .withIndex("by_team_and_user", q => 
@@ -1401,8 +1366,8 @@ export const deleteProject = mutation({
       )
       .unique();
 
-    if (!teamMember || (teamMember.role !== "admin" && teamMember.role !== "member")) {
-      throw new Error("Insufficient permissions to delete this project");
+    if (!teamMember || teamMember.role !== "admin") {
+      throw new Error("Insufficient permissions to delete this project. Only admin can delete projects.");
     }
 
     // Delete all tasks associated with the project
@@ -1478,6 +1443,79 @@ export const deleteProject = mutation({
 
     const clientDeletionPromises = clients.map(client => ctx.db.delete(client._id));
     await Promise.all(clientDeletionPromises);
+
+    // Handle team members with role "client" - remove project or delete member entirely
+    const clientTeamMembers = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team", q => q.eq("teamId", project.teamId))
+      .filter(q => q.eq(q.field("role"), "client"))
+      .collect();
+
+    const memberOperationPromises = clientTeamMembers.map(async (member) => {
+      const currentProjectIds = member.projectIds || [];
+      
+      if (currentProjectIds.includes(args.projectId) || currentProjectIds.length === 0) {
+        const updatedProjectIds = currentProjectIds.filter(id => id !== args.projectId);
+        
+        if (updatedProjectIds.length === 0) {
+          // Jeśli to był jedyny projekt klienta lub nie miał projektów, usuń członka całkowicie
+          await ctx.db.delete(member._id);
+          console.log(`Deleted client team member ${member.clerkUserId} - no more projects`);
+        } else {
+          // Jeśli ma więcej projektów, tylko usuń ten projekt z listy
+          await ctx.db.patch(member._id, { projectIds: updatedProjectIds });
+          console.log(`Updated client team member ${member.clerkUserId} - removed project from list`);
+        }
+      } else {
+        // Sprawdź czy klient ma dostęp do tego projektu przez tabelę clients
+        const clientRecord = await ctx.db
+          .query("clients")
+          .withIndex("by_clerk_user", q => q.eq("clerkUserId", member.clerkUserId))
+          .filter(q => q.eq(q.field("projectId"), args.projectId))
+          .first();
+        
+        if (clientRecord) {
+          // Klient był powiązany z tym projektem - sprawdź czy ma inne projekty
+          const otherClientRecords = await ctx.db
+            .query("clients")
+            .withIndex("by_clerk_user", q => q.eq("clerkUserId", member.clerkUserId))
+            .filter(q => q.neq(q.field("projectId"), args.projectId))
+            .collect();
+          
+          if (otherClientRecords.length === 0) {
+            // Nie ma innych projektów - usuń członka
+            await ctx.db.delete(member._id);
+            console.log(`Deleted client team member ${member.clerkUserId} - was only connected to deleted project`);
+          }
+        }
+      }
+    });
+    await Promise.all(memberOperationPromises);
+
+    // Delete all folders related to the project
+    const projectFolders = await ctx.db
+      .query("folders")
+      .withIndex("by_project", q => q.eq("projectId", args.projectId))
+      .collect();
+
+    const folderDeletionPromises = projectFolders.map(folder => ctx.db.delete(folder._id));
+    await Promise.all(folderDeletionPromises);
+
+    // Delete all shopping list sections and items for this project
+    const shoppingListSections = await ctx.db
+      .query("shoppingListSections")
+      .withIndex("by_project", q => q.eq("projectId", args.projectId))
+      .collect();
+
+    const shoppingListItems = await ctx.db
+      .query("shoppingListItems")
+      .withIndex("by_project", q => q.eq("projectId", args.projectId))
+      .collect();
+
+    const shoppingSectionDeletionPromises = shoppingListSections.map(section => ctx.db.delete(section._id));
+    const shoppingItemDeletionPromises = shoppingListItems.map(item => ctx.db.delete(item._id));
+    
+    await Promise.all([...shoppingSectionDeletionPromises, ...shoppingItemDeletionPromises]);
 
     // Finally, delete the project itself
     await ctx.db.delete(args.projectId);
@@ -1606,15 +1644,89 @@ export const getTeamMembers = query({
   },
 });
 
-export const assignTask = mutation({
-  args: {
-    taskId: v.id("tasks"),
-    userId: v.optional(v.string()), // Clerk User ID - optional and single
+// Nowa funkcja do pobierania członków projektu (łącznie z klientami)
+export const getProjectMembers = query({
+  args: { 
+    teamId: v.id("teams"),
+    projectId: v.optional(v.id("projects"))
   },
   async handler(ctx, args) {
-    await ctx.db.patch(args.taskId, { assignedTo: args.userId });
+    // Pobierz wszystkich członków zespołu
+    const teamMembers = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+      .collect();
+    
+    const result = [];
+    const processedUserIds = new Set();
+
+    // Przetwórz członków zespołu
+    for (const member of teamMembers) {
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", member.clerkUserId))
+        .unique();
+      
+      result.push({
+        ...member,
+        name: user?.name ?? "Użytkownik bez nazwy",
+        email: user?.email ?? "Brak emaila",
+        imageUrl: user?.imageUrl,
+        source: "teamMember"
+      });
+      
+      processedUserIds.add(member.clerkUserId);
+    }
+
+    // Jeśli podano projectId, dodaj klientów z tabeli clients
+    if (args.projectId) {
+      const projectClients = await ctx.db
+        .query("clients")
+        .filter(q => q.and(
+          q.eq(q.field("projectId"), args.projectId),
+          q.eq(q.field("status"), "active")
+        ))
+        .collect();
+
+      for (const client of projectClients) {
+        const clientUserId = client.clerkUserId ?? "";
+        
+        // Sprawdź czy klient nie jest już w wynikach (z teamMembers)
+        if (!client.clerkUserId || !processedUserIds.has(client.clerkUserId)) {
+          let user = null;
+          
+          if (client.clerkUserId) {
+            user = await ctx.db
+              .query("users")
+              .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", client.clerkUserId!))
+              .unique();
+          }
+
+          result.push({
+            _id: client._id,
+            _creationTime: client._creationTime,
+            teamId: client.teamId,
+            clerkUserId: clientUserId,
+            clerkOrgId: client.clerkOrgId,
+            role: "client" as const,
+            permissions: [],
+            projectIds: args.projectId ? [args.projectId] : undefined,
+            joinedAt: client.joinedAt || client.invitedAt,
+            isActive: true,
+            name: user?.name ?? client.email.split('@')[0],
+            email: user?.email ?? client.email,
+            imageUrl: user?.imageUrl,
+            source: "clientOnly"
+          });
+        }
+      }
+    }
+
+    return result;
   },
 });
+
+
 
 export const updateProjectTaskStatusSettings = mutation({
   args: {
@@ -1631,24 +1743,7 @@ export const updateProjectTaskStatusSettings = mutation({
   }
 });
 
-export const internalDeleteAllProjectsAndTasks = internalMutation({
-  args: {},
-  async handler(ctx) {
-    const allProjects = await ctx.db.query("projects").collect();
-    const projectDeletionPromises = allProjects.map(p => ctx.db.delete(p._id));
-    await Promise.all(projectDeletionPromises);
 
-    const allTasks = await ctx.db.query("tasks").collect();
-    const taskDeletionPromises = allTasks.map(t => ctx.db.delete(t._id));
-    await Promise.all(taskDeletionPromises);
-
-    console.log(`Deleted ${allProjects.length} projects and ${allTasks.length} tasks.`);
-    return {
-      deletedProjects: allProjects.length,
-      deletedTasks: allTasks.length
-    };
-  }
-});
 
 // Shopping List Functions
 
@@ -1828,80 +1923,9 @@ export const deleteShoppingListItem = mutation({
     },
 });
 
-export const listProjectsByTeamSlug = query({
-  args: { teamSlug: v.string() },
-  async handler(ctx, args) {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
 
-    const team = await ctx.db
-      .query("teams")
-      .withIndex("by_slug", (q) => q.eq("slug", args.teamSlug))
-      .unique();
 
-    if (!team) {
-      return [];
-    }
-    
-    const projects = await ctx.db
-      .query("projects")
-      .withIndex("by_team", (q) => q.eq("teamId", team._id))
-      .collect();
 
-    const projectsWithCosts = await Promise.all(
-      projects.map(async (project) => {
-        const tasks = await ctx.db
-          .query("tasks")
-          .withIndex("by_project", (q) => q.eq("projectId", project._id))
-          .collect();
-        const totalCost = tasks.reduce((sum, task) => sum + (task.cost || 0), 0);
-        return {
-          ...project,
-          totalCost,
-        };
-      })
-    );
-    
-    return projectsWithCosts;
-  },
-});
-
-export const getAllTasksByTeam = query({
-  args: { teamSlug: v.string() },
-  async handler(ctx, args) {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const team = await ctx.db
-      .query("teams")
-      .withIndex("by_slug", (q) => q.eq("slug", args.teamSlug))
-      .unique();
-
-    if (!team) {
-      return [];
-    }
-
-    const projects = await ctx.db
-      .query("projects")
-      .withIndex("by_team", (q) => q.eq("teamId", team._id))
-      .collect();
-
-    const tasksArrays = await Promise.all(
-      projects.map(project => 
-        ctx.db
-          .query("tasks")
-          .withIndex("by_project", q => q.eq("projectId", project._id))
-          .collect()
-      )
-    );
-    
-    return tasksArrays.flat();
-  }
-});
 
 export const getShoppingListItemsByProject = query({
   args: { projectId: v.id("projects") },
@@ -1914,36 +1938,7 @@ export const getShoppingListItemsByProject = query({
   },
 });
 
-export const getTeamsForCurrentUser = query({
-  async handler(ctx) {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return [];
-    }
-    const clerkUserId = identity.subject;
 
-    const memberships = await ctx.db
-      .query("teamMembers")
-      .withIndex("by_user", (q) => q.eq("clerkUserId", clerkUserId))
-      .filter((q) => q.eq(q.field("isActive"), true))
-      .collect();
-
-    if (memberships.length === 0) {
-      return [];
-    }
-
-    const teamIds = [...new Set(memberships.map((m) => m.teamId))];
-
-    const teamPromises = teamIds.map((teamId) => ctx.db.get(teamId));
-    const teams = (await Promise.all(teamPromises)).filter(
-      (t): t is Doc<"teams"> => t !== null
-    );
-
-    teams.sort((a, b) => a.name.localeCompare(b.name));
-    
-    return teams;
-  },
-});
 
 export const getProjectsForTeam = query({
   args: { teamId: v.id("teams") },
@@ -1991,5 +1986,507 @@ export const getProjectsForTeam = query({
 
     projects.sort((a, b) => a.name.localeCompare(b.name));
     return projects;
+  },
+});
+
+// Nowa funkcja do usuwania członków zespołu
+export const removeTeamMember = mutation({
+  args: {
+    clerkUserId: v.string(),
+    teamId: v.id("teams"),
+  },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    // Sprawdź uprawnienia wywołującego (musi być admin)
+    const callerMember = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!callerMember || callerMember.role !== "admin") {
+      throw new Error("Only admins can remove team members");
+    }
+
+    // Znajdź członka do usunięcia
+    const targetMember = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", args.teamId).eq("clerkUserId", args.clerkUserId)
+      )
+      .unique();
+
+    if (!targetMember) {
+      throw new Error("Team member not found");
+    }
+
+    // Nie pozwól usunąć siebie
+    if (targetMember.clerkUserId === identity.subject) {
+      throw new Error("Cannot remove yourself from the team");
+    }
+
+    // Usuń członka
+    await ctx.db.delete(targetMember._id);
+
+    // Jeśli to był klient, usuń też wpisy z tabeli clients
+    if (targetMember.role === "client") {
+      const clientRecords = await ctx.db
+        .query("clients")
+        .withIndex("by_clerk_user", q => q.eq("clerkUserId", args.clerkUserId))
+        .filter(q => q.eq(q.field("teamId"), args.teamId))
+        .collect();
+      
+      for (const clientRecord of clientRecords) {
+        await ctx.db.delete(clientRecord._id);
+      }
+    }
+
+    return { success: true };
+  }
+});
+
+// Funkcja do zmiany roli członka zespołu
+export const changeTeamMemberRole = mutation({
+  args: {
+    clerkUserId: v.string(),
+    teamId: v.id("teams"),
+    newRole: v.union(
+      v.literal("admin"),
+      v.literal("member"),
+      v.literal("viewer"),
+      v.literal("client")
+    ),
+    projectId: v.optional(v.id("projects")), // Wymagane dla roli client
+  },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    // Sprawdź uprawnienia wywołującego (musi być admin)
+    const callerMember = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!callerMember || callerMember.role !== "admin") {
+      throw new Error("Only admins can change member roles");
+    }
+
+    // Znajdź członka do zmiany
+    const targetMember = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", args.teamId).eq("clerkUserId", args.clerkUserId)
+      )
+      .unique();
+
+    if (!targetMember) {
+      throw new Error("Team member not found");
+    }
+
+    // Przygotuj dane do aktualizacji
+    const updateData: any = { role: args.newRole };
+
+    // Jeśli zmiana na client, potrzebny jest projectId
+    if (args.newRole === "client") {
+      if (!args.projectId) {
+        throw new Error("Project ID is required for client role");
+      }
+      updateData.projectIds = [args.projectId];
+
+      // Dodaj wpis do tabeli clients
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", args.clerkUserId))
+        .unique();
+
+      if (user) {
+        await ctx.db.insert("clients", {
+          email: user.email,
+          clerkUserId: args.clerkUserId,
+          clerkOrgId: targetMember.clerkOrgId,
+          projectId: args.projectId,
+          teamId: args.teamId,
+          invitedBy: identity.subject,
+          status: "active",
+          invitedAt: Date.now(),
+          joinedAt: Date.now(),
+        });
+      }
+    } else {
+      // Jeśli zmiana z client na inną rolę, usuń projectIds
+      updateData.projectIds = undefined;
+
+      // Usuń wpisy z tabeli clients
+      if (targetMember.role === "client") {
+        const clientRecords = await ctx.db
+          .query("clients")
+          .withIndex("by_clerk_user", q => q.eq("clerkUserId", args.clerkUserId))
+          .filter(q => q.eq(q.field("teamId"), args.teamId))
+          .collect();
+        
+        for (const clientRecord of clientRecords) {
+          await ctx.db.delete(clientRecord._id);
+        }
+      }
+    }
+
+    // Aktualizuj członka
+    await ctx.db.patch(targetMember._id, updateData);
+
+    return { success: true };
+  }
+});
+
+// Dodawanie istniejącego członka organizacji do projektu jako klienta
+export const addExistingMemberToProject = mutation({
+  args: {
+    clerkUserId: v.string(),
+    projectId: v.id("projects"),
+  },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const project = await ctx.db.get(args.projectId);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    // Sprawdź uprawnienia wywołującego
+    const callerMember = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!callerMember || (callerMember.role !== "admin" && callerMember.role !== "member")) {
+      throw new Error("Insufficient permissions");
+    }
+
+    // Znajdź członka organizacji do dodania
+    const targetMember = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", project.teamId).eq("clerkUserId", args.clerkUserId)
+      )
+      .unique();
+
+    if (!targetMember) {
+      throw new Error("User is not a member of this organization");
+    }
+
+    // Sprawdź czy już ma dostęp do tego projektu
+    const existingClient = await ctx.db
+      .query("clients")
+      .withIndex("by_clerk_user", q => q.eq("clerkUserId", args.clerkUserId))
+      .filter(q => q.eq(q.field("projectId"), args.projectId))
+      .unique();
+
+    if (existingClient) {
+      // Jeśli już ma dostęp, upewnij się że jest aktywny
+      if (existingClient.status !== "active") {
+        await ctx.db.patch(existingClient._id, { status: "active" });
+      }
+      return { success: true, message: "User already has access to this project" };
+    }
+
+    // Pobierz dane użytkownika
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", args.clerkUserId))
+      .unique();
+
+    if (!user) {
+      throw new Error("User data not found");
+    }
+
+    // Dodaj do tabeli clients
+    await ctx.db.insert("clients", {
+      email: user.email,
+      clerkUserId: args.clerkUserId,
+      clerkOrgId: targetMember.clerkOrgId,
+      projectId: args.projectId,
+      teamId: project.teamId,
+      invitedBy: identity.subject,
+      status: "active", // Natychmiast aktywny
+      invitedAt: Date.now(),
+      joinedAt: Date.now(),
+    });
+
+    // Aktualizuj członkostwo TYLKO jeśli to klient organizacyjny
+    if (targetMember.role === "client") {
+      const currentProjectIds = targetMember.projectIds || [];
+      if (!currentProjectIds.includes(args.projectId)) {
+        await ctx.db.patch(targetMember._id, {
+          projectIds: [...currentProjectIds, args.projectId],
+        });
+      }
+    }
+    // Dla admin/member/viewer - nie zmieniamy roli organizacyjnej, tylko dodajemy do project clients
+
+    return { success: true, message: "User added to project successfully" };
+  }
+});
+
+// Pobieranie członków organizacji którzy mogą zostać dodani jako klienci projektu
+export const getAvailableOrgMembersForProject = query({
+  args: {
+    projectId: v.id("projects"),
+  },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const project = await ctx.db.get(args.projectId);
+    if (!project) return [];
+
+    // Sprawdź uprawnienia
+    const callerMember = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!callerMember || (callerMember.role !== "admin" && callerMember.role !== "member")) {
+      return [];
+    }
+
+    // Pobierz wszystkich członków organizacji
+    const allMembers = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team", q => q.eq("teamId", project.teamId))
+      .filter(q => q.eq(q.field("isActive"), true))
+      .collect();
+
+    // Pobierz już istniejących project clients
+    const existingProjectClients = await ctx.db
+      .query("clients")
+      .filter(q => q.and(
+        q.eq(q.field("projectId"), args.projectId),
+        q.eq(q.field("status"), "active")
+      ))
+      .collect();
+
+    const existingProjectClientUserIds = new Set(
+      existingProjectClients.map(client => client.clerkUserId).filter(Boolean)
+    );
+
+    // POPRAWIONA LOGIKA: Pokaż tylko tych którzy mogą skorzystać z dodania jako project client
+    const availableMembers = allMembers.filter(member => {
+      // Admin i Member już mają pełny dostęp do wszystkich projektów - nie trzeba ich dodawać jako project clients
+      if (member.role === "admin" || member.role === "member") {
+        return false;
+      }
+
+      // Nie pokazuj tych którzy już są project clients dla tego projektu
+      if (existingProjectClientUserIds.has(member.clerkUserId)) {
+        return false;
+      }
+
+      // Dla klientów organizacyjnych: sprawdź czy już mają ten projekt w projectIds
+      if (member.role === "client" && member.projectIds && member.projectIds.includes(args.projectId)) {
+        return false;
+      }
+
+      // Pokaż: Viewer i Client (którzy jeszcze nie mają dostępu do tego projektu)
+      return true;
+    });
+
+    // Dodaj dane użytkowników
+    const membersWithUserData = await Promise.all(
+      availableMembers.map(async (member) => {
+        const user = await ctx.db
+          .query("users")
+          .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", member.clerkUserId))
+          .unique();
+        
+        return {
+          ...member,
+          name: user?.name ?? "Unknown User",
+          email: user?.email ?? "No email",
+          imageUrl: user?.imageUrl,
+        };
+      })
+    );
+
+    return membersWithUserData;
+  }
+});
+
+// DEBUG: Tymczasowa funkcja do sprawdzenia kto jest w teamMembers
+export const debugTeamMembers = query({
+  args: {
+    projectId: v.id("projects"),
+  },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return { error: "Not authenticated" };
+
+    const project = await ctx.db.get(args.projectId);
+    if (!project) return { error: "Project not found" };
+
+    // Pobierz wszystkich członków tej organizacji
+    const allMembers = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team", q => q.eq("teamId", project.teamId))
+      .collect();
+
+    // Pobierz zespół
+    const team = await ctx.db.get(project.teamId);
+
+    // Dodaj dane użytkowników
+    const membersWithUserData = await Promise.all(
+      allMembers.map(async (member) => {
+        const user = await ctx.db
+          .query("users")
+          .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", member.clerkUserId))
+          .unique();
+        
+        return {
+          clerkUserId: member.clerkUserId,
+          role: member.role,
+          isActive: member.isActive,
+          projectIds: member.projectIds,
+          name: user?.name ?? "No user data",
+          email: user?.email ?? "No email",
+        };
+      })
+    );
+
+    return {
+      teamId: project.teamId,
+      teamName: team?.name,
+      clerkOrgId: team?.clerkOrgId,
+      totalMembers: allMembers.length,
+      members: membersWithUserData
+    };
+  }
+});
+
+// Aktualizacja uprawnień sidebar projektu
+export const updateProjectSidebarPermissions = mutation({
+  args: {
+    projectId: v.id("projects"),
+    sidebarPermissions: v.object({
+      overview: v.optional(v.object({ visible: v.boolean() })),
+      tasks: v.optional(v.object({ visible: v.boolean() })),
+      calendar: v.optional(v.object({ visible: v.boolean() })),
+      gantt: v.optional(v.object({ visible: v.boolean() })),
+      files: v.optional(v.object({ visible: v.boolean() })),
+      shopping_list: v.optional(v.object({ visible: v.boolean() })),
+      settings: v.optional(v.object({ visible: v.boolean() })),
+    }),
+  },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const project = await ctx.db.get(args.projectId);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    // Sprawdź uprawnienia - tylko admin i member mogą zmieniać uprawnienia
+    const teamMember = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!teamMember || (teamMember.role !== "admin" && teamMember.role !== "member")) {
+      throw new Error("Insufficient permissions to update sidebar permissions");
+    }
+
+    // Aktualizuj uprawnienia sidebar
+    await ctx.db.patch(args.projectId, {
+      sidebarPermissions: args.sidebarPermissions,
+    });
+
+    return { success: true };
+  },
+});
+
+// Pobieranie uprawnień sidebar projektu dla aktualnego użytkownika
+export const getProjectSidebarPermissions = query({
+  args: { projectId: v.id("projects") },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const project = await ctx.db.get(args.projectId);
+    if (!project) return null;
+
+    // Sprawdź rolę użytkownika
+    const teamMember = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    // Sprawdź czy użytkownik jest klientem projektu
+    const clientAccess = await ctx.db
+      .query("clients")
+      .withIndex("by_clerk_user", q => q.eq("clerkUserId", identity.subject))
+      .filter(q => q.and(
+        q.eq(q.field("projectId"), args.projectId),
+        q.eq(q.field("status"), "active")
+      ))
+      .unique();
+
+    // Domyślne uprawnienia
+    const defaultPermissions = {
+      overview: { visible: true },
+      tasks: { visible: true },
+      calendar: { visible: true },
+      gantt: { visible: true },
+      files: { visible: true },
+      shopping_list: { visible: true },
+      settings: { visible: true },
+    };
+
+    // Jeśli użytkownik jest admin lub member, ma pełne uprawnienia
+    if (teamMember && (teamMember.role === "admin" || teamMember.role === "member")) {
+      return {
+        permissions: defaultPermissions,
+        userRole: teamMember.role,
+        isClient: false,
+      };
+    }
+
+    // Jeśli użytkownik jest klientem, zastosuj ograniczenia
+    if (teamMember?.role === "client" || clientAccess) {
+      const sidebarPermissions = project.sidebarPermissions || {};
+      
+              return {
+          permissions: {
+            overview: sidebarPermissions.overview || defaultPermissions.overview,
+            tasks: sidebarPermissions.tasks || defaultPermissions.tasks,
+            calendar: sidebarPermissions.calendar || defaultPermissions.calendar,
+            gantt: sidebarPermissions.gantt || defaultPermissions.gantt,
+            files: sidebarPermissions.files || defaultPermissions.files,
+            shopping_list: sidebarPermissions.shopping_list || defaultPermissions.shopping_list,
+            settings: sidebarPermissions.settings || { visible: false }, // Domyślnie clients nie widzą ustawień
+          },
+          userRole: teamMember?.role || "client",
+          isClient: true,
+        };
+    }
+
+    // Jeśli użytkownik nie ma dostępu
+    return null;
   },
 });

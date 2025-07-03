@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Users, Mail, UserX, Crown, User } from "lucide-react";
 import { toast } from "sonner";
 import { InviteClientForm } from "@/components/InviteClientForm";
+import { AddFromOrganizationForm } from "@/components/AddFromOrganizationForm";
 import { Id } from "@/convex/_generated/dataModel";
 
 interface ProjectMembersProps {
@@ -74,12 +75,15 @@ export default function ProjectMembers({ project }: ProjectMembersProps) {
                 <Badge variant="default">{admins.length}</Badge>
               </div>
               <div className="space-y-2">
-                {admins.map((member) => (
+                {admins.map((member: TeamMember) => (
                   <MemberRow 
                     key={member._id} 
                     member={member} 
                     role="Admin"
                     description="Full project access"
+                    canManage={false}
+                    projectId={project._id}
+                    teamId={project.teamId}
                   />
                 ))}
               </div>
@@ -95,12 +99,15 @@ export default function ProjectMembers({ project }: ProjectMembersProps) {
                 <Badge variant="secondary">{members.length}</Badge>
               </div>
               <div className="space-y-2">
-                {members.map((member) => (
+                {members.map((member: TeamMember) => (
                   <MemberRow 
                     key={member._id} 
                     member={member} 
                     role="Member"
                     description="Can edit tasks and files"
+                    canManage={isCurrentUserAdmin}
+                    projectId={project._id}
+                    teamId={project.teamId}
                   />
                 ))}
               </div>
@@ -116,12 +123,15 @@ export default function ProjectMembers({ project }: ProjectMembersProps) {
                 <Badge variant="outline">{viewers.length}</Badge>
               </div>
               <div className="space-y-2">
-                {viewers.map((member) => (
+                {viewers.map((member: TeamMember) => (
                   <MemberRow 
                     key={member._id} 
                     member={member} 
                     role="Viewer"
                     description="Read-only access"
+                    canManage={isCurrentUserAdmin}
+                    projectId={project._id}
+                    teamId={project.teamId}
                   />
                 ))}
               </div>
@@ -144,7 +154,7 @@ export default function ProjectMembers({ project }: ProjectMembersProps) {
         <CardContent className="space-y-4 px-4 lg:px-6">
           {clients && clients.length > 0 ? (
             <div className="space-y-2">
-              {clients.map((client) => (
+              {clients.map((client: TeamMember) => (
                 <ClientRow
                   key={client._id}
                   client={client}
@@ -162,12 +172,15 @@ export default function ProjectMembers({ project }: ProjectMembersProps) {
         </CardContent>
       </Card>
 
+      {/* Add from Organization Section */}
+      <AddFromOrganizationForm projectId={project._id} />
+
       {/* Invite Client Section */}
       <Card>
         <CardHeader className="pb-4">
-          <CardTitle className="text-lg lg:text-xl">Invite Client</CardTitle>
+          <CardTitle className="text-lg lg:text-xl">Invite New Client</CardTitle>
           <CardDescription className="text-sm">
-            Invite a client to view this specific project. They will only have access to this project.
+            Invite a new client by email. They will be added to the organization and given access to this project.
           </CardDescription>
         </CardHeader>
         <CardContent className="px-4 lg:px-6">
@@ -182,18 +195,53 @@ export default function ProjectMembers({ project }: ProjectMembersProps) {
 function MemberRow({ 
   member, 
   role, 
-  description 
+  description,
+  canManage,
+  projectId,
+  teamId
 }: { 
   member: TeamMember; 
   role: string; 
-  description: string; 
+  description: string;
+  canManage: boolean;
+  projectId: Id<"projects">;
+  teamId: Id<"teams">;
 }) {
+  const removeTeamMember = useMutation(api.myFunctions.removeTeamMember);
+  const changeTeamMemberRole = useMutation(api.myFunctions.changeTeamMemberRole);
+
   const getRoleColor = (role: string) => {
     switch (role.toLowerCase()) {
       case 'admin': return 'default';
       case 'member': return 'secondary';
       case 'viewer': return 'outline';
       default: return 'secondary';
+    }
+  };
+
+  const handleRemoveMember = async () => {
+    try {
+      await removeTeamMember({
+        clerkUserId: member.clerkUserId,
+        teamId: teamId,
+      });
+      toast.success("Team member removed");
+    } catch (error) {
+      toast.error("Failed to remove team member: " + (error as Error).message);
+    }
+  };
+
+  const handleChangeToClient = async () => {
+    try {
+      await changeTeamMemberRole({
+        clerkUserId: member.clerkUserId,
+        teamId: teamId,
+        newRole: "client",
+        projectId: projectId,
+      });
+      toast.success("Member changed to project client");
+    } catch (error) {
+      toast.error("Failed to change role: " + (error as Error).message);
     }
   };
 
@@ -213,6 +261,39 @@ function MemberRow({
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
         <Badge variant={getRoleColor(role) as "default" | "secondary" | "outline"} className="text-xs">{role}</Badge>
+        {canManage && member.role === "member" && (
+          <>
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={handleChangeToClient}
+              className="text-blue-600 hover:text-blue-700 h-6 w-6 lg:h-8 lg:w-8 p-0"
+              title="Change to Project Client"
+            >
+              <Mail className="h-3 w-3 lg:h-4 lg:w-4" />
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={handleRemoveMember}
+              className="text-red-600 hover:text-red-700 h-6 w-6 lg:h-8 lg:w-8 p-0"
+              title="Remove from team"
+            >
+              <UserX className="h-3 w-3 lg:h-4 lg:w-4" />
+            </Button>
+          </>
+        )}
+        {canManage && member.role === "viewer" && (
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={handleRemoveMember}
+            className="text-red-600 hover:text-red-700 h-6 w-6 lg:h-8 lg:w-8 p-0"
+            title="Remove from team"
+          >
+            <UserX className="h-3 w-3 lg:h-4 lg:w-4" />
+          </Button>
+        )}
       </div>
     </div>
   );

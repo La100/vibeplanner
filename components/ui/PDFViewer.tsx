@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
@@ -18,6 +18,21 @@ export default function PDFViewer({ url, fileName }: PDFViewerProps) {
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [containerWidth, setContainerWidth] = useState<number>(800);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const updateSize = () => {
+      if (containerRef.current) {
+        const width = containerRef.current.offsetWidth - 40; // 40px for padding
+        setContainerWidth(Math.max(300, width)); // minimum 300px
+      }
+    };
+
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
 
   function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
     setNumPages(numPages);
@@ -92,7 +107,7 @@ export default function PDFViewer({ url, fileName }: PDFViewerProps) {
       </div>
 
       {/* PDF Content */}
-      <div className="flex-1 overflow-auto bg-gray-100 p-4">
+      <div ref={containerRef} className="flex-1 overflow-auto bg-gray-100 p-4">
         <div className="flex justify-center">
           {loading && (
             <div className="flex items-center justify-center h-64">
@@ -109,7 +124,7 @@ export default function PDFViewer({ url, fileName }: PDFViewerProps) {
           >
             <Page 
               pageNumber={pageNumber}
-              width={Math.min(800, window.innerWidth - 100)}
+              width={containerWidth}
               loading=""
               error=""
               renderTextLayer={false}

@@ -118,6 +118,8 @@ export default function ShoppingListView() {
       return <div>Project not found</div>
   }
 
+  const currencySymbol = project.currency === "EUR" ? "€" : project.currency === "PLN" ? "zł" : "$";
+
   const handleAddSection = async () => {
     if (!newSectionName.trim()) return;
     
@@ -486,7 +488,7 @@ export default function ShoppingListView() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Unit Price ($)</label>
+                  <label className="text-sm font-medium">Unit Price ({currencySymbol})</label>
                   <Input
                     type="number"
                     step="0.01"
@@ -630,7 +632,7 @@ export default function ShoppingListView() {
                               />
                             </div>
                             <div>
-                              <label className="text-sm font-medium">Unit Price ($)</label>
+                              <label className="text-sm font-medium">Unit Price ({currencySymbol})</label>
                               <Input
                                 type="number"
                                 step="0.01"
@@ -739,10 +741,10 @@ export default function ShoppingListView() {
                             <div className="text-right flex-shrink-0">
                               <div className="text-sm text-gray-600">Total Price</div>
                               <div className="text-xl font-bold text-gray-900">
-                                {item.totalPrice ? `$${item.totalPrice.toFixed(2)}` : '-'}
+                                {item.totalPrice ? `${currencySymbol}${item.totalPrice.toFixed(2)}` : '-'}
                               </div>
                               <div className="text-sm text-gray-500">
-                                {item.unitPrice ? `$${item.unitPrice.toFixed(2)}/pc` : ''}
+                                {item.unitPrice ? `${currencySymbol}${item.unitPrice.toFixed(2)}/pc` : ''}
                               </div>
                             </div>
                           </div>
@@ -890,12 +892,12 @@ export default function ShoppingListView() {
               {sectionTotals.map(({ section, total }) => (
                 <div key={section} className="flex justify-between items-center">
                   <span className="font-medium">{section}</span>
-                  <span>${total.toFixed(2)}</span>
+                  <span>{currencySymbol}{total.toFixed(2)}</span>
                 </div>
               ))}
               <div className="border-t pt-2 flex justify-between items-center font-bold text-lg">
                 <span>Grand Total:</span>
-                <span>${grandTotal.toFixed(2)}</span>
+                <span>{currencySymbol}{grandTotal.toFixed(2)}</span>
               </div>
             </div>
           </CardContent>

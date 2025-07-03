@@ -66,6 +66,15 @@ export default defineSchema({
       in_progress: v.object({ name: v.string(), color: v.string() }),
       review: v.object({ name: v.string(), color: v.string() }),
       done: v.object({ name: v.string(), color: v.string() }),
+    })),
+    sidebarPermissions: v.optional(v.object({
+      overview: v.optional(v.object({ visible: v.boolean() })),
+      tasks: v.optional(v.object({ visible: v.boolean() })),
+      calendar: v.optional(v.object({ visible: v.boolean() })),
+      gantt: v.optional(v.object({ visible: v.boolean() })),
+      files: v.optional(v.object({ visible: v.boolean() })),
+      shopping_list: v.optional(v.object({ visible: v.boolean() })),
+      settings: v.optional(v.object({ visible: v.boolean() })),
     }))
   })
     .index("by_team", ["teamId"])
@@ -132,6 +141,7 @@ export default defineSchema({
     folderId: v.optional(v.id("folders")), // W którym folderze znajduje się plik
     fileType: v.union(
       v.literal("image"),
+      v.literal("video"),
       v.literal("document"),
       v.literal("drawing"),
       v.literal("model"),

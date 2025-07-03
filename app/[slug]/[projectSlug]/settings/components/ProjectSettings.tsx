@@ -17,7 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-import { Users, Settings, Shield, AlertTriangle } from "lucide-react";
+import { Users, Settings, Shield, AlertTriangle, Eye } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import TaskStatusSettings from "./TaskStatusSettings";
 import ProjectMembers from "./ProjectMembers";
+import SidebarPermissions from "./SidebarPermissions";
 
 
 
@@ -43,7 +44,7 @@ export default function ProjectSettings() {
   const params = useParams<{ slug: string, projectSlug: string }>();
   const router = useRouter();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"general" | "members" | "taskstatus" | "advanced">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "members" | "permissions" | "taskstatus" | "advanced">("general");
   
   const project = useQuery(api.myFunctions.getProjectBySlug, {
     teamSlug: params.slug,
@@ -154,7 +155,7 @@ export default function ProjectSettings() {
       </div>
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)} className="w-full">
-        <TabsList className="grid w-full grid-cols-4 h-auto p-1 mb-6">
+        <TabsList className="grid w-full grid-cols-5 h-auto p-1 mb-6">
           <TabsTrigger value="general" className="flex flex-col items-center gap-1 p-2 text-xs data-[state=active]:bg-background">
             <Settings className="h-4 w-4" />
             <span className="text-xs">General</span>
@@ -162,6 +163,10 @@ export default function ProjectSettings() {
           <TabsTrigger value="members" className="flex flex-col items-center gap-1 p-2 text-xs data-[state=active]:bg-background">
             <Users className="h-4 w-4" />
             <span className="text-xs">Members</span>
+          </TabsTrigger>
+          <TabsTrigger value="permissions" className="flex flex-col items-center gap-1 p-2 text-xs data-[state=active]:bg-background">
+            <Eye className="h-4 w-4" />
+            <span className="text-xs">Permissions</span>
           </TabsTrigger>
           <TabsTrigger value="taskstatus" className="flex flex-col items-center gap-1 p-2 text-xs data-[state=active]:bg-background">
             <Shield className="h-4 w-4" />
@@ -182,6 +187,10 @@ export default function ProjectSettings() {
 
         <TabsContent value="members" className="mt-0">
           <MembersTab project={project} />
+        </TabsContent>
+
+        <TabsContent value="permissions" className="mt-0">
+          <PermissionsTab project={project} />
         </TabsContent>
 
         <TabsContent value="taskstatus" className="mt-0">
@@ -279,6 +288,11 @@ function GeneralTab({
 // Members Tab
 function MembersTab({ project }: { project: { _id: Id<"projects">; teamId: Id<"teams">; name: string } }) {
   return <ProjectMembers project={project} />;
+}
+
+// Permissions Tab
+function PermissionsTab({ project }: { project: { _id: Id<"projects">; teamId: Id<"teams">; name: string } }) {
+  return <SidebarPermissions projectId={project._id} />;
 }
 
 // Task Status Tab

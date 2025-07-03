@@ -23,7 +23,8 @@ import {
   Eye,
   FolderOpen,
   FolderPlus,
-  ArrowLeft
+  ArrowLeft,
+  Play
 } from "lucide-react";
 
 import { toast } from "sonner";
@@ -222,6 +223,7 @@ export default function FilesView() {
 
   const getFileTypeIcon = (fileType: string) => {
     if (fileType === "image") return <ImageIcon className="h-8 w-8" />;
+    if (fileType === "video") return <Play className="h-8 w-8" />;
     if (fileType === "document") return <FileText className="h-8 w-8" />;
     return <FileText className="h-8 w-8" />;
   };
@@ -301,7 +303,7 @@ export default function FilesView() {
           <input
             type="file"
             onChange={handleFileUpload}
-            accept="image/*,application/pdf,.dwg,.dxf,.doc,.docx"
+            accept="image/*,video/*,application/pdf,.dwg,.dxf,.doc,.docx,.mp4,.avi,.mov,.wmv,.flv,.webm,.mkv"
             className="absolute inset-0 opacity-0 cursor-pointer"
             id="file-upload"
           />
@@ -338,7 +340,7 @@ export default function FilesView() {
 
         {/* Files */}
         {content.files.map((file) => (
-          <Card key={file._id} className="group hover:shadow-lg transition-shadow">
+          <Card key={file._id} className="hover:shadow-lg transition-shadow">
             <CardContent className="p-4">
               <div className="aspect-square bg-gray-50 rounded-lg mb-3 flex items-center justify-center overflow-hidden">
                 {file.fileType === "image" && file.url ? (
@@ -350,6 +352,18 @@ export default function FilesView() {
                     height={100}
                     onClick={() => setFileForPreview(file)}
                   />
+                ) : file.fileType === "video" && file.url ? (
+                  <div className="relative w-full h-full cursor-pointer" onClick={() => setFileForPreview(file)}>
+                    <video 
+                      src={file.url} 
+                      className="w-full h-full object-cover rounded-lg"
+                      muted
+                      preload="metadata"
+                    />
+                    <div className="absolute inset-0 bg-black/20 flex items-center justify-center rounded-lg">
+                      <Play className="h-8 w-8 text-white" />
+                    </div>
+                  </div>
                 ) : file.fileType === "document" && file.url && file.mimeType === "application/pdf" ? (
                   <PDFThumbnail
                     url={file.url}
@@ -379,7 +393,7 @@ export default function FilesView() {
                   )}
                 </div>
 
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex gap-1">
                   {file.url && (
                     <>
                       <Button
@@ -446,33 +460,45 @@ export default function FilesView() {
 
       {/* File Preview Dialog */}
       <Dialog open={!!fileForPreview} onOpenChange={() => setFileForPreview(null)}>
-        <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="!max-w-[95vw] !max-h-[95vh] !w-[95vw] !h-[95vh] flex flex-col p-0">
+          <DialogHeader className="p-6 pb-2">
             <DialogTitle>{fileForPreview?.name}</DialogTitle>
             <DialogDescription>
               {fileForPreview?.fileType} - Uploaded {fileForPreview && formatDistanceToNow(new Date(fileForPreview._creationTime), { addSuffix: true })}
             </DialogDescription>
           </DialogHeader>
-          <div className="flex-1 overflow-auto">
+          <div className="flex-1 overflow-auto flex items-center justify-center p-2">
             {fileForPreview?.fileType === 'image' && fileForPreview?.url && (
               <Image
                 src={fileForPreview.url}
                 alt={fileForPreview.name}
-                className="max-w-full max-h-full object-contain mx-auto"
-                width={800}
-                height={800}
+                className="max-w-full max-h-full object-contain"
+                width={1200}
+                height={1200}
               />
             )}
+            {fileForPreview?.fileType === 'video' && fileForPreview?.url && (
+              <video 
+                src={fileForPreview.url}
+                controls
+                className="max-w-full max-h-full"
+                preload="metadata"
+              >
+                Your browser does not support the video tag.
+              </video>
+            )}
             {fileForPreview?.fileType === 'document' && fileForPreview?.url && fileForPreview?.mimeType === 'application/pdf' && (
-              <PDFViewer 
-                url={fileForPreview.url}
-                fileName={fileForPreview.name}
-              />
+              <div className="w-full h-full">
+                <PDFViewer 
+                  url={fileForPreview.url}
+                  fileName={fileForPreview.name}
+                />
+              </div>
             )}
             {fileForPreview?.fileType === 'document' && fileForPreview?.url && fileForPreview?.mimeType !== 'application/pdf' && (
               <iframe 
                 src={`https://docs.google.com/gview?url=${encodeURIComponent(fileForPreview.url)}&embedded=true`} 
-                className="w-full h-full" 
+                className="w-full h-full min-h-[70vh]" 
               />
             )}
           </div>

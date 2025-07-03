@@ -47,7 +47,7 @@ http.route({
         },
         body: JSON.stringify({
           email_address: email,
-          role: "basic_member", // lub "admin" - Clerk nie ma roli "client"
+          role: "org:customer",
           public_metadata: {
             invited_to_project: projectId, // Metadane do identyfikacji w webhook
           }

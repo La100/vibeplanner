@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
+import { useOrganization } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import { 
   Sidebar,
@@ -18,51 +19,37 @@ import {
 import { 
   LayoutDashboard,
   Settings, 
-  Calendar,
-  GanttChartSquare,
-  ShoppingCart,
+  Users,
+  FolderOpen,
+  Building2,
   ArrowLeft,
-  CheckSquare,
-  Files
+  BarChart3
 } from "lucide-react";
 import { Suspense } from "react";
 
-function ProjectSidebarContent() {
-  const params = useParams<{ slug: string, projectSlug: string }>();
+function CompanySidebarContent() {
+  const params = useParams<{ slug: string }>();
   const router = useRouter();
   const { setOpenMobile } = useSidebar();
+  const { organization } = useOrganization();
   
-  const project = useQuery(api.myFunctions.getProjectBySlug, { 
-    teamSlug: params.slug, 
-    projectSlug: params.projectSlug 
-  });
-
-  const sidebarPermissions = useQuery(api.myFunctions.getProjectSidebarPermissions, 
-    project ? { projectId: project._id } : "skip"
+  const team = useQuery(api.myFunctions.getTeamBySlug, 
+    params.slug ? { slug: params.slug } : "skip"
   );
 
-  const allNavItems = [
-    { href: `/${params.slug}/${params.projectSlug}`, label: "Overview", icon: LayoutDashboard, key: "overview" },
-    { href: `/${params.slug}/${params.projectSlug}/tasks`, label: "Tasks", icon: CheckSquare, key: "tasks" },
-    { href: `/${params.slug}/${params.projectSlug}/calendar`, label: "Calendar", icon: Calendar, key: "calendar" },
-    { href: `/${params.slug}/${params.projectSlug}/gantt`, label: "Gantt", icon: GanttChartSquare, key: "gantt" },
-    { href: `/${params.slug}/${params.projectSlug}/files`, label: "Files", icon: Files, key: "files" },
-    { href: `/${params.slug}/${params.projectSlug}/shopping-list`, label: "Shopping List", icon: ShoppingCart, key: "shopping_list" },
-    { href: `/${params.slug}/${params.projectSlug}/settings`, label: "Settings", icon: Settings, key: "settings" },
+  const navItems = [
+    { href: `/${params.slug}`, label: "Dashboard", icon: LayoutDashboard },
+    { href: `/${params.slug}/projects`, label: "Projects", icon: FolderOpen },
+    { href: `/${params.slug}/team`, label: "Team", icon: Users },
+    { href: `/${params.slug}/reports`, label: "Reports", icon: BarChart3 },
+    { href: `/${params.slug}/settings`, label: "Settings", icon: Settings },
   ];
-
-  // Filter navigation items based on permissions
-  const navItems = sidebarPermissions ? allNavItems.filter(item => {
-    const permission = sidebarPermissions.permissions[item.key as keyof typeof sidebarPermissions.permissions];
-    return permission?.visible !== false; // Show item if permission is undefined or visible is true
-  }) : allNavItems;
 
   const handleLinkClick = () => {
     setOpenMobile(false);
   };
 
   const handleLinkHover = (href: string) => {
-    // Prefetch the route when user hovers over the link
     router.prefetch(href);
   };
 
@@ -72,28 +59,29 @@ function ProjectSidebarContent() {
         <div className="flex flex-col gap-2 py-2 px-2">
           <SidebarMenuButton asChild>
             <Link 
-              href={`/${params.slug}`}
+              href="/"
               onClick={handleLinkClick}
-              onMouseEnter={() => handleLinkHover(`/${params.slug}`)}
+              onMouseEnter={() => handleLinkHover("/")}
               className="flex items-center gap-2"
             >
               <ArrowLeft className="h-4 w-4" />
-              <span>Back to Team</span>
+              <span>Back to Home</span>
             </Link>
           </SidebarMenuButton>
           
           <div className="px-2 py-1">
             <h2 className="text-lg font-semibold text-sidebar-foreground/90">
-              {project?.name || "Loading..."}
+              {organization?.name || team?.name || "Loading..."}
             </h2>
-            
+            <p className="text-sm text-sidebar-foreground/60">
+              Company Dashboard
+            </p>
           </div>
         </div>
       </SidebarHeader>
 
       <SidebarContent>
         <SidebarGroup>
-  
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.map((item) => (
@@ -114,12 +102,11 @@ function ProjectSidebarContent() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-
     </Sidebar>
   );
 }
 
-export function ProjectSidebar() {
+export function CompanySidebar() {
   return (
     <Suspense fallback={
       <Sidebar variant="inset">
@@ -133,10 +120,9 @@ export function ProjectSidebar() {
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
-          
             <SidebarGroupContent>
               <SidebarMenu>
-                {Array.from({ length: 7 }).map((_, i) => (
+                {Array.from({ length: 5 }).map((_, i) => (
                   <SidebarMenuItem key={i}>
                     <div className="h-10 bg-muted rounded animate-pulse mx-2 mb-1" />
                   </SidebarMenuItem>
@@ -147,7 +133,7 @@ export function ProjectSidebar() {
         </SidebarContent>
       </Sidebar>
     }>
-      <ProjectSidebarContent />
+      <CompanySidebarContent />
     </Suspense>
   );
 } 

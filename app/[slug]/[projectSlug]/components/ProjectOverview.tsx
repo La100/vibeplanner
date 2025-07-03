@@ -87,7 +87,7 @@ function ProjectOverviewContent() {
       <div className="mb-4 lg:mb-6">
         <h1 className="text-2xl lg:text-3xl font-bold">Project Overview</h1>
         <p className="text-muted-foreground text-sm lg:text-base">
-          A summary of {project.name} {project.projectId && `(Project #${project.projectId})`}.
+          A summary of {project.name} 
         </p>
       </div>
 
