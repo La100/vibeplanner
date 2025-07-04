@@ -135,4 +135,4 @@ export function CompanySidebar() {
       <CompanySidebarContent />
     </Suspense>
   );
-} 
+}

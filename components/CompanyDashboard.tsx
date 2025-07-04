@@ -105,7 +105,7 @@ export default function CompanyDashboard() {
   }
 
   return (
-    <div className="flex-1 p-6 space-y-6">
+    <div className="space-y-6">
       <ProjectOverview 
         tasks={teamTasks || []} 
         projects={projects || []} 
@@ -172,4 +172,4 @@ export default function CompanyDashboard() {
       </div>
     </div>
   );
-} 
+}
