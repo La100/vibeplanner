@@ -49,19 +49,19 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
   const [showNewProjectForm, setShowNewProjectForm] = useState(false);
   
   // Sync team with Clerk organization
-  const syncTeam = useMutation(api.myFunctions.syncTeamWithClerkOrg);
+  const syncTeam = useMutation(api.teams.syncTeamWithClerkOrg);
   
   // Check if team exists first
-  const team = useQuery(api.myFunctions.getTeamByClerkOrg, 
+  const team = useQuery(api.teams.getTeamByClerkOrg, 
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
   
   // Get projects for this organization
-  const projects = useQuery(api.myFunctions.listProjectsByClerkOrg, 
+  const projects = useQuery(api.projects.listProjectsByClerkOrg, 
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
   
-  const createProject = useMutation(api.myFunctions.createProjectInOrg);
+  const createProject = useMutation(api.projects.createProjectInOrg);
   
   // Auto-sync organization when it loads
   useEffect(() => {

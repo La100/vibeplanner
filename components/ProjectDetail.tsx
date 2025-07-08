@@ -32,11 +32,11 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
   const [showNewTaskForm, setShowNewTaskForm] = useState(false);
   const [taskFilter, setTaskFilter] = useState<"all" | "todo" | "in_progress" | "done">("all");
 
-  const project = useQuery(api.myFunctions.getProject, { projectId });
-  const tasks = useQuery(api.myFunctions.listProjectTasks, { projectId });
+  const project = useQuery(api.projects.getProject, { projectId });
+  const tasks = useQuery(api.tasks.listProjectTasks, { projectId });
   
-  const createTask = useMutation(api.myFunctions.createTask);
-  const updateTaskStatus = useMutation(api.myFunctions.updateTaskStatus);
+  const createTask = useMutation(api.tasks.createTask);
+  const updateTaskStatus = useMutation(api.tasks.updateTaskStatus);
 
   const [newTask, setNewTask] = useState({
     title: "",

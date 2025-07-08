@@ -28,6 +28,35 @@ import {
 
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
+import { Skeleton } from "@/components/ui/skeleton";
+
+export function FilesViewSkeleton() {
+  return (
+    <div className="p-6 animate-pulse">
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex-1">
+          <Skeleton className="h-9 w-1/2 mb-3" />
+          <Skeleton className="h-5 w-1/3 mb-2" />
+          <Skeleton className="h-5 w-1/4" />
+        </div>
+        <div className="flex gap-2">
+          <Skeleton className="h-10 w-32" />
+          <Skeleton className="h-10 w-10" />
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+        {[...Array(8)].map((_, i) => (
+          <div key={i} className="border rounded-lg p-4 flex flex-col items-center justify-center">
+            <Skeleton className="h-12 w-12 mb-3 rounded-lg" />
+            <Skeleton className="h-5 w-3/4" />
+            <Skeleton className="h-4 w-1/2 mt-2" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function FilesView() {
   const params = useParams<{ slug: string, projectSlug: string }>();
@@ -44,7 +73,7 @@ export default function FilesView() {
     mimeType: string;
   } | null>(null);
 
-  const project = useQuery(api.myFunctions.getProjectBySlug, {
+  const project = useQuery(api.projects.getProjectBySlug, {
     teamSlug: params.slug,
     projectSlug: params.projectSlug,
   });
@@ -59,12 +88,12 @@ export default function FilesView() {
     currentFolderId ? { folderId: currentFolderId } : "skip"
   );
 
-  const hasAccess = useQuery(api.myFunctions.checkUserProjectAccess, 
+  const hasAccess = useQuery(api.projects.checkUserProjectAccess, 
     project ? { projectId: project._id } : "skip"
   );
 
   const generateUploadUrl = useMutation(api.files.generateUploadUrlWithCustomKey);
-  const attachFile = useMutation(api.files.attachFileToProject);
+  const addFile = useMutation(api.files.addFile);
   const createFolder = useMutation(api.files.createFolder);
   const deleteFile = useMutation(api.files.deleteFile);
   const deleteFolder = useMutation(api.files.deleteFolder);
@@ -114,22 +143,20 @@ export default function FilesView() {
     }))
   ];
 
-  if (project === undefined || content === undefined || hasAccess === undefined || 
-      (currentFolderId && currentFolder === undefined)) {
-    return <div>Loading...</div>;
-  }
-
-  if (project === null) {
-    return <div>Project not found.</div>;
-  }
-
-  if (hasAccess === false) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-        <h1 className="text-2xl font-bold text-red-600 mb-2">Access Denied</h1>
-        <p className="text-muted-foreground">You don't have permission to access this project.</p>
-      </div>
-    );
+  if (!project || !content || hasAccess === false || (currentFolderId && !currentFolder)) {
+    // This will be handled by Suspense
+    if (hasAccess === false) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
+          <h1 className="text-2xl font-bold text-red-600 mb-2">Access Denied</h1>
+          <p className="text-muted-foreground">You don't have permission to access this project.</p>
+        </div>
+      );
+    }
+    if (!project) {
+       return <div>Project not found.</div>;
+    }
+    return null;
   }
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -160,7 +187,7 @@ export default function FilesView() {
       const fileKey = uploadData.key;
       
       // 4. Attach file to project
-      await attachFile({
+      await addFile({
         projectId: project!._id,
         folderId: currentFolderId,
         fileKey,
@@ -228,7 +255,7 @@ export default function FilesView() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
+    <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-3">

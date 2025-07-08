@@ -17,7 +17,7 @@ export default function TaskEditor({
   initialContent = '', 
   placeholder = "Opisz szczegóły zadania..." 
 }: TaskEditorProps) {
-  const updateTask = useMutation(api.myFunctions.updateTask);
+  const updateTask = useMutation(api.tasks.updateTask);
 
   const handleSave = useCallback(async (content: string) => {
     try {

@@ -32,12 +32,12 @@ function ProjectSidebarContent() {
   const router = useRouter();
   const { setOpenMobile } = useSidebar();
   
-  const project = useQuery(api.myFunctions.getProjectBySlug, { 
+  const project = useQuery(api.projects.getProjectBySlug, { 
     teamSlug: params.slug, 
     projectSlug: params.projectSlug 
   });
 
-  const sidebarPermissions = useQuery(api.myFunctions.getProjectSidebarPermissions, 
+  const sidebarPermissions = useQuery(api.projects.getProjectSidebarPermissions, 
     project ? { projectId: project._id } : "skip"
   );
 

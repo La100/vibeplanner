@@ -7,54 +7,88 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, AlertTriangle, Calendar, TrendingUp } from "lucide-react";
 import { Suspense } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
+
+function ProjectOverviewSkeleton() {
+  return (
+    <div className="px-4 lg:px-0 animate-pulse">
+      <div className="mb-4 lg:mb-6">
+        <Skeleton className="h-9 w-1/3 mb-2" />
+        <Skeleton className="h-5 w-1/2" />
+      </div>
+
+      <div className="grid gap-4 lg:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-6 lg:mb-8">
+        {[...Array(8)].map((_, i) => (
+          <Card key={i}>
+            <CardHeader className="pb-2">
+              <Skeleton className="h-5 w-3/4" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-8 w-1/2" />
+              <Skeleton className="h-4 w-1/3 mt-1" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <Card>
+        <CardHeader className="pb-4">
+          <Skeleton className="h-7 w-48" />
+        </CardHeader>
+        <CardContent className="px-4 lg:px-6">
+          <div className="space-y-3 lg:space-y-4">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex items-center justify-between p-3 border rounded-lg">
+                <div className="flex-1 min-w-0 space-y-2">
+                  <Skeleton className="h-5 w-3/4" />
+                  <Skeleton className="h-4 w-1/2" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-5 w-20" />
+                  <Skeleton className="h-6 w-16" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 function ProjectOverviewContent() {
   const params = useParams<{ slug: string, projectSlug: string }>();
   
-  const project = useQuery(api.myFunctions.getProjectBySlug, 
+  const project = useQuery(api.projects.getProjectBySlug, 
     { teamSlug: params.slug, projectSlug: params.projectSlug }
   );
   
-  const hasAccess = useQuery(api.myFunctions.checkUserProjectAccess, 
+  const hasAccess = useQuery(api.projects.checkUserProjectAccess, 
     project ? { projectId: project._id } : "skip"
   );
   
-  const tasks = useQuery(api.myFunctions.listProjectTasks, 
+  const tasks = useQuery(api.tasks.listProjectTasks, 
     project && hasAccess ? { projectId: project._id } : "skip"
   );
 
-  const shoppingListItems = useQuery(api.myFunctions.getShoppingListItemsByProject,
+  const shoppingListItems = useQuery(api.shopping.getShoppingListItemsByProject,
     project && hasAccess ? { projectId: project._id } : "skip"
   );
 
-  if (project === undefined || hasAccess === undefined || tasks === undefined || shoppingListItems === undefined) {
-    return (
-      <div className="space-y-6">
-        <div className="space-y-2">
-          <div className="h-8 bg-muted rounded animate-pulse w-1/3" />
-          <div className="h-4 bg-muted rounded animate-pulse w-1/2" />
+  if (!project || hasAccess === false || !tasks || !shoppingListItems) {
+    if (hasAccess === false) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
+          <h1 className="text-2xl font-bold text-red-600 mb-2">Access Denied</h1>
+          <p className="text-muted-foreground">You don't have permission to view this project.</p>
         </div>
-        
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="h-32 bg-muted rounded animate-pulse" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (project === null) {
-    return <div>Project not found.</div>;
-  }
-
-  if (hasAccess === false) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-        <h1 className="text-2xl font-bold text-red-600 mb-2">Access Denied</h1>
-        <p className="text-muted-foreground">You don't have permission to view this project.</p>
-      </div>
-    );
+      );
+    }
+    if (!project) {
+       return <div>Project not found.</div>;
+    }
+    // This part should be handled by Suspense
+    return null;
   }
   
   const progress = tasks.length > 0 ? (tasks.filter(t => t.status === "done").length / tasks.length) * 100 : 0;
@@ -264,20 +298,7 @@ function ProjectOverviewContent() {
 
 export default function ProjectOverview() {
   return (
-    <Suspense fallback={
-      <div className="space-y-6">
-        <div className="space-y-2">
-          <div className="h-8 bg-muted rounded animate-pulse w-1/3" />
-          <div className="h-4 bg-muted rounded animate-pulse w-1/2" />
-        </div>
-        
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="h-32 bg-muted rounded animate-pulse" />
-          ))}
-        </div>
-      </div>
-    }>
+    <Suspense fallback={<ProjectOverviewSkeleton />}>
       <ProjectOverviewContent />
     </Suspense>
   );

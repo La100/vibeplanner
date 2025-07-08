@@ -1,5 +1,5 @@
 import { R2 } from "@convex-dev/r2";
-import { components } from "./_generated/api";
+import { api, components } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
@@ -28,6 +28,7 @@ export const { generateUploadUrl, syncMetadata } = r2.clientApi({
 export const generateUploadUrlWithCustomKey = mutation({
   args: {
     projectId: v.id("projects"),
+    taskId: v.optional(v.id("tasks")),
     fileName: v.string(),
   },
   returns: v.object({
@@ -56,13 +57,21 @@ export const generateUploadUrlWithCustomKey = mutation({
       throw new Error("No access to this project");
     }
 
+    let path = `${team.slug}/${project.slug}`;
+    if (args.taskId) {
+        const task = await ctx.db.get(args.taskId);
+        if(task) {
+            path = `${path}/${task._id}`;
+        }
+    }
+
     // Generate folder structure: team/project/uuid-filename
     const fileExtension = args.fileName.includes('.') 
       ? args.fileName.split('.').pop() 
       : '';
     const baseName = args.fileName.replace(/\.[^/.]+$/, ""); // Remove extension
     const uuid = crypto.randomUUID();
-    const customKey = `${team.slug}/${project.slug}/${uuid}-${baseName}${fileExtension ? '.' + fileExtension : ''}`;
+    const customKey = `${path}/${uuid}-${baseName}${fileExtension ? '.' + fileExtension : ''}`;
 
     const uploadData = await r2.generateUploadUrl(customKey);
     
@@ -110,9 +119,10 @@ export const createFolder = mutation({
 });
 
 // Dodaj plik do projektu/folderu
-export const attachFileToProject = mutation({
+export const addFile = mutation({
   args: {
     projectId: v.id("projects"),
+    taskId: v.optional(v.id("tasks")),
     folderId: v.optional(v.id("folders")),
     fileKey: v.string(),
     fileName: v.string(),
@@ -160,6 +170,7 @@ export const attachFileToProject = mutation({
       name: args.fileName,
       teamId: project.teamId,
       projectId: args.projectId,
+      taskId: args.taskId,
       folderId: args.folderId,
       fileType: getFileType(args.fileType),
       storageId: args.fileKey, // R2 key stored as string
@@ -436,4 +447,30 @@ export const getFolder = query({
 
     return folder;
   },
+});
+
+export const getFilesForTask = query({
+    args: { taskId: v.id("tasks") },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) return [];
+
+        const task = await ctx.db.get(args.taskId);
+        if (!task) return [];
+
+        const hasAccess = await ctx.runQuery(api.projects.checkUserProjectAccess, { projectId: task.projectId });
+        if (!hasAccess) return [];
+
+        const files = await ctx.db
+            .query("files")
+            .withIndex("by_task", q => q.eq("taskId", args.taskId))
+            .collect();
+
+        return Promise.all(
+            files.map(async (file) => {
+                const url = await r2.getUrl(file.storageId);
+                return { ...file, url };
+            })
+        );
+    }
 }); 

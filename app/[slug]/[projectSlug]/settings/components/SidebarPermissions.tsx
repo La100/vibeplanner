@@ -78,8 +78,8 @@ const sidebarSections: PermissionSection[] = [
 ];
 
 export default function SidebarPermissions({ projectId }: SidebarPermissionsProps) {
-  const project = useQuery(api.myFunctions.getProject, { projectId });
-  const updatePermissions = useMutation(api.myFunctions.updateProjectSidebarPermissions);
+  const project = useQuery(api.projects.getProject, { projectId });
+  const updatePermissions = useMutation(api.projects.updateProjectSidebarPermissions);
   
   const [permissions, setPermissions] = useState<Record<string, { visible: boolean }>>({});
   const [hasChanges, setHasChanges] = useState(false);

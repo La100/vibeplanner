@@ -9,24 +9,75 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { DataTableFacetedFilter } from "@/components/ui/data-table-faceted-filter";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import { toast } from "sonner";
-import { useState } from "react";
-import { Calendar, Clock, LayoutGrid, List, User, DollarSign } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { LayoutGrid, List, ChevronsUpDown, X, Loader2, MessageSquare } from "lucide-react";
 import Link from "next/link";
+import TaskForm from "./TaskForm";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   KanbanProvider,
   KanbanBoard,
   KanbanCard,
-  KanbanHeader,
   KanbanCards,
+  KanbanHeader,
   type DragEndEvent,
-} from "@/components/ui/kibo-ui/kanban";
-import TaskForm from "./TaskForm";
-import { getTaskPreview } from "@/lib/utils";
+} from '@/components/ui/kibo-ui/kanban';
+import { Skeleton } from '@/components/ui/skeleton';
 
 type TaskStatusLiterals = "todo" | "in_progress" | "review" | "done";
 type TaskPriority = "low" | "medium" | "high" | "urgent" | undefined;
+
+type KanbanTask = {
+  id: Id<"tasks">;
+  name: string;
+  column: TaskStatusLiterals;
+  title: string;
+  description: string | undefined;
+  content: string | undefined;
+  priority: TaskPriority;
+  endDate: number | undefined;
+  estimatedHours: number | undefined;
+  cost: number | undefined;
+  status: TaskStatusLiterals;
+  assignedTo: string | undefined;
+  assignedToName: string | undefined;
+  assignedToImageUrl: string | undefined;
+  tags: string[] | undefined;
+  commentCount: number;
+};
+
+interface TeamMemberWithUser {
+  _id: Id<"teamMembers">;
+  clerkUserId: string;
+  name: string;
+}
+
+// A simple debounce hook
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+  return debouncedValue;
+}
 
 const priorityColors: Record<NonNullable<TaskPriority>, string> = {
   low: "bg-gray-100 text-gray-600",
@@ -40,71 +91,133 @@ const getPriorityDisplay = (priority: TaskPriority) => {
   return { label: priority, color: priorityColors[priority] };
 };
 
+export function TasksViewSkeleton({ viewMode = "kanban" }: { viewMode?: "kanban" | "list" }) {
+  return (
+    <div className="p-4 h-full flex flex-col animate-pulse">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-4">
+        <Skeleton className="h-9 w-48" />
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-10 w-24" />
+          <Skeleton className="h-10 w-10" />
+          <Skeleton className="h-10 w-10" />
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex items-center gap-2 mb-4">
+        <Skeleton className="h-10 flex-grow" />
+        <Skeleton className="h-10 w-32" />
+        <Skeleton className="h-10 w-32" />
+        <Skeleton className="h-10 w-32" />
+        <Skeleton className="h-10 w-24" />
+      </div>
+
+      {/* Content */}
+      {viewMode === 'kanban' ? (
+        <div className="flex-grow grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="bg-muted/50 rounded-lg p-2">
+              <Skeleton className="h-6 w-3/4 mb-4" />
+              <div className="space-y-3">
+                <Skeleton className="h-24 w-full rounded-lg" />
+                <Skeleton className="h-24 w-full rounded-lg" />
+                <Skeleton className="h-24 w-full rounded-lg" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="flex-grow border rounded-lg">
+          <div className="p-4">
+            <Skeleton className="h-8 w-full" />
+          </div>
+          <div className="p-4 space-y-3">
+            {[...Array(5)].map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TasksView() {
   const params = useParams<{ slug: string, projectSlug: string }>();
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
   const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
+  
+  const [filters, setFilters] = useState<{
+    searchQuery: string;
+    status: string[];
+    priority: string[];
+    assignedTo: string[];
+    tags: string[];
+  }>({ searchQuery: "", status: [], priority: [], assignedTo: [], tags: [] });
 
-  const project = useQuery(api.myFunctions.getProjectBySlug, {
+  const [sorting, setSorting] = useState<{
+    sortBy: string;
+    sortOrder: "asc" | "desc";
+  }>({ sortBy: "createdAt", sortOrder: "desc" });
+
+  const debouncedSearchQuery = useDebounce(filters.searchQuery, 300);
+
+  const project = useQuery(api.projects.getProjectBySlug, {
     teamSlug: params.slug,
     projectSlug: params.projectSlug,
   });
-
-  const tasks = useQuery(api.myFunctions.listProjectTasks, 
-    project ? { projectId: project._id } : "skip"
-  );
-
-  const hasAccess = useQuery(api.myFunctions.checkUserProjectAccess, 
-    project ? { projectId: project._id } : "skip"
-  );
-
-  const updateTaskStatus = useMutation(api.myFunctions.updateTaskStatus);
-
-  if (project === undefined || tasks === undefined || hasAccess === undefined) {
-    return <div>Loading...</div>;
-  }
-
-  if (project === null) {
-    return <div>Project not found.</div>;
-  }
-
-  const totalCost = tasks.reduce((sum, task) => sum + (task.cost || 0), 0);
-  const currencySymbol = project.currency === "EUR" ? "€" : project.currency === "PLN" ? "zł" : "$";
-
-  const columns = Object.entries(project.taskStatusSettings || {}).map(([id, { name, color }]) => ({ id, name, color }));
-
-  if (hasAccess === false) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-        <h1 className="text-2xl font-bold text-red-600 mb-2">Access Denied</h1>
-        <p className="text-muted-foreground">You don't have permission to access this project.</p>
-      </div>
-    );
-  }
-
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
-
-    if (!over || active.id === over.id) {
-      return;
-    }
-
-    const taskId = active.id as Id<"tasks">;
-    const newStatus = over.id as TaskStatusLiterals;
-
-    const originalTask = tasks?.find(t => t._id === taskId);
-
-    if (originalTask && originalTask.status !== newStatus) {
-        try {
-            await updateTaskStatus({ taskId, status: newStatus });
-            toast.success("Task status updated");
-        } catch {
-            toast.error("Error updating task status");
-        }
-    }
-  };
   
-  const kanbanTasks = tasks?.map(task => ({
+  const teamMembers = useQuery(api.teams.getTeamMembers, project ? { teamId: project.teamId } : "skip");
+
+  const tasks = useQuery(api.tasks.listProjectTasks, 
+    project ? { 
+      projectId: project._id,
+      filters: {
+        ...filters,
+        searchQuery: debouncedSearchQuery,
+      },
+      sortBy: sorting.sortBy,
+      sortOrder: sorting.sortOrder
+    } : "skip"
+  );
+
+  const [preservedTasks, setPreservedTasks] = useState<typeof tasks>(undefined);
+
+  useEffect(() => {
+    if (tasks !== undefined) {
+      setPreservedTasks(tasks);
+    }
+  }, [tasks]);
+
+  const tasksToDisplay = tasks ?? preservedTasks;
+
+  const hasAccess = useQuery(api.projects.checkUserProjectAccess, 
+    project ? { projectId: project._id } : "skip"
+  );
+  
+  const updateTaskStatus = useMutation(api.tasks.updateTaskStatus);
+  
+  const statusOptions = useMemo(() => 
+    project?.taskStatusSettings 
+      ? Object.entries(project.taskStatusSettings).map(([id, { name }]) => ({ value: id, label: name }))
+      : [],
+    [project]
+  );
+  
+  const priorityOptions = [
+      { value: "urgent", label: "Urgent" },
+      { value: "high", label: "High" },
+      { value: "medium", label: "Medium" },
+      { value: "low", label: "Low" },
+  ];
+
+  const assignedToOptions = useMemo(() =>
+    teamMembers?.map((member: TeamMemberWithUser) => ({ value: member.clerkUserId!, label: member.name! })) || [],
+    [teamMembers]
+  );
+  
+  const kanbanTasks = useMemo(() => tasksToDisplay?.map(task => ({
     id: task._id,
     name: task.title,
     column: task.status,
@@ -116,237 +229,329 @@ export default function TasksView() {
     estimatedHours: task.estimatedHours,
     cost: task.cost,
     status: task.status,
+    assignedTo: task.assignedTo,
     assignedToName: task.assignedToName,
     assignedToImageUrl: task.assignedToImageUrl,
-  })) || [];
+    tags: task.tags,
+    commentCount: task.commentCount,
+  })) || [], [tasksToDisplay]);
+  
+  const [localKanbanTasks, setLocalKanbanTasks] = useState<KanbanTask[]>(kanbanTasks);
+
+  useEffect(() => {
+    setLocalKanbanTasks(kanbanTasks);
+  }, [kanbanTasks]);
+
+  const handleDataChange = (newData: KanbanTask[]) => {
+    setLocalKanbanTasks(newData);
+  };
+
+  const tagsOptions = useMemo(() => {
+    const allTags = tasksToDisplay?.flatMap(task => task.tags || []) || [];
+    const uniqueTags = [...new Set(allTags)];
+    return uniqueTags.map(tag => ({ value: tag, label: tag }));
+  }, [tasksToDisplay]);
+
+
+  if (project === undefined || hasAccess === undefined || teamMembers === undefined) {
+    // Let Suspense handle the main loading state
+    return <TasksViewSkeleton viewMode={viewMode} />;
+  }
+
+  const isRefetching = tasks === undefined && preservedTasks !== undefined;
+
+  const handleFilterChange = (filterType: keyof typeof filters, value: string | string[]) => {
+      setFilters(prev => ({...prev, [filterType]: value}));
+  };
+
+  const clearFilters = () => {
+    setFilters({ searchQuery: "", status: [], priority: [], assignedTo: [], tags: [] });
+  }
+
+  const handleSortChange = (newSortBy: string) => {
+    setSorting(current => {
+      if (current.sortBy === newSortBy) {
+        return { ...current, sortOrder: current.sortOrder === 'asc' ? 'desc' : 'asc' };
+      }
+      return { sortBy: newSortBy, sortOrder: 'desc' };
+    });
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const taskId = active.id as Id<"tasks">;
+      const newStatus = over.id as TaskStatusLiterals;
+      
+      const originalTasks = localKanbanTasks;
+      
+      // Optimistic update
+      setLocalKanbanTasks(prevTasks => prevTasks.map(t => 
+        t.id === taskId ? { ...t, column: newStatus } : t
+      ));
+      
+      try {
+        await updateTaskStatus({ taskId, status: newStatus });
+        toast.success("Task status updated!");
+      } catch {
+        toast.error("Failed to update task status.");
+        // Revert on error
+        setLocalKanbanTasks(originalTasks);
+      }
+    }
+  };
+
+  const isFiltered = filters.searchQuery !== "" || filters.status.length > 0 || filters.priority.length > 0 || filters.assignedTo.length > 0 || filters.tags.length > 0;
+
+  if (project === null) {
+    return <div>Project not found.</div>;
+  }
+  
+  if (hasAccess === false) {
+    return <div>You do not have access to this project.</div>
+  }
 
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-6">
-      <div className="flex flex-col sm:flex-row justify-between gap-4 mb-4">
-        <Button onClick={() => setIsTaskFormOpen(true)} className="w-full sm:w-auto">Add Task</Button>
+    <div className="h-full flex flex-col">
+      {/* Header */}
+      <div className="flex-shrink-0 bg-white/60 backdrop-blur-sm sticky top-0 z-10 p-4 border-b">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">{project.name} Tasks</h1>
+            <p className="text-muted-foreground">Manage your project's tasks</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button onClick={() => setIsTaskFormOpen(true)} variant="outline">New Task</Button>
+            <div className="flex items-center rounded-md border bg-background">
+               <Button
+                variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('kanban')}
+                className="rounded-r-none"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('list')}
+                className="rounded-l-none"
+              >
+                <List className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+        
+        {/* Filters */}
+        <div className="flex items-center gap-2 mt-4">
+          <Input 
+            placeholder="Search tasks..." 
+            className="max-w-sm" 
+            value={filters.searchQuery}
+            onChange={(e) => handleFilterChange('searchQuery', e.target.value)}
+          />
+
+          <DataTableFacetedFilter 
+            title="Status"
+            options={statusOptions}
+            selectedValues={new Set(filters.status)}
+            onFilterChange={(selected) => handleFilterChange('status', Array.from(selected))}
+          />
+          <DataTableFacetedFilter 
+            title="Priority"
+            options={priorityOptions}
+            selectedValues={new Set(filters.priority)}
+            onFilterChange={(selected) => handleFilterChange('priority', Array.from(selected))}
+          />
+           <DataTableFacetedFilter 
+            title="Assignee"
+            options={assignedToOptions}
+            selectedValues={new Set(filters.assignedTo)}
+            onFilterChange={(selected) => handleFilterChange('assignedTo', Array.from(selected))}
+          />
+          <DataTableFacetedFilter
+            title="Tags"
+            options={tagsOptions}
+            selectedValues={new Set(filters.tags)}
+            onFilterChange={(selected) => handleFilterChange('tags', Array.from(selected))}
+          />
+
+          {isFiltered && <Button variant="ghost" onClick={clearFilters} className="h-8 px-2 lg:px-3">Reset <X className="ml-2 h-4 w-4"/></Button>}
+        </div>
       </div>
       
-      <Dialog open={isTaskFormOpen} onOpenChange={setIsTaskFormOpen}>
-        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
+      {/* Content */}
+      <main className="flex-grow p-4 overflow-y-auto relative">
+        <Dialog open={isTaskFormOpen} onOpenChange={setIsTaskFormOpen}>
+          <DialogContent className="max-w-4xl">
             <DialogHeader>
-                <DialogTitle>New Task</DialogTitle>
+              <DialogTitle>Create a new task</DialogTitle>
             </DialogHeader>
-            <TaskForm projectId={project._id} onTaskCreated={() => {}} setIsOpen={setIsTaskFormOpen} />
-        </DialogContent>
-      </Dialog>
+            <TaskForm projectId={project._id} setIsOpen={setIsTaskFormOpen} />
+          </DialogContent>
+        </Dialog>
 
-      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-6">
-        <div className="min-w-0">
-          <h1 className="text-2xl md:text-3xl font-bold truncate">{project.name} - Tasks</h1>
-          <p className="text-muted-foreground">Manage tasks for this project</p>
-        </div>
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-          <div className="text-left sm:text-right">
-            <p className="text-sm text-muted-foreground">Total Cost</p>
-            <p className="text-xl font-bold">{currencySymbol}{totalCost.toFixed(2)}</p>
-          </div>
-          <div className="flex rounded-md border w-full sm:w-auto">
-            <Button
-              variant={viewMode === "kanban" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode("kanban")}
-              className="rounded-r-none flex-1 sm:flex-none"
+       <div className={cn("relative transition-opacity", isRefetching && "opacity-50")}>
+         {isRefetching && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/20">
+              <Loader2 className="h-8 w-8 animate-spin" />
+            </div>
+         )}
+          {viewMode === "kanban" ? (
+            <KanbanProvider
+              data={localKanbanTasks}
+              columns={statusOptions.map(s => ({ id: s.value, name: s.label }))}
+              onDragEnd={handleDragEnd}
+              onDataChange={handleDataChange}
             >
-              <LayoutGrid className="h-4 w-4 mr-2" />
-              Kanban
-            </Button>
-            <Button
-              variant={viewMode === "list" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode("list")}
-              className="rounded-l-none flex-1 sm:flex-none"
-            >
-              <List className="h-4 w-4 mr-2" />
-              List
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {viewMode === "kanban" ? (
-        <div className="flex gap-3 md:gap-6 overflow-x-auto pb-4">
-          <KanbanProvider
-            columns={columns}
-            data={kanbanTasks}
-            onDragEnd={handleDragEnd}
-          >
-            {(column) => (
-              <KanbanBoard id={column.id} key={column.id}>
-                <KanbanHeader>
-                   <span className="w-4 h-4 rounded-full mr-2" style={{ backgroundColor: column.color }}></span>
-                  {column.name}
-                </KanbanHeader>
-                <KanbanCards id={column.id}>
-                  {(task: typeof kanbanTasks[0]) => (
-                    <KanbanCard key={task.id} id={task.id} name={task.name} column={task.column}>
-                        <Link href={`/${params.slug}/${params.projectSlug}/tasks/${task.id}`} className="block w-full">
-                            <div className="w-full hover:bg-muted/50 rounded p-2 -m-2 transition-colors">
-                                <h4 className="font-medium text-sm md:text-base">{task.title}</h4>
-                                {(task.content || task.description) && (
-                                <p className="text-xs md:text-sm text-muted-foreground mt-1 line-clamp-2">{getTaskPreview(task, 15)}</p>
-                                )}
-                                <div className="flex flex-wrap items-center gap-1 md:gap-2 mt-2">
-                                    {task.priority && (
-                                      <Badge className={`text-xs ${getPriorityDisplay(task.priority).color}`}>
-                                          {getPriorityDisplay(task.priority).label}
-                                      </Badge>
-                                    )}
-                                    {task.cost && (
-                                      <Badge variant="outline" className="text-xs">
-                                          <DollarSign className="h-3 w-3 mr-1" />
-                                          {task.cost.toFixed(2)}
-                                      </Badge>
-                                    )}
-                                    {task.endDate && (
-                                        <Badge variant="outline" className="text-xs">
-                                        <Calendar className="h-3 w-3 mr-1" />
-                                        <span className="hidden sm:inline">{new Date(task.endDate).toLocaleDateString()}</span>
-                                        <span className="sm:hidden">{new Date(task.endDate).toLocaleDateString('en', { month: 'short', day: 'numeric' })}</span>
-                                        </Badge>
-                                    )}
-                                    {task.estimatedHours && (
-                                        <Badge variant="outline" className="text-xs">
-                                        <Clock className="h-3 w-3 mr-1" />
-                                        {task.estimatedHours}h
-                                        </Badge>
-                                    )}
-                                    {task.assignedToName && task.assignedToName !== "Unassigned" && (
-                                        <Badge variant="outline" className="text-xs">
-                                        {task.assignedToImageUrl ? (
-                                            <Avatar className="h-3 w-3 mr-1">
-                                            <AvatarImage src={task.assignedToImageUrl} />
-                                            <AvatarFallback>{task.assignedToName.charAt(0)}</AvatarFallback>
-                                            </Avatar>
-                                        ) : (
-                                            <User className="h-3 w-3 mr-1" />
-                                        )}
-                                        <span className="hidden sm:inline">{task.assignedToName}</span>
-                                        <span className="sm:hidden">{task.assignedToName.charAt(0)}</span>
-                                        </Badge>
-                                    )}
+              {(column) => (
+                <KanbanBoard key={column.id} id={column.id} className="w-80 min-w-80">
+                  <KanbanHeader>{column.name}</KanbanHeader>
+                  <KanbanCards id={column.id}>
+                    {(task: KanbanTask) => (
+                      <KanbanCard {...task}>
+                        <TaskCardContent task={task} projectSlug={params.projectSlug} companySlug={params.slug} />
+                      </KanbanCard>
+                    )}
+                  </KanbanCards>
+                </KanbanBoard>
+              )}
+            </KanbanProvider>
+          ) : (
+             <div className="border rounded-lg overflow-hidden">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead onClick={() => handleSortChange('title')}>
+                                <div className="flex items-center cursor-pointer">
+                                    Task <ChevronsUpDown className="ml-2 h-4 w-4" />
                                 </div>
-                            </div>
-                        </Link>
-                    </KanbanCard>
-                  )}
-                </KanbanCards>
-              </KanbanBoard>
-            )}
-          </KanbanProvider>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {columns.map((column) => {
-            const columnTasks = tasks?.filter(task => task.status === column.id) || [];
-            
-            if (columnTasks.length === 0) return null;
-            
-            return (
-              <div key={column.id} className="space-y-2">
-                <h3 className="text-lg font-semibold text-muted-foreground border-b pb-2 flex items-center">
-                  <span className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: column.color }}></span>
-                  {column.name} ({columnTasks.length})
-                </h3>
-                <div className="grid gap-3 sm:gap-4">
-                  {columnTasks.map((task) => (
-                    <Card key={task._id} className="hover:shadow-md transition-shadow">
-                      <Link href={`/${params.slug}/${params.projectSlug}/tasks/${task._id}`}>
-                        <div className="p-4">
-                          {/* Mobile Layout */}
-                          <div className="block md:hidden space-y-3">
-                            <div className="flex items-start justify-between gap-2">
-                              <h4 className="font-medium hover:text-primary transition-colors flex-1 min-w-0">{task.title}</h4>
-                              {task.priority && (
-                                <Badge className={`text-xs shrink-0 ${getPriorityDisplay(task.priority).color}`}>
-                                  {getPriorityDisplay(task.priority).label}
-                                </Badge>
-                              )}
-                            </div>
-                            {(task.content || task.description) && (
-                              <p className="text-sm text-muted-foreground line-clamp-2">{getTaskPreview(task, 20)}</p>
-                            )}
-                            <div className="flex flex-wrap items-center gap-2 text-xs">
-                              {task.cost && (
-                                <span className="bg-muted px-2 py-1 rounded text-muted-foreground">
-                                  {currencySymbol}{task.cost.toFixed(2)}
-                                </span>
-                              )}
-                              {task.endDate && (
-                                <span className="bg-muted px-2 py-1 rounded text-muted-foreground flex items-center gap-1">
-                                  <Calendar className="h-3 w-3" />
-                                  {new Date(task.endDate).toLocaleDateString('en', { month: 'short', day: 'numeric' })}
-                                </span>
-                              )}
-                              {task.estimatedHours && (
-                                <span className="bg-muted px-2 py-1 rounded text-muted-foreground flex items-center gap-1">
-                                  <Clock className="h-3 w-3" />
-                                  {task.estimatedHours}h
-                                </span>
-                              )}
-                              {task.assignedToName && task.assignedToName !== "Unassigned" && (
-                                <span className="bg-muted px-2 py-1 rounded text-muted-foreground flex items-center gap-1">
-                                  {task.assignedToImageUrl ? (
-                                    <Avatar className="h-3 w-3">
-                                      <AvatarImage src={task.assignedToImageUrl} />
-                                      <AvatarFallback>{task.assignedToName.charAt(0)}</AvatarFallback>
-                                    </Avatar>
-                                  ) : (
-                                    <User className="h-3 w-3" />
-                                  )}
-                                  {task.assignedToName}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          
-                          {/* Desktop Layout */}
-                          <div className="hidden md:grid md:grid-cols-6 gap-4 items-center">
-                            <div className="col-span-4">
-                              <div className="flex items-center gap-2 mb-2">
-                                <h4 className="font-medium hover:text-primary transition-colors">{task.title}</h4>
-                                {task.priority && (
-                                  <Badge className={getPriorityDisplay(task.priority).color}>
-                                    {getPriorityDisplay(task.priority).label}
-                                  </Badge>
-                                )}
-                              </div>
-                              {(task.content || task.description) && (
-                                <p className="text-sm text-muted-foreground mb-2 line-clamp-2">{getTaskPreview(task, 25)}</p>
-                              )}
-                            </div>
-                            <div className="col-span-1 text-sm text-muted-foreground text-right">
-                              {task.cost ? `${currencySymbol}${task.cost.toFixed(2)}` : "-"}
-                            </div>
-                            <div className="col-span-1 text-sm text-muted-foreground text-right">
-                              {task.endDate && (
-                                  <div className="flex items-center justify-end gap-1">
-                                      <Calendar className="h-4 w-4" />
-                                      {new Date(task.endDate).toLocaleDateString()}
+                            </TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Priority</TableHead>
+                            <TableHead>Assignee</TableHead>
+                            <TableHead onClick={() => handleSortChange('endDate')}>
+                                <div className="flex items-center cursor-pointer">
+                                    Due Date <ChevronsUpDown className="ml-2 h-4 w-4" />
+                                </div>
+                            </TableHead>
+                            <TableHead>Tags</TableHead>
+                            <TableHead></TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {tasksToDisplay?.map((task) => (
+                            <TableRow key={task._id}>
+                                <TableCell className="font-medium">
+                                  <Link href={`/${params.slug}/${params.projectSlug}/tasks/${task._id}`}>
+                                    {task.title}
+                                  </Link>
+                                </TableCell>
+                                <TableCell>
+                                    <Badge style={{ 
+                                      backgroundColor: project.taskStatusSettings?.[task.status]?.color,
+                                      color: 'white',
+                                    }}>
+                                        {project.taskStatusSettings?.[task.status]?.name || task.status}
+                                    </Badge>
+                                </TableCell>
+                                <TableCell>
+                                    <Badge variant="outline">{task.priority || 'N/A'}</Badge>
+                                </TableCell>
+                                <TableCell>
+                                    <div className="flex items-center gap-2">
+                                        <Avatar className="h-6 w-6">
+                                            <AvatarImage src={task.assignedToImageUrl} />
+                                            <AvatarFallback>{task.assignedToName?.charAt(0)}</AvatarFallback>
+                                        </Avatar>
+                                        <span>{task.assignedToName || "Unassigned"}</span>
+                                    </div>
+                                </TableCell>
+                                <TableCell>
+                                    {task.endDate ? new Date(task.endDate).toLocaleDateString() : 'N/A'}
+                                </TableCell>
+                                 <TableCell>
+                                  <div className="flex gap-1">
+                                    {task.tags?.map(tag => <Badge key={tag} variant="secondary">{tag}</Badge>)}
                                   </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </Link>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-          
-          {(!tasks || tasks.length === 0) && (
-            <Card className="p-8 text-center">
-              <p className="text-muted-foreground">No tasks found. Create your first task to get started.</p>
-            </Card>
+                                </TableCell>
+                                <TableCell>
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button variant="ghost" className="h-8 w-8 p-0">
+                                                <span className="sr-only">Open menu</span>
+                                                <ChevronsUpDown className="h-4 w-4" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                            <DropdownMenuItem>Edit</DropdownMenuItem>
+                                            <DropdownMenuItem>Delete</DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+             </div>
           )}
-        </div>
-      )}
+       </div>
+      </main>
     </div>
+  );
+}
+
+function TaskCardContent({ task, projectSlug, companySlug }: { task: KanbanTask, projectSlug: string, companySlug: string }) {
+  const { label, color } = getPriorityDisplay(task.priority);
+  
+  return (
+    <Link href={`/${companySlug}/${projectSlug}/tasks/${task.id}`}>
+      <Card className="mb-2 hover:shadow-md transition-shadow">
+        <div className="p-3">
+          <div className="flex justify-between items-start mb-2">
+            <p className="font-semibold leading-tight pr-2">{task.title}</p>
+            <Badge className={cn("text-xs whitespace-nowrap", color)}>{label}</Badge>
+          </div>
+          
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <div className="flex items-center gap-2">
+              {task.assignedTo && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Avatar className="h-6 w-6">
+                        <AvatarImage src={task.assignedToImageUrl} />
+                        <AvatarFallback>{task.assignedToName?.charAt(0) || '?'}</AvatarFallback>
+                      </Avatar>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{task.assignedToName}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+               {task.commentCount > 0 && 
+                  <div className="flex items-center gap-1">
+                    <MessageSquare className="h-4 w-4"/>
+                    {task.commentCount}
+                  </div>
+                }
+            </div>
+            {task.endDate && (
+              <span className="text-xs">
+                {new Date(task.endDate).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+          {task.tags?.length > 0 && 
+            <div className="mt-2 flex flex-wrap gap-1">
+              {task.tags.map((tag: string) => <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>)}
+            </div>
+          }
+        </div>
+      </Card>
+    </Link>
   );
 } 

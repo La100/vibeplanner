@@ -1,5 +1,10 @@
-import ShoppingListView from "./components/ShoppingListView";
+import { Suspense } from "react";
+import ShoppingListView, { ShoppingListViewSkeleton } from "./components/ShoppingListView";
 
 export default function ProjectShoppingListPage() {
-  return <ShoppingListView />;
+  return (
+    <Suspense fallback={<ShoppingListViewSkeleton />}>
+      <ShoppingListView />
+    </Suspense>
+  );
 } 

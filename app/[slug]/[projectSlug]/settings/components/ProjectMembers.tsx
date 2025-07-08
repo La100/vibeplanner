@@ -31,12 +31,12 @@ interface TeamMember {
 
 export default function ProjectMembers({ project }: ProjectMembersProps) {
   // Get all team members
-  const teamMembers = useQuery(api.myFunctions.getTeamMembers, {
+  const teamMembers = useQuery(api.teams.getTeamMembers, {
     teamId: project.teamId,
   });
   
   // Get current user's role
-  const currentUserMember = useQuery(api.myFunctions.getCurrentUserTeamMember, {
+  const currentUserMember = useQuery(api.teams.getCurrentUserTeamMember, {
     teamId: project.teamId,
   });
 
@@ -207,8 +207,8 @@ function MemberRow({
   projectId: Id<"projects">;
   teamId: Id<"teams">;
 }) {
-  const removeTeamMember = useMutation(api.myFunctions.removeTeamMember);
-  const changeTeamMemberRole = useMutation(api.myFunctions.changeTeamMemberRole);
+  const removeTeamMember = useMutation(api.teams.removeTeamMember);
+  const changeTeamMemberRole = useMutation(api.teams.changeTeamMemberRole);
 
   const getRoleColor = (role: string) => {
     switch (role.toLowerCase()) {
@@ -309,7 +309,7 @@ function ClientRow({
   canManage: boolean;
   projectId: Id<"projects">;
 }) {
-  const removeProjectFromClient = useMutation(api.myFunctions.removeProjectFromClient);
+  const removeProjectFromClient = useMutation(api.teams.removeProjectFromClient);
 
   const handleRemoveClient = async () => {
     try {

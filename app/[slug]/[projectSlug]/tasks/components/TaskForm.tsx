@@ -69,9 +69,9 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
     const [aiMessage, setAiMessage] = useState("");
     const [isParsing, setIsParsing] = useState(false);
 
-    const updateTask = useMutation(api.myFunctions.updateTask);
-    const createTask = useMutation(api.myFunctions.createTask);
-    const parseTask = useAction(api.myFunctions.parseTaskFromChat);
+      const updateTask = useMutation(api.tasks.updateTask);
+  const createTask = useMutation(api.tasks.createTask);
+    const parseTask = useAction(api.tasks.parseTaskFromChat);
 
     const form = useForm<TaskFormValues>({
       resolver: zodResolver(taskFormSchema),
@@ -129,8 +129,8 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
                 form.reset({
                     title: result.title || "",
                     description: result.description || "",
-                    priority: result.priority,
-                    status: result.status || "todo",
+                    priority: result.priority as TaskFormValues["priority"],
+                    status: result.status as TaskFormValues["status"] || "todo",
                     dateRange: {
                       from: startDate,
                       to: endDate,

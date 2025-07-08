@@ -10,6 +10,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Clock, CheckSquare, AlertTriangle, ExternalLink } from "lucide-react";
 import { useState } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type TaskStatus = "todo" | "in_progress" | "review" | "completed" | "blocked";
 type TaskPriority = "low" | "medium" | "high" | "urgent";
@@ -29,39 +30,93 @@ const priorityColors: Record<TaskPriority, string> = {
   urgent: "border-l-red-300",
 };
 
+export function ProjectCalendarSkeleton() {
+  return (
+    <div className="p-6">
+      <div className="mb-6">
+        <Skeleton className="h-9 w-1/2" />
+        <Skeleton className="h-5 w-1/3 mt-2" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-7 w-48" />
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-4 mb-4 text-sm">
+                <Skeleton className="h-5 w-24" />
+                <Skeleton className="h-5 w-24" />
+                <Skeleton className="h-5 w-24" />
+                <Skeleton className="h-5 w-24" />
+              </div>
+              <Skeleton className="h-[300px] w-full" />
+            </CardContent>
+          </Card>
+        </div>
+
+        <div>
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-7 w-32" />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Skeleton className="h-6 w-24 mb-2" />
+                <div className="space-y-2">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              </div>
+              <div>
+                <Skeleton className="h-6 w-28 mb-2" />
+                <div className="space-y-2">
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ProjectCalendar() {
   const params = useParams<{ slug: string, projectSlug: string }>();
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   
-  const project = useQuery(api.myFunctions.getProjectBySlug, {
+  const project = useQuery(api.projects.getProjectBySlug, {
     teamSlug: params.slug,
     projectSlug: params.projectSlug,
   });
 
-  const hasAccess = useQuery(api.myFunctions.checkUserProjectAccess, 
+  const hasAccess = useQuery(api.projects.checkUserProjectAccess, 
     project ? { projectId: project._id } : "skip"
   );
 
-  const allTasks = useQuery(api.myFunctions.listProjectTasks, 
+  const allTasks = useQuery(api.tasks.listProjectTasks, 
     project ? { projectId: project._id } : "skip"
   );
 
-  if (project === undefined || allTasks === undefined || hasAccess === undefined) {
-    return <div>Loading...</div>;
-  }
-
-  if (project === null) {
-    return <div>Project not found.</div>;
-  }
-
-  if (hasAccess === false) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-        <h1 className="text-2xl font-bold text-red-600 mb-2">Access Denied</h1>
-        <p className="text-muted-foreground">You don't have permission to access this project.</p>
-      </div>
-    );
+  if (!project || !allTasks || hasAccess === false) {
+    // Convex useQuery will suspend here, so this logic is for handling
+    // null project or access denied after data is loaded.
+    if (hasAccess === false) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
+          <h1 className="text-2xl font-bold text-red-600 mb-2">Access Denied</h1>
+          <p className="text-muted-foreground">You don't have permission to access this project.</p>
+        </div>
+      );
+    }
+     if (!project) {
+      return <div>Project not found.</div>;
+    }
+    // This part should technically be unreachable if useQuery suspends correctly
+    return null;
   }
 
   // Filtruj zadania z datami (muszą mieć przynajmniej endDate lub startDate)
@@ -125,7 +180,7 @@ export default function ProjectCalendar() {
     .sort((a, b) => (a.endDate || 0) - (b.endDate || 0));
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
+    <div className="p-6">
       <div className="mb-6">
         <h1 className="text-3xl font-bold">{project.name} - Calendar</h1>
         <p className="text-muted-foreground">View tasks by date ranges</p>

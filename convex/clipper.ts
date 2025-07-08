@@ -79,7 +79,7 @@ export const getProjectsForTeam = query({
     teamId: v.id("teams"),
   },
   handler: async (ctx, args) => {
-    const member = await ctx.runQuery(api.myFunctions.getCurrentUserTeamMember, { teamId: args.teamId });
+    const member = await ctx.runQuery(api.teams.getCurrentUserTeamMember, { teamId: args.teamId });
 
     if (!member) {
       throw new Error("Nie jesteś członkiem tego zespołu lub musisz być zalogowany.");
@@ -140,11 +140,16 @@ export const getShoppingListSections = query({
     teamId: v.id("teams"),
   },
   handler: async (ctx, args): Promise<Doc<"shoppingListSections">[]> => {
-    const member: Doc<"teamMembers"> | null = await ctx.runQuery(api.myFunctions.getCurrentUserTeamMember, { teamId: args.teamId });
-
-    if (!member) {
-      throw new Error("Nie jesteś członkiem tego zespołu lub musisz być zalogowany.");
-    }
+    const project = await ctx.db.get(args.projectId);
+    if (!project) {
+        throw new Error("Project not found");
+      }
+      
+      const member: Doc<"teamMembers"> | null = await ctx.runQuery(api.teams.getCurrentUserTeamMember, { teamId: project.teamId });
+  
+      if (!member) {
+        throw new Error("Current user is not a team member");
+      }
 
     return await ctx.db
       .query("shoppingListSections")
@@ -189,7 +194,7 @@ export const addShoppingListItem = mutation({
         throw new Error("Nie znaleziono projektu.");
     }
     
-    const member: Doc<"teamMembers"> | null = await ctx.runQuery(api.myFunctions.getCurrentUserTeamMember, { teamId: project.teamId });
+    const member: Doc<"teamMembers"> | null = await ctx.runQuery(api.teams.getCurrentUserTeamMember, { teamId: project.teamId });
 
     if (!member) {
       throw new Error("Nie jesteś członkiem tego zespołu lub musisz być zalogowany.");

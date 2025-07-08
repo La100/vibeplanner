@@ -30,6 +30,7 @@ import {
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import { Skeleton } from '@/components/ui/skeleton';
 
 type ShoppingListItem = Doc<"shoppingListItems">;
 type Priority = ShoppingListItem["priority"];
@@ -69,23 +70,82 @@ const statusLabels: Record<Status, string> = {
   CANCELLED: 'Cancelled',
 };
 
+export function ShoppingListViewSkeleton() {
+  return (
+    <div className="p-4 sm:p-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
+        <div className="mb-4 sm:mb-0">
+          <Skeleton className="h-9 w-64 mb-2" />
+          <Skeleton className="h-5 w-80" />
+        </div>
+        <div className="flex gap-2">
+          <Skeleton className="h-10 w-36" />
+          <Skeleton className="h-10 w-36" />
+        </div>
+      </div>
+
+      {/* Add Item Form Skeleton */}
+      <Card className="mb-6">
+        <CardHeader>
+          <Skeleton className="h-7 w-48" />
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Items List Skeleton */}
+      <div className="space-y-4">
+        {[...Array(3)].map((_, i) => (
+          <Card key={i}>
+            <CardHeader>
+              <Skeleton className="h-6 w-1/3" />
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {[...Array(2)].map((_, j) => (
+                  <div key={j} className="flex items-center gap-4 p-2 border rounded-md">
+                    <Skeleton className="h-12 w-12 rounded" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-5 w-3/4" />
+                      <Skeleton className="h-4 w-1/2" />
+                    </div>
+                    <Skeleton className="h-8 w-24" />
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function ShoppingListView() {
   const params = useParams<{ slug: string, projectSlug: string }>();
   const [isPending, startTransition] = useTransition();
 
-  const project = useQuery(api.myFunctions.getProjectBySlug, {
+  const project = useQuery(api.projects.getProjectBySlug, {
     teamSlug: params.slug,
     projectSlug: params.projectSlug,
   });
 
-  const items = useQuery(api.myFunctions.listShoppingListItems, project ? { projectId: project._id } : 'skip');
-  const sections = useQuery(api.myFunctions.listShoppingListSections, project ? { projectId: project._id } : 'skip');
+  const items = useQuery(api.shopping.listShoppingListItems, project ? { projectId: project._id } : 'skip');
+  const sections = useQuery(api.shopping.listShoppingListSections, project ? { projectId: project._id } : 'skip');
 
-  const createItem = useMutation(api.myFunctions.createShoppingListItem);
-  const updateItem = useMutation(api.myFunctions.updateShoppingListItem);
-  const deleteItem = useMutation(api.myFunctions.deleteShoppingListItem);
-  const createSection = useMutation(api.myFunctions.createShoppingListSection);
-  const deleteSection = useMutation(api.myFunctions.deleteShoppingListSection);
+  const createItem = useMutation(api.shopping.createShoppingListItem);
+  const updateItem = useMutation(api.shopping.updateShoppingListItem);
+  const deleteItem = useMutation(api.shopping.deleteShoppingListItem);
+  const createSection = useMutation(api.shopping.createShoppingListSection);
+  const deleteSection = useMutation(api.shopping.deleteShoppingListSection);
 
   // Form states
   const [isAddFormExpanded, setIsAddFormExpanded] = useState(false);
@@ -111,7 +171,8 @@ export default function ShoppingListView() {
   const [editFormData, setEditFormData] = useState<EditFormData>({});
 
   if (!project || items === undefined || sections === undefined) {
-    return <div>Loading...</div>;
+    // This will be handled by Suspense
+    return null;
   }
   
   if (project === null) {

@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -17,7 +17,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
-import { CalendarIcon, Trash2 } from "lucide-react";
+import { CalendarIcon, Trash2, Tags, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -31,6 +31,22 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+
+interface TaskStatusSetting {
+  name: string;
+  color: string;
+}
+
+interface TeamMemberWithUser {
+  _id: Id<"teamMembers">;
+  clerkUserId: string;
+  name: string;
+  email: string;
+  imageUrl?: string;
+  role: "admin" | "member" | "viewer" | "client";
+}
 
 interface TaskDetailSidebarProps {
   task: {
@@ -40,24 +56,31 @@ interface TaskDetailSidebarProps {
     cost?: number;
     startDate?: number;
     endDate?: number;
+    assignedTo?: string;
     assignedToName?: string;
     estimatedHours?: number;
+    tags?: string[];
+    teamId: Id<"teams">;
   };
   project: {
     currency?: string;
+    taskStatusSettings?: Record<string, TaskStatusSetting>;
   };
   onDelete: () => void;
 }
 
 export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetailSidebarProps) {
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
+  const [tagsInput, setTagsInput] = useState(task.tags?.join(", ") || "");
 
-  const updateTask = useMutation(api.myFunctions.updateTask);
-  const deleteTask = useMutation(api.myFunctions.deleteTask);
+  const updateTask = useMutation(api.tasks.updateTask);
+  const deleteTask = useMutation(api.tasks.deleteTask);
+  
+  const teamMembers = useQuery(api.teams.getTeamMembers, { teamId: task.teamId });
 
   const currencySymbol = project.currency === "EUR" ? "€" : project.currency === "PLN" ? "zł" : project.currency === "USD" ? "$" : "$";
 
-  const handleUpdate = async (field: string, value: string | number | undefined) => {
+  const handleUpdate = async (field: string, value: string | string[] | number | undefined) => {
     setIsUpdating(field);
     try {
       await updateTask({
@@ -73,21 +96,9 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
     }
   };
 
-  const handleDateUpdate = async (startDate?: number, endDate?: number) => {
-    setIsUpdating('dates');
-    try {
-      await updateTask({
-        taskId: task._id,
-        startDate,
-        endDate,
-      });
-      toast.success("Zapisano daty");
-    } catch (error) {
-      toast.error("Błąd podczas zapisywania dat");
-      console.error(error);
-    } finally {
-      setIsUpdating(null);
-    }
+  const handleTagsUpdate = () => {
+    const newTags = tagsInput.split(",").map(tag => tag.trim()).filter(Boolean);
+    handleUpdate('tags', newTags);
   };
 
   const handleDeleteTask = async () => {
@@ -101,21 +112,20 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
   };
 
   const formatDate = (timestamp?: number) => {
-    if (!timestamp) return "";
+    if (!timestamp) return "Pick a date";
     return format(new Date(timestamp), "PPP");
   };
 
   return (
-    <div className="task-detail-sidebar p-6 sticky top-24 rounded-lg border">
-      <div className="mb-6">
-        <h2 className="text-lg font-semibold text-gray-900">Szczegóły zadania</h2>
-        <p className="text-sm text-gray-500">Edytuj pola bezpośrednio</p>
-      </div>
-      
-      <div className="space-y-6">
+    <Card className="sticky top-24">
+      <CardHeader>
+        <CardTitle className="text-lg font-semibold">Szczegóły zadania</CardTitle>
+        <p className="text-sm text-muted-foreground">Edytuj pola bezpośrednio</p>
+      </CardHeader>
+      <CardContent className="space-y-6">
         {/* Status */}
         <div>
-          <Label className="text-sm font-medium text-gray-500">Status</Label>
+          <Label className="text-sm font-medium">Status</Label>
           <Select 
             value={task.status} 
             onValueChange={(value) => handleUpdate('status', value)}
@@ -125,17 +135,16 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="todo">To Do</SelectItem>
-              <SelectItem value="in_progress">In Progress</SelectItem>
-              <SelectItem value="review">Review</SelectItem>
-              <SelectItem value="done">Done</SelectItem>
+              {Object.entries(project.taskStatusSettings || {}).map(([id, { name }]) => (
+                <SelectItem key={id} value={id}>{name}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
 
         {/* Priority */}
         <div>
-          <Label className="text-sm font-medium text-gray-500">Priority</Label>
+          <Label className="text-sm font-medium">Priority</Label>
           <Select 
             value={task.priority || "none"} 
             onValueChange={(value) => handleUpdate('priority', value === "none" ? undefined : value)}
@@ -154,9 +163,65 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
           </Select>
         </div>
 
+        {/* Assigned To */}
+        <div>
+          <Label className="text-sm font-medium flex items-center"><User className="mr-2 h-4 w-4"/>Assigned to</Label>
+           <Select
+            value={task.assignedTo || "unassigned"}
+            onValueChange={(value) => handleUpdate('assignedTo', value === "unassigned" ? undefined : value)}
+            disabled={isUpdating === 'assignedTo'}
+          >
+            <SelectTrigger className="mt-1">
+              <SelectValue placeholder="Unassigned" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="unassigned">Unassigned</SelectItem>
+              {teamMembers?.map((member: TeamMemberWithUser) => (
+                <SelectItem key={member.clerkUserId} value={member.clerkUserId!}>
+                  {member.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Date Range */}
+        <div>
+          <Label className="text-sm font-medium">Date</Label>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={cn(
+                  "w-full mt-1 justify-start text-left font-normal",
+                  !task.startDate && !task.endDate && "text-muted-foreground"
+                )}
+                disabled={isUpdating === 'dates'}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {task.startDate && task.endDate ? 
+                  `${formatDate(task.startDate)} - ${formatDate(task.endDate)}` :
+                  (task.startDate ? formatDate(task.startDate) : "Date")
+                }
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0">
+              <Calendar
+                mode="range"
+                selected={{ from: task.startDate ? new Date(task.startDate) : undefined, to: task.endDate ? new Date(task.endDate) : undefined }}
+                onSelect={(range) => {
+                  handleUpdate('startDate', range?.from?.getTime());
+                  handleUpdate('endDate', range?.to?.getTime());
+                }}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
+
         {/* Cost */}
         <div>
-          <Label className="text-sm font-medium text-gray-500">Cost ({currencySymbol})</Label>
+          <Label className="text-sm font-medium">Cost ({currencySymbol})</Label>
           <Input
             type="number"
             step="0.01"
@@ -164,156 +229,57 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
             defaultValue={task.cost || ""}
             className="mt-1"
             disabled={isUpdating === 'cost'}
-            onBlur={(e) => {
-              const value = e.target.valueAsNumber;
-              if (!isNaN(value) && value !== task.cost) {
-                handleUpdate('cost', value);
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                const value = (e.target as HTMLInputElement).valueAsNumber;
-                if (!isNaN(value) && value !== task.cost) {
-                  handleUpdate('cost', value);
-                }
-              }
-            }}
+            onBlur={(e) => handleUpdate('cost', e.target.valueAsNumber)}
+            onKeyDown={(e) => e.key === 'Enter' && handleUpdate('cost', (e.target as HTMLInputElement).valueAsNumber)}
           />
         </div>
 
-        {/* Start Date */}
+        {/* Tags */}
         <div>
-          <Label className="text-sm font-medium text-gray-500">Start Date</Label>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                className={cn(
-                  "w-full mt-1 justify-start text-left font-normal",
-                  !task.startDate && "text-muted-foreground"
-                )}
-                disabled={isUpdating === 'dates'}
-              >
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {task.startDate ? formatDate(task.startDate) : "Pick a date"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0">
-              <Calendar
-                mode="single"
-                selected={task.startDate ? new Date(task.startDate) : undefined}
-                onSelect={(date) => {
-                  const timestamp = date ? date.getTime() : undefined;
-                  handleDateUpdate(timestamp, task.endDate);
-                }}
-                initialFocus
-              />
-            </PopoverContent>
-          </Popover>
+          <Label className="text-sm font-medium flex items-center"><Tags className="mr-2 h-4 w-4"/>Tags</Label>
+          <div className="flex items-center gap-2 mt-1">
+            <Input
+              value={tagsInput}
+              onChange={(e) => setTagsInput(e.target.value)}
+              onBlur={handleTagsUpdate}
+              onKeyDown={(e) => e.key === 'Enter' && handleTagsUpdate()}
+              placeholder="Add tags, comma separated"
+              className="flex-grow"
+            />
+          </div>
+           <div className="mt-2 flex flex-wrap gap-1">
+            {task.tags?.map(tag => (
+                <Badge key={tag} variant="secondary">{tag}</Badge>
+            ))}
+            </div>
         </div>
 
-        {/* End Date */}
-        <div>
-          <Label className="text-sm font-medium text-gray-500">End Date</Label>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                className={cn(
-                  "w-full mt-1 justify-start text-left font-normal",
-                  !task.endDate && "text-muted-foreground"
-                )}
-                disabled={isUpdating === 'dates'}
-              >
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {task.endDate ? formatDate(task.endDate) : "Pick a date"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0">
-              <Calendar
-                mode="single"
-                selected={task.endDate ? new Date(task.endDate) : undefined}
-                onSelect={(date) => {
-                  const timestamp = date ? date.getTime() : undefined;
-                  handleDateUpdate(task.startDate, timestamp);
-                }}
-                initialFocus
-              />
-            </PopoverContent>
-          </Popover>
+        {/* Delete Button */}
+        <div className="pt-4 border-t">
+           <AlertDialog>
+            <AlertDialogTrigger asChild>
+                <Button variant="outline" className="w-full">
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete Task
+                </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Are you sure you want to delete this task?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This action cannot be undone. This will permanently delete the task and all associated data.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleDeleteTask} className={cn(buttonVariants({ variant: "destructive" }))}>
+                        Delete
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+           </AlertDialog>
         </div>
-
-        {/* Assigned To */}
-        <div>
-          <Label className="text-sm font-medium text-gray-500">Assigned to</Label>
-          <p className="text-sm text-gray-800 mt-1 p-2 bg-gray-50 rounded">
-            {task.assignedToName || "Unassigned"}
-          </p>
-          <p className="text-xs text-gray-500 mt-1">
-            User assignment will be added in future updates
-          </p>
-        </div>
-
-        {/* Estimated Hours */}
-        <div>
-          <Label className="text-sm font-medium text-gray-500">Estimated Hours</Label>
-          <Input
-            type="number"
-            step="0.5"
-            placeholder="0"
-            defaultValue={task.estimatedHours || ""}
-            className="mt-1"
-            disabled={isUpdating === 'estimatedHours'}
-            onBlur={(e) => {
-              const value = e.target.valueAsNumber;
-              if (!isNaN(value) && value !== task.estimatedHours) {
-                handleUpdate('estimatedHours', value);
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                const value = (e.target as HTMLInputElement).valueAsNumber;
-                if (!isNaN(value) && value !== task.estimatedHours) {
-                  handleUpdate('estimatedHours', value);
-                }
-              }
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Delete Button */}
-      <div className="mt-8 pt-6 border-t">
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="destructive" className="w-full">
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete Task
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will permanently delete the task. This action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDeleteTask}>
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
-
-      {/* Update Status */}
-      {isUpdating && (
-        <div className="mt-4 p-2 bg-blue-50 text-blue-700 text-sm rounded">
-          Zapisywanie {isUpdating}...
-        </div>
-      )}
-    </div>
+      </CardContent>
+    </Card>
   );
 } 

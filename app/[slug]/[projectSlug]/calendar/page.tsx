@@ -1,5 +1,10 @@
-import ProjectCalendar from "./components/ProjectCalendar";
+import { Suspense } from "react";
+import ProjectCalendar, { ProjectCalendarSkeleton } from "./components/ProjectCalendar";
 
 export default function ProjectCalendarPage() {
-  return <ProjectCalendar />;
+  return (
+    <Suspense fallback={<ProjectCalendarSkeleton />}>
+      <ProjectCalendar />
+    </Suspense>
+  );
 } 

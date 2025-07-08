@@ -39,7 +39,7 @@ interface TaskStatusSettingsProps {
 }
 
 export default function TaskStatusSettings({ projectId, initialSettings }: TaskStatusSettingsProps) {
-  const updateSettings = useMutation(api.myFunctions.updateProjectTaskStatusSettings);
+  const updateSettings = useMutation(api.projects.updateProjectTaskStatusSettings);
 
   const form = useForm<TaskStatusSettingsFormValues>({
     resolver: zodResolver(taskStatusSettingsSchema),

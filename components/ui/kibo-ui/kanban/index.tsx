@@ -123,6 +123,7 @@ export const KanbanCard = <T extends KanbanItemProps = KanbanItemProps>({
           className={cn(
             'cursor-grab gap-4 rounded-md p-3 shadow-sm',
             isDragging && 'pointer-events-none cursor-grabbing opacity-30',
+            activeCardId === id && 'ring-2 ring-primary',
             className
           )}
         >
@@ -131,15 +132,7 @@ export const KanbanCard = <T extends KanbanItemProps = KanbanItemProps>({
       </div>
       {activeCardId === id && (
         <t.In>
-          <Card
-            className={cn(
-              'cursor-grab gap-4 rounded-md p-3 shadow-sm ring-2 ring-primary',
-              isDragging && 'cursor-grabbing',
-              className
-            )}
-          >
             {children ?? <p className="m-0 font-medium text-sm">{name}</p>}
-          </Card>
         </t.In>
       )}
     </>

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useOrganization } from "@clerk/nextjs";
+import { useQuery } from "convex/react";
 
 import { Users, Mail, Shield, Search, Plus, UserPlus, Settings, Crown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,14 +11,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { api } from "@/convex/_generated/api";
 
 export default function CompanyTeam() {
   const params = useParams<{ slug: string }>();
   const { organization, isLoaded } = useOrganization();
-  const [searchQuery, setSearchQuery] = useState("");
+
+  const team = useQuery(api.teams.getTeamBySlug, params.slug ? { slug: params.slug } : "skip");
+  const teamMembers = useQuery(api.teams.getTeamMembers, team ? { teamId: team._id } : "skip");
+  const currentUserMember = useQuery(api.teams.getCurrentUserTeamMember, team ? { teamId: team._id } : "skip");
+
+  const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
 
-  if (!isLoaded || !organization) {
+  if (!isLoaded || !organization || !team || !teamMembers || !currentUserMember) {
     return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
   }
 
@@ -51,8 +58,8 @@ export default function CompanyTeam() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search team members..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
             />
           </div>

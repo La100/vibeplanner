@@ -26,11 +26,11 @@ interface OrganizationMember {
 export function AddFromOrganizationForm({ projectId }: AddFromOrganizationFormProps) {
   const [addingUserId, setAddingUserId] = useState<string | null>(null);
   
-  const availableMembers = useQuery(api.myFunctions.getAvailableOrgMembersForProject, { 
-    projectId 
+  const availableMembers = useQuery(api.teams.getAvailableOrgMembersForProject, {
+    projectId: projectId,
   });
-  const debugInfo = useQuery(api.myFunctions.debugTeamMembers, { projectId });
-  const addExistingMember = useMutation(api.myFunctions.addExistingMemberToProject);
+  const debugInfo = useQuery(api.teams.debugTeamMembers, { projectId });
+  const addMemberToProject = useMutation(api.teams.addExistingMemberToProject);
 
   // DEBUG: Log debug info to console
   console.log("=== DEBUG INFO ===");
@@ -41,7 +41,7 @@ export function AddFromOrganizationForm({ projectId }: AddFromOrganizationFormPr
     setAddingUserId(clerkUserId);
     
     try {
-      const result = await addExistingMember({
+      const result = await addMemberToProject({
         clerkUserId,
         projectId,
       });

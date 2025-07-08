@@ -31,7 +31,7 @@ http.route({
 
     try {
       // Zapisz tymczasowo informację o zaproszeniu w bazie
-      await ctx.runMutation(internal.myFunctions.createPendingClientInvitation, {
+      await ctx.runMutation(internal.teams.createPendingClientInvitation, {
         email,
         projectId,
         clerkOrgId,

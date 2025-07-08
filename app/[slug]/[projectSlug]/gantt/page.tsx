@@ -1,5 +1,10 @@
-import ProjectGantt from "./components/ProjectGantt";
+import { Suspense } from "react";
+import ProjectGantt, { ProjectGanttSkeleton } from "./components/ProjectGantt";
 
 export default function ProjectGanttPage() {
-  return <ProjectGantt />;
+  return (
+    <Suspense fallback={<ProjectGanttSkeleton />}>
+      <ProjectGantt />
+    </Suspense>
+  );
 }

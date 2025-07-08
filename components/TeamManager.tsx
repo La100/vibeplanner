@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useParams } from "next/navigation";
 
 type Team = {
   _id: Id<"teams">;
@@ -76,8 +77,8 @@ export default function TeamManager({ team, onBack, onProjectClick }: TeamManage
   const [activeTab, setActiveTab] = useState<"overview" | "projects" | "members">("projects");
   const [showNewProjectForm, setShowNewProjectForm] = useState(false);
 
-  const projects = useQuery(api.myFunctions.listTeamProjects, { teamId: team._id });
-  const createProject = useMutation(api.myFunctions.createProjectInOrg);
+  const projects = useQuery(api.projects.listTeamProjects, { teamId: team._id });
+  const createProject = useMutation(api.projects.createProjectInOrg);
 
   const [newProject, setNewProject] = useState({
     name: "",
@@ -585,6 +586,9 @@ function OverviewTab({ team, projects }: { team: Team; projects: Project[] }) {
 }
 
 function MembersTab() {
+  const params = useParams<{ slug: string }>();
+  useQuery(api.teams.getTeamBySlug, params.slug ? { slug: params.slug } : "skip");
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">

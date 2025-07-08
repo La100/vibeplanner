@@ -16,6 +16,7 @@ import {
   type GanttFeature
 } from "@/components/ui/kibo-ui/gantt";
 import { useState } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const statusColors: Record<string, string> = {
   todo: "#9CA3AF", // gray-400
@@ -25,27 +26,65 @@ const statusColors: Record<string, string> = {
   blocked: "#EF4444", // red-500
 };
 
+export function ProjectGanttSkeleton() {
+  return (
+    <div className="h-full flex flex-col p-6">
+      <div className="mb-6">
+        <Skeleton className="h-9 w-1/2" />
+        <Skeleton className="h-5 w-1/3 mt-2" />
+      </div>
+
+      <div className="mb-4">
+        <Skeleton className="h-10 w-32" />
+      </div>
+
+      <div className="flex-grow border rounded-lg p-4">
+        <div className="flex h-full">
+          {/* Sidebar Skeleton */}
+          <div className="w-1/4 pr-4 border-r">
+            <div className="space-y-3">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+            </div>
+          </div>
+          {/* Timeline Skeleton */}
+          <div className="w-3/4 pl-4">
+            <Skeleton className="h-8 w-full mb-4" /> {/* Header */}
+            <div className="space-y-3">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ProjectGantt() {
   const params = useParams<{ slug: string, projectSlug: string }>();
   const [range, setRange] = useState<"daily" | "monthly">("monthly");
 
-  const project = useQuery(api.myFunctions.getProjectBySlug, {
+  const project = useQuery(api.projects.getProjectBySlug, {
     teamSlug: params.slug,
     projectSlug: params.projectSlug,
   });
 
-  const tasks = useQuery(api.myFunctions.listProjectTasks, 
+  const tasks = useQuery(api.tasks.listProjectTasks, 
     project ? { projectId: project._id } : "skip"
   );
   
-  const updateTaskDates = useMutation(api.myFunctions.updateTaskDates);
+  const updateTaskDates = useMutation(api.tasks.updateTaskDates);
 
-  if (project === undefined || tasks === undefined) {
-    return <div>Loading...</div>;
-  }
-
-  if (project === null) {
-    return <div>Project not found.</div>;
+  if (!project || !tasks) {
+    // This will be handled by Suspense
+    return null;
   }
 
   const ganttFeatures: GanttFeature[] = tasks

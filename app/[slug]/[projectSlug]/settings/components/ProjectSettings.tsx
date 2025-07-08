@@ -14,7 +14,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { Users, Settings, Shield, AlertTriangle, Eye } from "lucide-react";
@@ -28,7 +28,7 @@ import {
 import TaskStatusSettings from "./TaskStatusSettings";
 import ProjectMembers from "./ProjectMembers";
 import SidebarPermissions from "./SidebarPermissions";
-
+import { Skeleton } from "@/components/ui/skeleton";
 
 
 const settingsFormSchema = z.object({
@@ -40,36 +40,72 @@ const deleteFormSchema = z.object({
   confirmName: z.string().min(1, "Please enter the project name to confirm deletion")
 });
 
-export default function ProjectSettings() {
+function ProjectSettingsSkeleton() {
+  return (
+    <div className="mt-4 lg:mt-8 px-4 lg:px-0 pb-8 animate-pulse">
+      <div className="mb-6">
+        <Skeleton className="h-9 w-1/2" />
+        <Skeleton className="h-5 w-3/4 mt-2" />
+      </div>
+
+      <div className="grid w-full grid-cols-5 h-auto p-1 mb-6 border rounded-md">
+        {[...Array(5)].map((_, i) => (
+          <div key={i} className="flex flex-col items-center gap-1 p-2">
+            <Skeleton className="h-5 w-5 rounded-full" />
+            <Skeleton className="h-4 w-12" />
+          </div>
+        ))}
+      </div>
+
+      <Card>
+        <CardHeader className="pb-4">
+          <Skeleton className="h-7 w-48" />
+          <Skeleton className="h-4 w-64 mt-2" />
+        </CardHeader>
+        <CardContent className="px-4 lg:px-6 space-y-6">
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-24" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-24" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+          <Skeleton className="h-10 w-32" />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ProjectSettingsContent() {
   const params = useParams<{ slug: string, projectSlug: string }>();
   const router = useRouter();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"general" | "members" | "permissions" | "taskstatus" | "advanced">("general");
   
-  const project = useQuery(api.myFunctions.getProjectBySlug, {
+  const project = useQuery(api.projects.getProjectBySlug, {
     teamSlug: params.slug,
     projectSlug: params.projectSlug,
   });
 
-  const hasAccess = useQuery(api.myFunctions.checkUserProjectAccess, 
+  const hasAccess = useQuery(api.projects.checkUserProjectAccess, 
     project ? { projectId: project._id } : "skip"
   );
 
-  const teamMember = useQuery(api.myFunctions.getCurrentUserTeamMember, 
+  const teamMember = useQuery(api.teams.getCurrentUserTeamMember, 
     project ? { teamId: project.teamId } : "skip"
   );
 
-
-
-  const updateProject = useMutation(api.myFunctions.updateProject);
-  const deleteProject = useMutation(api.myFunctions.deleteProject);
+  const updateProject = useMutation(api.projects.updateProject);
+  const deleteProject = useMutation(api.projects.deleteProject);
 
   const settingsForm = useForm<z.infer<typeof settingsFormSchema>>({
     resolver: zodResolver(settingsFormSchema),
     values: project ? { 
       name: project.name,
       currency: project.currency || "USD",
-    } : undefined,
+    } : { name: "", currency: "USD" },
   });
 
   const deleteForm = useForm<z.infer<typeof deleteFormSchema>>({
@@ -77,26 +113,19 @@ export default function ProjectSettings() {
     defaultValues: { confirmName: "" },
   });
 
-  if (project === undefined) {
-    return <div>Loading project details...</div>;
+  if (!project || hasAccess === false || !teamMember) {
+    if (hasAccess === false) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
+          <h1 className="text-2xl font-bold text-red-600 mb-2">Access Denied</h1>
+          <p className="text-muted-foreground">You don't have permission to access project settings.</p>
+        </div>
+      );
+    }
+    // Let suspense handle the rest
+    return null;
   }
-  if (project === null) {
-    return <div>Project not found.</div>;
-  }
-
-  if (hasAccess === undefined || teamMember === undefined) {
-    return <div>Loading permissions...</div>;
-  }
-
-  if (hasAccess === false) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-        <h1 className="text-2xl font-bold text-red-600 mb-2">Access Denied</h1>
-        <p className="text-muted-foreground">You don't have permission to access project settings.</p>
-      </div>
-    );
-  }
-
+  
   const canEdit = teamMember && (teamMember.role === "admin" || teamMember.role === "member");
 
   if (!canEdit) {
@@ -148,7 +177,7 @@ export default function ProjectSettings() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto mt-4 lg:mt-8 px-4 lg:px-0 pb-8">
+    <div className="mt-4 lg:mt-8 px-4 lg:px-0 pb-8">
       <div className="mb-6">
         <h1 className="text-2xl lg:text-3xl font-bold">Project Settings</h1>
         <p className="text-muted-foreground text-sm lg:text-base mt-1">Manage your project configuration and access.</p>
@@ -186,15 +215,21 @@ export default function ProjectSettings() {
         </TabsContent>
 
         <TabsContent value="members" className="mt-0">
-          <MembersTab project={project} />
+           <Suspense fallback={<Card><CardContent className="p-4"><Skeleton className="h-20 w-full" /></CardContent></Card>}>
+            <MembersTab project={project} />
+          </Suspense>
         </TabsContent>
 
         <TabsContent value="permissions" className="mt-0">
-          <PermissionsTab project={project} />
+           <Suspense fallback={<Card><CardContent className="p-4"><Skeleton className="h-20 w-full" /></CardContent></Card>}>
+            <PermissionsTab project={project} />
+          </Suspense>
         </TabsContent>
 
         <TabsContent value="taskstatus" className="mt-0">
-          <TaskStatusTab project={project} />
+           <Suspense fallback={<Card><CardContent className="p-4"><Skeleton className="h-20 w-full" /></CardContent></Card>}>
+            <TaskStatusTab project={project} />
+          </Suspense>
         </TabsContent>
 
         <TabsContent value="advanced" className="mt-0">
@@ -208,6 +243,14 @@ export default function ProjectSettings() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+export default function ProjectSettings() {
+  return (
+    <Suspense fallback={<ProjectSettingsSkeleton />}>
+      <ProjectSettingsContent />
+    </Suspense>
   );
 }
 

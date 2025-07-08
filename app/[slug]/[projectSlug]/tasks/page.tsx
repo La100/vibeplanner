@@ -1,5 +1,10 @@
-import TasksView from "./components/TasksView";
+import { Suspense } from "react";
+import TasksView, { TasksViewSkeleton } from "./components/TasksView";
 
 export default function ProjectTasksPage() {
-  return <TasksView />;
+  return (
+    <Suspense fallback={<TasksViewSkeleton />}>
+      <TasksView />
+    </Suspense>
+  );
 }

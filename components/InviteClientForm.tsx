@@ -31,8 +31,8 @@ interface InviteClientFormProps {
 
 export function InviteClientForm({ projectId }: InviteClientFormProps) {
   const { organization } = useOrganization();
-  const project = useQuery(api.myFunctions.getProject, { projectId });
-  const inviteClient = useMutation(api.myFunctions.inviteClientToProject);
+  const project = useQuery(api.projects.getProject, { projectId });
+  const inviteClient = useMutation(api.teams.inviteClientToProject);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),

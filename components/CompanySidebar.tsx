@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
-import { useOrganization } from "@clerk/nextjs";
+import { useOrganization, useOrganizationList } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import { 
   Sidebar,
@@ -30,9 +30,12 @@ function CompanySidebarContent() {
   const params = useParams<{ slug: string }>();
   const router = useRouter();
   const { setOpenMobile } = useSidebar();
+  useOrganizationList({
+    userMemberships: true,
+  });
   const { organization } = useOrganization();
   
-  const team = useQuery(api.myFunctions.getTeamBySlug, 
+  const team = useQuery(api.teams.getTeamBySlug, 
     params.slug ? { slug: params.slug } : "skip"
   );
 

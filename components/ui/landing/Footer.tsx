@@ -99,7 +99,7 @@ export function Footer() {
         <div className="mt-12 pt-8 border-t">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-2">
-              <Image src="/convex.svg" alt="VibePlanner Logo" className="h-6 w-6" />
+              <Image src="/convex.svg" alt="VibePlanner Logo" className="h-6 w-6" height={6} width={6}/>
               <span className="text-sm text-muted-foreground">
                 © {new Date().getFullYear()} VibePlanner. All rights reserved.
               </span>

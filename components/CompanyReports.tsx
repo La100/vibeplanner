@@ -19,17 +19,17 @@ export default function CompanyReports() {
   const [timeRange, setTimeRange] = useState<string>("30d");
   
   // Check if team exists first
-  const team = useQuery(api.myFunctions.getTeamBySlug, 
+  const team = useQuery(api.teams.getTeamBySlug, 
     params.slug ? { slug: params.slug } : "skip"
   );
   
   // Get projects for this organization
-  const projects = useQuery(api.myFunctions.listProjectsByClerkOrg, 
+  const projects = useQuery(api.projects.listProjectsByClerkOrg, 
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
   
   // Get team tasks for overview
-  const teamTasks = useQuery(api.myFunctions.listTeamTasks, 
+  const teamTasks = useQuery(api.tasks.listTeamTasks, 
     team && team._id ? { teamId: team._id } : "skip"
   );
 
