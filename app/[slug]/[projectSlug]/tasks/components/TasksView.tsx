@@ -545,7 +545,7 @@ function TaskCardContent({ task, projectSlug, companySlug }: { task: KanbanTask,
               </span>
             )}
           </div>
-          {task.tags?.length > 0 && 
+          {task.tags && task.tags.length > 0 && 
             <div className="mt-2 flex flex-wrap gap-1">
               {task.tags.map((tag: string) => <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>)}
             </div>
