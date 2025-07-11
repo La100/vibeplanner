@@ -300,14 +300,14 @@ export default function TaskDetail() {
             </div>
           </div>
 
-          {/* Editable Sidebar */}
-          <aside className="lg:col-span-2">
+          {/* Sidebar */}
+          <div className="lg:col-span-2">
             <TaskDetailSidebar 
               task={task} 
-              project={project} 
+              project={project}
               onDelete={handleDeleteTask} 
             />
-          </aside>
+          </div>
         </div>
       </div>
     </div>

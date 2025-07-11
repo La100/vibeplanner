@@ -1,38 +1,41 @@
 import { v } from "convex/values";
-import { api } from "./_generated/api";
-import { query, mutation, internalMutation, action } from "./_generated/server";
+import { api, internal } from "./_generated/api";
+import { query, mutation, internalMutation, internalQuery, action } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 
-// Utility function to check project access
-const hasProjectAccess = async (ctx: any, projectId: Id<"projects">): Promise<boolean> => {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) {
-    return false;
-  }
+// Utility function to check project read access
+const hasProjectAccess = async (ctx: any, projectId: Id<"projects">, requireWriteAccess = false): Promise<boolean> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return false;
 
-  const project = await ctx.db.get(projectId);
-  if (!project) {
-    return false;
-  }
+    const project = await ctx.db.get(projectId);
+    if (!project) return false;
 
-  const membership = await ctx.db
-    .query("teamMembers")
-    .withIndex("by_team_and_user", (q: any) =>
-      q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
-    )
-    .filter((q: any) => q.eq(q.field("isActive"), true))
-    .first();
+    const membership = await ctx.db
+        .query("teamMembers")
+        .withIndex("by_team_and_user", (q: any) =>
+            q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
+        )
+        .filter((q: any) => q.eq(q.field("isActive"), true))
+        .first();
 
-  if (!membership) {
-    return false;
-  }
-  
-  if (membership.role === 'client') {
-    return membership.projectIds?.includes(projectId) ?? false;
-  }
+    if (!membership) return false;
+    
+    if (membership.role === 'client') {
+        if (requireWriteAccess) return false; // Clients never have write access
+        return membership.projectIds?.includes(projectId) ?? false;
+    }
 
-  return ["admin", "member", "viewer"].includes(membership.role);
+    const validRoles = requireWriteAccess ? ["admin", "member"] : ["admin", "member", "viewer"];
+    return validRoles.includes(membership.role);
 };
+
+// Utility function to check task read/write access
+const hasTaskAccess = async (ctx: any, taskId: Id<"tasks">, requireWriteAccess = false): Promise<boolean> => {
+    const task = await ctx.db.get(taskId);
+    if (!task) return false;
+    return await hasProjectAccess(ctx, task.projectId, requireWriteAccess);
+}
 
 // ====== QUERIES ======
 
@@ -52,41 +55,21 @@ export const listProjectTasks = query({
     sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
   },
   async handler(ctx, args) {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
     const hasAccess = await hasProjectAccess(ctx, args.projectId);
-    if (!hasAccess) {
-      return [];
-    }
+    if (!hasAccess) return [];
 
-    let tasksQuery = ctx.db
-      .query("tasks")
-      .withIndex("by_project", (q) => q.eq("projectId", args.projectId));
-
-    let tasks = await tasksQuery.collect();
+    let tasks = await ctx.db.query("tasks").withIndex("by_project", (q) => q.eq("projectId", args.projectId)).collect();
 
     // Apply filters
     if (args.filters) {
       tasks = tasks.filter((task) => {
         const { status, priority, searchQuery, assignedTo, tags } = args.filters!;
-        if (status && status.length > 0 && !status.includes(task.status)) {
-          return false;
-        }
-        if (priority && priority.length > 0 && task.priority && !priority.includes(task.priority)) {
-          return false;
-        }
-        if (searchQuery && !task.title.toLowerCase().includes(searchQuery.toLowerCase())) {
-          return false;
-        }
-        if (assignedTo && assignedTo.length > 0 && task.assignedTo && !assignedTo.includes(task.assignedTo)) {
-            return false;
-        }
+        if (status && status.length > 0 && !status.includes(task.status)) return false;
+        if (priority && priority.length > 0 && task.priority && !priority.includes(task.priority)) return false;
+        if (searchQuery && !task.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+        if (assignedTo && assignedTo.length > 0 && (!task.assignedTo || !assignedTo.includes(task.assignedTo))) return false;
         if (tags && tags.length > 0) {
-          if (!task.tags || task.tags.length === 0) return false;
-          if (!tags.some(filterTag => task.tags.includes(filterTag))) {
-            return false;
-          }
+          if (!task.tags || !tags.some(filterTag => task.tags.includes(filterTag))) return false;
         }
         return true;
       });
@@ -95,128 +78,85 @@ export const listProjectTasks = query({
     // Apply sorting
     if (args.sortBy) {
         tasks.sort((a, b) => {
-            const fieldA = a[args.sortBy as keyof typeof a];
-            const fieldB = b[args.sortBy as keyof typeof b];
-
-            // Handle undefined or null values
+            const fieldA = a[args.sortBy as keyof typeof a] as any;
+            const fieldB = b[args.sortBy as keyof typeof b] as any;
             if (fieldA == null && fieldB == null) return 0;
             if (fieldA == null) return args.sortOrder === 'desc' ? 1 : -1;
             if (fieldB == null) return args.sortOrder === 'desc' ? -1 : 1;
-
             let comparison = 0;
-            if (fieldA > fieldB) {
-                comparison = 1;
-            } else if (fieldA < fieldB) {
-                comparison = -1;
-            }
-
+            if (fieldA > fieldB) comparison = 1;
+            else if (fieldA < fieldB) comparison = -1;
             return args.sortOrder === 'desc' ? -comparison : comparison;
         });
     }
 
-    const tasksWithDetails = await Promise.all(
+    return await Promise.all(
       tasks.map(async (task) => {
         let assignedToName: string | undefined = "Unassigned";
-        let assignedToImageUrl: string | undefined = undefined;
-        let createdByName: string | undefined = "Unknown";
-        
-        const commentCount = (await ctx.db.query("comments").withIndex("by_task", q => q.eq("taskId", task._id)).collect()).length;
-
+        let assignedToImageUrl: string | undefined;
         if (task.assignedTo) {
-          const assignedUser = await ctx.db
-            .query("users")
-            .withIndex("by_clerk_user_id", (q) =>
-              q.eq("clerkUserId", task.assignedTo!)
-            )
-            .unique();
-          if (assignedUser) {
-            assignedToName = assignedUser.name;
-            assignedToImageUrl = assignedUser.imageUrl;
+          const user = await ctx.db.query("users").withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.assignedTo!)).unique();
+          if (user) { assignedToName = user.name; assignedToImageUrl = user.imageUrl; }
         }
-        }
-        
-        const createdByUser = await ctx.db
-          .query("users")
-          .withIndex("by_clerk_user_id", (q) =>
-            q.eq("clerkUserId", task.createdBy)
-          )
-          .unique();
-
-        if (createdByUser) {
-          createdByName = createdByUser.name;
-        }
-
-        return {
-          ...task,
-          assignedToName,
-          assignedToImageUrl,
-          createdByName,
-          commentCount,
-        };
+        const createdByUser = await ctx.db.query("users").withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.createdBy)).unique();
+        const commentCount = (await ctx.db.query("comments").withIndex("by_task", q => q.eq("taskId", task._id)).collect()).length;
+        return { ...task, assignedToName, assignedToImageUrl, createdByName: createdByUser?.name, commentCount };
       })
     );
+  },
+});
 
-    return tasksWithDetails;
+export const getTask = query({
+  args: { taskId: v.id("tasks") },
+  async handler(ctx, args) {
+    const hasAccess = await hasTaskAccess(ctx, args.taskId);
+    if (!hasAccess) return null;
+    const task = await ctx.db.get(args.taskId);
+    if (!task) return null;
+    
+    let assignedToName, assignedToImageUrl;
+    if (task.assignedTo) {
+      const user = await ctx.db.query("users").withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.assignedTo!)).unique();
+      assignedToName = user?.name ?? user?.email;
+      assignedToImageUrl = user?.imageUrl;
+    }
+    const createdByUser = await ctx.db.query("users").withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.createdBy)).unique();
+    
+    return { 
+      ...task, 
+      assignedToName, 
+      assignedToImageUrl, 
+      createdByName: createdByUser?.name 
+    };
   },
 });
 
 export const getCommentsForTask = query({
     args: { taskId: v.id("tasks") },
     async handler(ctx, args) {
-        const comments = await ctx.db
-            .query("comments")
-            .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
-            .order("desc")
-            .collect();
-        
+        const hasAccess = await hasTaskAccess(ctx, args.taskId);
+        if (!hasAccess) return [];
+        const comments = await ctx.db.query("comments").withIndex("by_task", (q) => q.eq("taskId", args.taskId)).order("desc").collect();
         return Promise.all(
             comments.map(async (comment) => {
-                const author = await ctx.db
-                    .query("users")
-                    .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", comment.authorId))
-                    .unique();
-                return {
-                    ...comment,
-                    authorName: author?.name,
-                    authorImageUrl: author?.imageUrl,
-                };
+                const author = await ctx.db.query("users").withIndex("by_clerk_user_id", q => q.eq("clerkUserId", comment.authorId)).unique();
+                return { ...comment, authorName: author?.name, authorImageUrl: author?.imageUrl };
             })
         );
     }
 });
 
-export const getProjectTasksWithDates = query({
-  args: { 
-    projectId: v.id("projects"),
-    startDate: v.optional(v.number()),
-    endDate: v.optional(v.number()),
-  },
-  async handler(ctx, args) {
-    let query = ctx.db
-      .query("tasks")
-      .withIndex("by_project", q => q.eq("projectId", args.projectId));
-    
-    const tasks = await query.collect();
-    
-    // Filtruj zadania z datami w zakresie
-    return tasks.filter(task => {
-      if (!task.endDate) return false;
-      if (args.startDate && task.endDate < args.startDate) return false;
-      if (args.endDate && task.endDate > args.endDate) return false;
-      return true;
-    });
-  }
-});
-
 export const listTeamTasks = query({
   args: { teamId: v.id("teams") },
   async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+    
     const tasks = await ctx.db
       .query("tasks")
       .withIndex("by_team", q => q.eq("teamId", args.teamId))
       .collect();
     
-    // Pobierz informacje o projektach dla zadań
     const tasksWithProjects = await Promise.all(
       tasks.map(async (task) => {
         const project = await ctx.db.get(task.projectId);
@@ -232,49 +172,18 @@ export const listTeamTasks = query({
   }
 });
 
-export const getTask = query({
-  args: { taskId: v.id("tasks") },
-  async handler(ctx, args) {
-    const task = await ctx.db.get(args.taskId);
-    if (!task) return null;
-
-    let assignedToName: string | undefined;
-    let assignedToImageUrl: string | undefined;
-
-    if (task.assignedTo) {
-      const user = await ctx.db
-        .query("users")
-        .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.assignedTo!))
-        .unique();
-      assignedToName = user?.name ?? user?.email;
-      assignedToImageUrl = user?.imageUrl;
-    }
-
-    return { ...task, assignedToName, assignedToImageUrl };
-  }
+export const getTasksForIndexing = internalQuery({
+  args: {
+    projectId: v.id("projects"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("tasks")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+  },
 });
 
-export const getTaskById = query({
-  args: { taskId: v.id("tasks") },
-  async handler(ctx, args) {
-    const task = await ctx.db.get(args.taskId);
-    if (!task) return null;
-
-    let assignedToName: string | undefined;
-    let assignedToImageUrl: string | undefined;
-
-    if (task.assignedTo) {
-      const user = await ctx.db
-        .query("users")
-        .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.assignedTo!))
-        .unique();
-      assignedToName = user?.name ?? user?.email;
-      assignedToImageUrl = user?.imageUrl;
-    }
-
-    return { ...task, assignedToName, assignedToImageUrl };
-  }
-});
 
 // ====== MUTATIONS ======
 
@@ -282,59 +191,32 @@ export const createTask = mutation({
   args: {
     title: v.string(),
     projectId: v.id("projects"),
+    teamId: v.id("teams"),
     description: v.optional(v.string()),
-    content: v.optional(v.string()),
-    status: v.optional(v.union(v.literal("todo"), v.literal("in_progress"), v.literal("review"), v.literal("done"))),
+    status: v.union(v.literal("todo"), v.literal("in_progress"), v.literal("review"), v.literal("done")),
     priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent"))),
-    assignedTo: v.optional(v.string()),
-    startDate: v.optional(v.number()),
-    endDate: v.optional(v.number()),
+    assignedTo: v.optional(v.union(v.string(), v.null())),
     dueDate: v.optional(v.number()),
-    estimatedHours: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
     cost: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const project = await ctx.db.get(args.projectId);
-    if (!project) throw new Error("Project not found");
-
-    return await ctx.db.insert("tasks", {
-      title: args.title,
-      description: args.description,
-      content: args.content,
-      projectId: args.projectId,
-      teamId: project.teamId,
-      status: args.status || "todo",
-      priority: args.priority,
-      assignedTo: args.assignedTo,
-      createdBy: identity.subject,
-      startDate: args.startDate,
-      endDate: args.endDate,
-      dueDate: args.dueDate,
-      estimatedHours: args.estimatedHours,
-      tags: args.tags || [],
-      cost: args.cost,
-    });
-  },
-});
-
-export const updateTaskStatus = mutation({
-  args: {
-    taskId: v.id("tasks"),
-    status: v.union(
-        v.literal("todo"),
-        v.literal("in_progress"),
-        v.literal("review"),
-        v.literal("done")
-    ),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+    estimatedHours: v.optional(v.number()),
   },
   async handler(ctx, args) {
-    const task = await ctx.db.get(args.taskId);
-    if (!task) throw new Error("Task not found");
-    await ctx.db.patch(args.taskId, { status: args.status });
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+    const hasAccess = await hasProjectAccess(ctx, args.projectId, true);
+    if (!hasAccess) throw new Error("Permission denied.");
+    const taskId = await ctx.db.insert("tasks", { ...args, createdBy: identity.subject, tags: args.tags || [] });
+    await ctx.runMutation(internal.activityLog.logActivity, {
+      teamId: args.teamId,
+      projectId: args.projectId,
+      actionType: "task.create",
+      details: { title: args.title },
+      entityId: taskId,
+    });
+    return taskId;
   },
 });
 
@@ -343,104 +225,203 @@ export const updateTask = mutation({
     taskId: v.id("tasks"),
     title: v.optional(v.string()),
     description: v.optional(v.string()),
-    content: v.optional(v.string()),
     status: v.optional(v.union(v.literal("todo"), v.literal("in_progress"), v.literal("review"), v.literal("done"))),
-    priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent"))),
-    assignedTo: v.optional(v.string()),
+    priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent"), v.null())),
+    assignedTo: v.optional(v.union(v.string(), v.null())),
+    dueDate: v.optional(v.number()),
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
-    dueDate: v.optional(v.number()),
-    estimatedHours: v.optional(v.number()),
-    actualHours: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
     cost: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const { taskId, ...rest } = args;
-    await ctx.db.patch(taskId, rest);
-  }
-});
-
-export const updateTaskDates = mutation({
-  args: {
-    taskId: v.id("tasks"),
-    startDate: v.optional(v.number()),
-    endDate: v.optional(v.number()),
+    estimatedHours: v.optional(v.number()),
+    content: v.optional(v.string()),
   },
   async handler(ctx, args) {
-    const { taskId, startDate, endDate } = args;
-    await ctx.db.patch(taskId, { startDate, endDate });
+    const hasAccess = await hasTaskAccess(ctx, args.taskId, true);
+    if (!hasAccess) throw new Error("Permission denied.");
+
+    const task = await ctx.db.get(args.taskId);
+    if (!task) throw new Error("Task not found");
+    
+    const { taskId, ...updatePayload } = args;
+
+    await ctx.db.patch(taskId, updatePayload as Partial<Doc<"tasks">>);
+
+    await ctx.runMutation(internal.activityLog.logActivity, {
+      teamId: task.teamId,
+      projectId: task.projectId,
+      actionType: "task.update",
+      details: { title: task.title, updatedFields: Object.keys(updatePayload) },
+      entityId: args.taskId,
+    });
+  },
+});
+
+export const updateTaskStatus = mutation({
+  args: {
+    taskId: v.id("tasks"),
+    status: v.union(v.literal("todo"), v.literal("in_progress"), v.literal("review"), v.literal("done")),
+  },
+  async handler(ctx, args) {
+    const hasAccess = await hasTaskAccess(ctx, args.taskId, true);
+    if (!hasAccess) throw new Error("Permission denied.");
+    const task = await ctx.db.get(args.taskId);
+    if (!task) throw new Error("Task not found");
+    const originalStatus = task.status;
+    if (originalStatus === args.status) return;
+    await ctx.db.patch(args.taskId, { status: args.status });
+    await ctx.runMutation(internal.activityLog.logActivity, {
+      teamId: task.teamId,
+      projectId: task.projectId,
+      actionType: "task.status.change",
+      details: { title: task.title, from: originalStatus, to: args.status },
+      entityId: args.taskId,
+    });
   },
 });
 
 export const deleteTask = mutation({
   args: { taskId: v.id("tasks") },
-  handler: async (ctx, args) => {
+  async handler(ctx, args) {
+    const hasAccess = await hasTaskAccess(ctx, args.taskId, true);
+    if (!hasAccess) throw new Error("Permission denied.");
+    const task = await ctx.db.get(args.taskId);
+    if (!task) return;
+    await ctx.runMutation(internal.activityLog.logActivity, {
+      teamId: task.teamId,
+      projectId: task.projectId,
+      actionType: "task.delete",
+      details: { title: task.title },
+      entityId: args.taskId,
+    });
     await ctx.db.delete(args.taskId);
   },
 });
 
-export const addComment = mutation({
-    args: {
-        taskId: v.id("tasks"),
-        content: v.string(),
-    },
+export const assignTask = mutation({
+  args: { taskId: v.id("tasks"), userId: v.optional(v.string()) },
+  async handler(ctx, args) {
+    const hasAccess = await hasTaskAccess(ctx, args.taskId, true);
+    if (!hasAccess) throw new Error("Permission denied.");
+    const task = await ctx.db.get(args.taskId);
+    if (!task) throw new Error("Task not found");
+    const originalAssignee = task.assignedTo;
+    if (originalAssignee === args.userId) return;
+    await ctx.db.patch(args.taskId, { assignedTo: args.userId });
+    await ctx.runMutation(internal.activityLog.logActivity, {
+      teamId: task.teamId,
+      projectId: task.projectId,
+      actionType: "task.assign",
+      details: { title: task.title, from: originalAssignee || "unassigned", to: args.userId || "unassigned" },
+      entityId: args.taskId,
+    });
+  },
+});
+
+export const updateTaskContent = mutation({
+    args: { taskId: v.id("tasks"), content: v.string() },
     async handler(ctx, args) {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) {
-            throw new Error("Not authenticated");
-        }
-
+        const hasAccess = await hasTaskAccess(ctx, args.taskId, true);
+        if (!hasAccess) throw new Error("Permission denied.");
         const task = await ctx.db.get(args.taskId);
-        if (!task) {
-            throw new Error("Task not found");
-        }
-
-        await ctx.db.insert("comments", {
-            content: args.content,
-            authorId: identity.subject,
-            taskId: args.taskId,
-            teamId: task.teamId,
-            isEdited: false,
+        if (!task) throw new Error("Task not found");
+        await ctx.db.patch(args.taskId, { content: args.content });
+        await ctx.runMutation(internal.activityLog.logActivity, {
+          teamId: task.teamId,
+          projectId: task.projectId,
+          actionType: "task.content.update",
+          details: { title: task.title },
+          entityId: args.taskId,
         });
     }
 });
 
-export const updateProjectTaskStatusSettings = mutation({
-  args: {
-    projectId: v.id("projects"),
-    settings: v.object({
-      todo: v.object({ name: v.string(), color: v.string() }),
-      in_progress: v.object({ name: v.string(), color: v.string() }),
-      review: v.object({ name: v.string(), color: v.string() }),
-      done: v.object({ name: v.string(), color: v.string() }),
-    }),
-  },
-  async handler(ctx, args) {
-    await ctx.db.patch(args.projectId, { taskStatusSettings: args.settings });
-  }
-});
-
 // ====== ACTIONS ======
 
-export const parseTaskFromChat = action({
-  args: {
-    message: v.string(),
-    projectId: v.id("projects"),
-  },
-  handler: async (ctx, args) => {
-    // Implement AI parsing logic here
-    // This is a placeholder for a call to an external AI service
-    const result = {
-      isTask: true,
-      title: "Design review",
-      description: "Review the new design mockups for the homepage.",
-      priority: "high",
-      status: "todo",
-      startDate: new Date().toISOString(),
-      endDate: new Date(new Date().getTime() + 24 * 60 * 60 * 1000).toISOString(),
-      cost: 150,
-    };
-    return result;
-  },
-}); 
+import OpenAI from "openai";
+
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+});
+
+export const generateTaskDetailsFromPrompt = action({
+    args: {
+        prompt: v.string(),
+        projectId: v.id("projects"),
+        timezoneOffsetInMinutes: v.number(),
+        taskId: v.optional(v.id("tasks")),
+    },
+    handler: async (ctx, args): Promise<any> => {
+
+        const teamMembers: any[] = await ctx.runQuery(internal.teams.getTeamMembersForIndexing, { projectId: args.projectId });
+        const memberList = teamMembers.map((m: any) => ({ name: m.name, id: m.clerkUserId }));
+
+        const offsetHours = -args.timezoneOffsetInMinutes / 60;
+        const offsetSign = offsetHours >= 0 ? "+" : "-";
+        const offsetString = `UTC${offsetSign}${String(Math.floor(Math.abs(offsetHours))).padStart(2, '0')}:${String(Math.abs(args.timezoneOffsetInMinutes) % 60).padStart(2, '0')}`;
+
+        let taskContext = "";
+        if (args.taskId) {
+            const task = await ctx.runQuery(api.tasks.getTask, { taskId: args.taskId });
+            if (task) {
+                taskContext = `
+The user is editing an existing task. Here is the current state of the task:
+- Current Title: ${task.title}
+- Current Description: ${task.description || 'N/A'}
+- Current Status: ${task.status}
+- Current Priority: ${task.priority || 'N/A'}
+- Current Assignee: ${task.assignedToName || 'N/A'}
+- Current Tags: ${task.tags?.join(', ') || 'N/A'}
+- Current Estimated Hours: ${task.estimatedHours || 'N/A'}
+
+Your goal is to intelligently modify this task based on the user's prompt. For example, if the user says 'add X to the description', you must append 'X' to the current description. If the user asks to add a tag, append it to the existing array of tags. Do not just replace fields unless the user's intent is clearly to replace.
+`;
+            }
+        }
+
+        const systemPrompt: string = `
+You are an intelligent assistant for a project management app.
+Parse the user's request to extract task properties into a JSON object.
+Today's date is ${new Date().toISOString().split('T')[0]}.
+The user's local timezone is ${offsetString}. Please interpret all times in the user's prompt (e.g., "at 3 PM", "15:00") as being in this user's local timezone.
+${taskContext}
+The available properties are:
+- title: string
+- description: string
+- priority: 'low' | 'medium' | 'high' | 'urgent' | null. To remove priority, return null.
+- status: 'todo' | 'in_progress' | 'review' | 'done'
+- dateRange: object with 'from' and 'to' properties. Dates should be full ISO 8601 date-time strings. IMPORTANT: After interpreting the time in the user's local timezone, convert it to UTC for the final ISO string (e.g., YYYY-MM-DDTHH:mm:ss.sssZ). If the user does NOT provide a specific time, the time part of the string MUST be set to midnight UTC (T00:00:00.000Z). If a single date is mentioned, use it for both 'from' and 'to'.
+- cost: number
+- assignedTo: string (must be one of the user IDs from the provided list)
+- tags: string[] (array of strings)
+- estimatedHours: number
+
+The title is a short, concise summary. The description contains all other details, notes, and context.
+
+Here are the available team members for assignment. Match the name mentioned in the prompt to one of these users and return their ID.
+Team Members:
+${JSON.stringify(memberList, null, 2)}
+
+Analyze the following prompt and return ONLY the JSON object.
+Prompt: "${args.prompt}"
+`;
+        try {
+            const response = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: [{ role: "system", content: systemPrompt }],
+                response_format: { type: "json_object" },
+            });
+
+            const jsonResponse: string | null = response.choices[0].message.content;
+            if (!jsonResponse) {
+                throw new Error("AI did not return a response.");
+            }
+
+            return JSON.parse(jsonResponse);
+
+        } catch (error) {
+            console.error("Error parsing task from AI:", error);
+            throw new Error("Failed to generate task details from prompt.");
+        }
+    },
+});

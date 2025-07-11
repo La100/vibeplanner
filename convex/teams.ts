@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, mutation, internalMutation } from "./_generated/server";
+import { query, mutation, internalMutation, internalQuery, internalAction } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { internal, api } from "./_generated/api";
 
@@ -73,7 +73,7 @@ export const inviteClientToProject = mutation({
     email: v.string(),
     projectId: v.id("projects"),
   },
-  async handler(ctx, args) {
+  async handler(ctx, args): Promise<{ invitationId: any }> {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       throw new Error("Not authenticated");
@@ -84,7 +84,11 @@ export const inviteClientToProject = mutation({
       throw new Error("Project not found");
     }
 
-    // Sprawdź uprawnienia
+    const team = await ctx.db.get(project.teamId);
+    if (!team) {
+      throw new Error("Team not found for this project");
+    }
+
     const teamMember = await ctx.db
       .query("teamMembers")
       .withIndex("by_team_and_user", q => 
@@ -93,31 +97,17 @@ export const inviteClientToProject = mutation({
       .unique();
 
     if (!teamMember || (teamMember.role !== "admin" && teamMember.role !== "member")) {
-      throw new Error("Insufficient permissions");
+      throw new Error("Insufficient permissions to invite a client");
     }
 
-    // Dodaj do tabeli clients (to jest kluczowe!)
-    await ctx.runMutation(internal.teams.addClientToProject, {
+    const invitationId = await ctx.runMutation(internal.teams.createPendingClientInvitation, {
       email: args.email,
       projectId: args.projectId,
-      clerkOrgId: (await ctx.db.get(project.teamId))!.clerkOrgId,
-    });
-
-    // Generate a simple random token
-    const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-
-    const invitation = await ctx.db.insert("invitations", {
-      email: args.email,
-      projectId: args.projectId,
-      teamId: project.teamId,
-      role: "client",
+      clerkOrgId: team.clerkOrgId,
       invitedBy: identity.subject,
-      status: "pending",
-      token: token,
-      expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 7, // 7 days
     });
 
-    return invitation;
+    return { invitationId };
   }
 });
 
@@ -313,6 +303,25 @@ export const createPendingClientInvitation = internalMutation({
   }
 });
 
+export const getTeamMembersForIndexing = internalQuery({
+  args: {
+    projectId: v.id("projects"),
+  },
+  handler: async (ctx, args) => {
+    const project = await ctx.db.get(args.projectId);
+    if (!project || !project.teamId) return [];
+
+    const members = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team", (q) => q.eq("teamId", project.teamId!))
+      .collect();
+
+    // This is not efficient, but for indexing it's fine.
+    // It filters members who have the projectId in their projectIds array, or who are not clients (admins, members).
+    return members.filter(m => m.projectIds?.includes(args.projectId) || m.role !== 'client');
+  },
+});
+
 export const getTeamMembers = query({
   args: { teamId: v.id("teams") },
   async handler(ctx, args) {
@@ -477,14 +486,107 @@ export const removeTeamMember = mutation({
   }
 });
 
+export const inviteTeamMember = mutation({
+  args: {
+    teamId: v.id("teams"),
+    email: v.string(),
+    role: v.union(
+      v.literal("admin"),
+      v.literal("member"),
+      v.literal("customer")
+    ),
+  },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const team = await ctx.db.get(args.teamId);
+    if (!team) {
+      throw new Error("Team not found");
+    }
+
+    const currentUserMember = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", (q) =>
+        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (currentUserMember?.role !== "admin") {
+      throw new Error("Only admins can invite members");
+    }
+
+    await ctx.scheduler.runAfter(0, internal.teams.sendClerkInvitation, {
+      clerkOrgId: team.clerkOrgId,
+      email: args.email,
+      role: args.role,
+      invitedBy: identity.subject,
+    });
+
+    return { success: true };
+  },
+});
+
+export const sendClerkInvitation = internalAction({
+  args: {
+    clerkOrgId: v.string(),
+    email: v.string(),
+    role: v.string(), // "admin", "member", or "customer"
+    invitedBy: v.string(),
+  },
+  async handler(ctx, args) {
+    const clerkApiKey = process.env.CLERK_SECRET_KEY;
+    if (!clerkApiKey) {
+      throw new Error("CLERK_SECRET_KEY environment variable not set");
+    }
+
+    // Map our internal role to a Clerk role.
+    // "customer" will be treated as a "member" in Clerk's system.
+    const clerkRole = args.role === 'admin' ? 'org:admin' : 'org:member';
+
+    const redirectUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+
+    try {
+      const response = await fetch(
+        `https://api.clerk.com/v1/organizations/${args.clerkOrgId}/invitations`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${clerkApiKey}`,
+          },
+          body: JSON.stringify({
+            email_address: args.email,
+            role: clerkRole,
+            inviter_user_id: args.invitedBy,
+            redirect_url: redirectUrl,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorBody = await response.json();
+        console.error("Clerk API Error:", JSON.stringify(errorBody, null, 2));
+        const clerkError = errorBody.errors[0]?.long_message || "Failed to send invitation.";
+        throw new Error(`Clerk API Error: ${clerkError}`);
+      }
+
+    } catch (error) {
+      console.error("Failed to send Clerk invitation:", error);
+      throw new Error((error as Error).message);
+    }
+  },
+});
+
 export const changeTeamMemberRole = mutation({
   args: {
     clerkUserId: v.string(),
     teamId: v.id("teams"),
-    newRole: v.union(
+    role: v.union(
       v.literal("admin"),
       v.literal("member"),
-      v.literal("viewer"),
       v.literal("client")
     ),
     projectId: v.optional(v.id("projects")), // Wymagane dla roli client
@@ -518,10 +620,10 @@ export const changeTeamMemberRole = mutation({
     }
 
     // Przygotuj dane do aktualizacji
-    const updateData: any = { role: args.newRole };
+    const updateData: any = { role: args.role };
 
     // Jeśli zmiana na client, potrzebny jest projectId
-    if (args.newRole === "client") {
+    if (args.role === "client") {
       if (!args.projectId) {
         throw new Error("Project ID is required for client role");
       }
@@ -796,4 +898,63 @@ export const debugTeamMembers = query({
       members: membersWithUserData
     };
   }
+});
+
+export const getPendingInvitations = query({
+  args: { teamId: v.id("teams") },
+  async handler(ctx, args) {
+    return await ctx.db
+      .query("invitations")
+      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+      .filter((q) => q.eq(q.field("status"), "pending"))
+      .collect();
+  },
+});
+
+export const revokeInvitation = mutation({
+  args: { invitationId: v.id("invitations") },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const invitation = await ctx.db.get(args.invitationId);
+    if (!invitation) {
+      throw new Error("Invitation not found");
+    }
+
+    const currentUserMember = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", (q) =>
+        q.eq("teamId", invitation.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (currentUserMember?.role !== "admin") {
+      throw new Error("Only admins can revoke invitations");
+    }
+
+    const clerkApiKey = process.env.CLERK_SECRET_KEY;
+    if (!clerkApiKey) {
+      throw new Error("CLERK_SECRET_KEY environment variable not set");
+    }
+
+    const response = await fetch(
+      `https://api.clerk.com/v1/organizations/${currentUserMember.clerkOrgId}/invitations/${invitation.clerkInvitationId}/revoke`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${clerkApiKey}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to revoke invitation in Clerk");
+    }
+
+    // The webhook will handle the DB update
+    return { success: true };
+  },
 });

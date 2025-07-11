@@ -6,14 +6,12 @@ import { useOrganization } from "@clerk/nextjs";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 
-import { Plus, FolderOpen, Calendar, MapPin, DollarSign, Building2, Search, Filter } from "lucide-react";
+import { Plus, FolderOpen, MapPin, DollarSign, Building2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 export default function CompanyProjects() {
@@ -22,8 +20,7 @@ export default function CompanyProjects() {
   const { organization, isLoaded } = useOrganization();
   const [showNewProjectForm, setShowNewProjectForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [priorityFilter, setPriorityFilter] = useState<string>("all");
-  
+
   // Check if team exists first
   const team = useQuery(api.teams.getTeamBySlug, 
     params.slug ? { slug: params.slug } : "skip"
@@ -44,7 +41,6 @@ export default function CompanyProjects() {
   const [newProject, setNewProject] = useState({
     name: "",
     description: "",
-    priority: "medium" as "low" | "medium" | "high" | "urgent",
     client: "",
     location: "",
     budget: "",
@@ -62,7 +58,6 @@ export default function CompanyProjects() {
         description: newProject.description || undefined,
         clerkOrgId: organization.id,
         teamId: team._id,
-        priority: newProject.priority,
         client: newProject.client || undefined,
         location: newProject.location || undefined,
         budget: newProject.budget ? parseFloat(newProject.budget) : undefined,
@@ -73,7 +68,6 @@ export default function CompanyProjects() {
       setNewProject({
         name: "",
         description: "",
-        priority: "medium",
         client: "",
         location: "",
         budget: "",
@@ -97,9 +91,7 @@ export default function CompanyProjects() {
                          project.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          project.client?.toLowerCase().includes(searchQuery.toLowerCase());
     
-    const matchesPriority = priorityFilter === "all" || project.priority === priorityFilter;
-    
-    return matchesSearch && matchesPriority;
+    return matchesSearch;
   });
 
   if (!isLoaded || !organization) {
@@ -140,24 +132,6 @@ export default function CompanyProjects() {
                     />
                   </div>
                   
-                  <div className="space-y-2">
-                    <Label htmlFor="priority">Priority</Label>
-                    <Select
-                      value={newProject.priority}
-                      onValueChange={(value) => setNewProject({ ...newProject, priority: value as "low" | "medium" | "high" | "urgent" })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="low">Low</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="high">High</SelectItem>
-                        <SelectItem value="urgent">Urgent</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
                   <div className="space-y-2">
                     <Label htmlFor="client">Client</Label>
                     <Input
@@ -235,19 +209,6 @@ export default function CompanyProjects() {
               className="pl-10"
             />
           </div>
-          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-            <SelectTrigger className="w-48">
-              <Filter className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="Filter by priority" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Priorities</SelectItem>
-              <SelectItem value="urgent">Urgent</SelectItem>
-              <SelectItem value="high">High</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="low">Low</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
       </div>
 
@@ -260,7 +221,6 @@ export default function CompanyProjects() {
               _id: project._id,
               name: project.name,
               description: project.description,
-              priority: project.priority,
               client: project.client,
               location: project.location,
               budget: project.budget,
@@ -277,10 +237,10 @@ export default function CompanyProjects() {
               <FolderOpen className="h-16 w-16 text-muted-foreground mb-4" />
               <CardTitle className="mb-2">No projects found</CardTitle>
               <CardDescription className="text-center mb-4">
-                {searchQuery || priorityFilter !== "all" ? 
-                  "No projects match your search criteria." :
-                  "Create your first project to get started."
-                }
+                 {searchQuery ? 
+                    "No projects match your search criteria." :
+                    "Create your first project to get started."
+                  }
               </CardDescription>
               <Button onClick={() => setShowNewProjectForm(true)}>
                 <Plus className="mr-2 h-4 w-4" />
@@ -299,7 +259,6 @@ function ProjectCard({ project, onClick }: {
     _id: string;
     name: string;
     description?: string;
-    priority: string;
     client?: string;
     location?: string;
     budget?: number;
@@ -308,75 +267,51 @@ function ProjectCard({ project, onClick }: {
   }; 
   onClick: () => void 
 }) {
-  const getPriorityVariant = (priority: string): "default" | "secondary" | "destructive" | "outline" => {
-    switch(priority) {
-      case "high": return "destructive";
-      case "urgent": return "destructive";
-      case "medium": return "secondary";
-      case "low": return "outline";
-      default: return "default";
-    }
-  };
-
   const progress = project.taskCount > 0 ? (project.completedTasks / project.taskCount) * 100 : 0;
 
   return (
-    <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={onClick}>
+    <Card onClick={onClick} className="cursor-pointer hover:shadow-md transition-shadow">
       <CardHeader>
-        <div className="flex items-start justify-between">
-          <CardTitle className="line-clamp-1">{project.name}</CardTitle>
-          <Badge variant={getPriorityVariant(project.priority)}>
-            {project.priority?.toUpperCase()}
-          </Badge>
+        <div className="flex justify-between items-start">
+          <CardTitle className="text-lg">{project.name}</CardTitle>
+        </div>
+        <CardDescription>{project.description || 'No description'}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2 text-sm text-muted-foreground">
+          {project.client && (
+            <div className="flex items-center">
+              <Building2 className="mr-2 h-4 w-4" />
+              <span>{project.client}</span>
+            </div>
+          )}
+          {project.location && (
+            <div className="flex items-center">
+              <MapPin className="mr-2 h-4 w-4" />
+              <span>{project.location}</span>
+            </div>
+          )}
+          {project.budget && (
+            <div className="flex items-center">
+              <DollarSign className="mr-2 h-4 w-4" />
+              <span>{project.budget.toLocaleString()} PLN</span>
+            </div>
+          )}
         </div>
         
-        {project.description && (
-          <CardDescription className="line-clamp-2">{project.description}</CardDescription>
-        )}
-      </CardHeader>
-      
-      <CardContent className="space-y-4">
-        {project.client && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Building2 className="h-3 w-3" />
-            <span>{project.client}</span>
+        <div>
+          <div className="flex justify-between items-center mb-1">
+            <span className="text-sm font-medium">Progress</span>
+            <span className="text-sm text-muted-foreground">{project.completedTasks}/{project.taskCount} tasks</span>
           </div>
-        )}
-        
-        {project.location && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <MapPin className="h-3 w-3" />
-            <span>{project.location}</span>
-          </div>
-        )}
-        
-        {/* Progress */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Progress</span>
-            <span className="font-medium">{project.completedTasks || 0}/{project.taskCount || 0} tasks</span>
-          </div>
-          <div className="w-full bg-secondary rounded-full h-2">
+          <div className="w-full bg-secondary rounded-full h-2.5">
             <div 
-              className="bg-primary h-2 rounded-full transition-all duration-300"
+              className="bg-primary h-2.5 rounded-full"
               style={{ width: `${progress}%` }}
             ></div>
           </div>
         </div>
-        
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <div className="flex items-center gap-1">
-            <Calendar className="h-3 w-3" />
-            <span>Click to open</span>
-          </div>
-          {project.budget && (
-            <div className="flex items-center gap-1">
-              <DollarSign className="h-3 w-3" />
-              <span>${project.budget.toLocaleString()}</span>
-            </div>
-          )}
-        </div>
       </CardContent>
     </Card>
   );
-} 
+}

@@ -44,9 +44,10 @@ export default function CompanyReports() {
   const completionRate = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
   const totalCost = teamTasks?.reduce((sum, task) => sum + (task.cost || 0), 0) || 0;
 
-  // Group projects by priority
-  const projectsByPriority = projects?.reduce((acc, project) => {
-    acc[project.priority] = (acc[project.priority] || 0) + 1;
+  // Group projects by status
+  const projectsByStatus = projects?.reduce((acc, project) => {
+    const status = project.status || 'unknown';
+    acc[status] = (acc[status] || 0) + 1;
     return acc;
   }, {} as Record<string, number>) || {};
 
@@ -187,22 +188,22 @@ export default function CompanyReports() {
           <div className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Project Priority Distribution</CardTitle>
-                <CardDescription>Breakdown of projects by priority level</CardDescription>
+                <CardTitle>Project Status Distribution</CardTitle>
+                <CardDescription>Breakdown of projects by their current status</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {Object.entries(projectsByPriority).map(([priority, count]) => (
-                    <div key={priority} className="flex items-center justify-between">
+                  {Object.entries(projectsByStatus).map(([status, count]) => (
+                    <div key={status} className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Badge variant={
-                          priority === "urgent" ? "destructive" :
-                          priority === "high" ? "secondary" :
+                          status === "completed" ? "default" :
+                          status === "active" ? "secondary" :
                           "outline"
                         }>
-                          {priority.toUpperCase()}
+                          {status.toUpperCase()}
                         </Badge>
-                        <span className="text-sm">{priority.charAt(0).toUpperCase() + priority.slice(1)}</span>
+                        <span className="text-sm">{status.charAt(0).toUpperCase() + status.slice(1)}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <div className="w-32 bg-secondary rounded-full h-2">

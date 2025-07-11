@@ -21,11 +21,11 @@ import {
 
 import { toast } from "sonner";
 import { useState, useMemo, useEffect } from "react";
-import { LayoutGrid, List, ChevronsUpDown, X, Loader2, MessageSquare } from "lucide-react";
+import { LayoutGrid, List, ChevronsUpDown, X, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import TaskForm from "./TaskForm";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { cn } from "@/lib/utils";
+
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   KanbanProvider,
@@ -34,11 +34,26 @@ import {
   KanbanCards,
   KanbanHeader,
   type DragEndEvent,
-} from '@/components/ui/kibo-ui/kanban';
+} from '@/components/ui/shadcn-io/kanban';
 import { Skeleton } from '@/components/ui/skeleton';
+import { format } from 'date-fns';
+
+const formatDateTime = (timestamp: number | undefined): string => {
+    if (!timestamp) return 'N/A';
+    const date = new Date(timestamp);
+    const hasTime = date.getHours() !== 0 || date.getMinutes() !== 0;
+    if (hasTime) {
+      return format(date, "dd.MM.yyyy, HH:mm");
+    }
+    return format(date, "dd.MM.yyyy");
+};
+
+type TaskStatusKey = "todo" | "in_progress" | "review" | "done";
 
 type TaskStatusLiterals = "todo" | "in_progress" | "review" | "done";
 type TaskPriority = "low" | "medium" | "high" | "urgent" | undefined;
+
+const columnOrder: TaskStatusKey[] = ["todo", "in_progress", "review", "done"];
 
 type KanbanTask = {
   id: Id<"tasks">;
@@ -52,7 +67,7 @@ type KanbanTask = {
   estimatedHours: number | undefined;
   cost: number | undefined;
   status: TaskStatusLiterals;
-  assignedTo: string | undefined;
+  assignedTo: string | null | undefined;
   assignedToName: string | undefined;
   assignedToImageUrl: string | undefined;
   tags: string[] | undefined;
@@ -200,7 +215,9 @@ export default function TasksView() {
   
   const statusOptions = useMemo(() => 
     project?.taskStatusSettings 
-      ? Object.entries(project.taskStatusSettings).map(([id, { name }]) => ({ value: id, label: name }))
+      ? Object.entries(project.taskStatusSettings)
+          .map(([id, { name, color }]) => ({ value: id, label: name, color }))
+          .sort((a, b) => columnOrder.indexOf(a.value as TaskStatusKey) - columnOrder.indexOf(b.value as TaskStatusKey))
       : [],
     [project]
   );
@@ -242,23 +259,11 @@ export default function TasksView() {
     setLocalKanbanTasks(kanbanTasks);
   }, [kanbanTasks]);
 
-  const handleDataChange = (newData: KanbanTask[]) => {
-    setLocalKanbanTasks(newData);
-  };
-
   const tagsOptions = useMemo(() => {
     const allTags = tasksToDisplay?.flatMap(task => task.tags || []) || [];
     const uniqueTags = [...new Set(allTags)];
-    return uniqueTags.map(tag => ({ value: tag, label: tag }));
+    return Array.from(uniqueTags).map(tag => ({ value: tag, label: tag }));
   }, [tasksToDisplay]);
-
-
-  if (project === undefined || hasAccess === undefined || teamMembers === undefined) {
-    // Let Suspense handle the main loading state
-    return <TasksViewSkeleton viewMode={viewMode} />;
-  }
-
-  const isRefetching = tasks === undefined && preservedTasks !== undefined;
 
   const handleFilterChange = (filterType: keyof typeof filters, value: string | string[]) => {
       setFilters(prev => ({...prev, [filterType]: value}));
@@ -266,292 +271,333 @@ export default function TasksView() {
 
   const clearFilters = () => {
     setFilters({ searchQuery: "", status: [], priority: [], assignedTo: [], tags: [] });
-  }
+  };
 
   const handleSortChange = (newSortBy: string) => {
-    setSorting(current => {
-      if (current.sortBy === newSortBy) {
-        return { ...current, sortOrder: current.sortOrder === 'asc' ? 'desc' : 'asc' };
-      }
-      return { sortBy: newSortBy, sortOrder: 'desc' };
-    });
+    setSorting(prev => ({
+      sortBy: newSortBy,
+      sortOrder: prev.sortBy === newSortBy && prev.sortOrder === "desc" ? "asc" : "desc",
+    }));
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
-    if (over && active.id !== over.id) {
-      const taskId = active.id as Id<"tasks">;
-      const newStatus = over.id as TaskStatusLiterals;
-      
-      const originalTasks = localKanbanTasks;
-      
-      // Optimistic update
-      setLocalKanbanTasks(prevTasks => prevTasks.map(t => 
-        t.id === taskId ? { ...t, column: newStatus } : t
-      ));
-      
+    if (!over) return;
+
+    const cardId = active.id as string;
+    const columnId = (over.data.current?.parent || over.id) as TaskStatusLiterals;
+
+    if (!statusOptions.some(s => s.value === columnId)) {
+        return;
+    }
+
+    const task = localKanbanTasks.find(t => t.id === cardId);
+    if (task && task.column !== columnId) {
+      setLocalKanbanTasks(prev => {
+        return prev.map(t =>
+          t.id === cardId ? { ...t, column: columnId } : t
+        );
+      });
+
       try {
-        await updateTaskStatus({ taskId, status: newStatus });
-        toast.success("Task status updated!");
+        await updateTaskStatus({
+          taskId: cardId as Id<"tasks">,
+          status: columnId,
+        });
+        toast.success("Task status updated.");
       } catch {
         toast.error("Failed to update task status.");
-        // Revert on error
-        setLocalKanbanTasks(originalTasks);
+        // Revert optimistic update on failure
+        setLocalKanbanTasks(prev => {
+           return prev.map(t =>
+            t.id === cardId ? { ...t, column: task.column } : t
+          );
+        });
       }
     }
   };
 
   const isFiltered = filters.searchQuery !== "" || filters.status.length > 0 || filters.priority.length > 0 || filters.assignedTo.length > 0 || filters.tags.length > 0;
 
+  if (project === undefined || hasAccess === undefined || teamMembers === undefined) {
+    return <TasksViewSkeleton viewMode={viewMode} />;
+  }
+
   if (project === null) {
     return <div>Project not found.</div>;
   }
-  
+
   if (hasAccess === false) {
-    return <div>You do not have access to this project.</div>
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p>You do not have access to view tasks for this project.</p>
+      </div>
+    );
   }
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="flex-shrink-0 bg-white/60 backdrop-blur-sm sticky top-0 z-10 p-4 border-b">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">{project.name} Tasks</h1>
-            <p className="text-muted-foreground">Manage your project's tasks</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button onClick={() => setIsTaskFormOpen(true)} variant="outline">New Task</Button>
-            <div className="flex items-center rounded-md border bg-background">
+    <div className="flex flex-col h-full p-4">
+       <div className="flex-shrink-0 sticky top-0 z-10 p-4 border-b mb-4">
+         <div className="flex items-center justify-between">
+           <div>
+             <h1 className="text-2xl font-bold">{project.name} Tasks</h1>
+             <p className="text-muted-foreground">Manage your project's tasks</p>
+           </div>
+           <div className="flex items-center gap-2">
+             <Button onClick={() => setIsTaskFormOpen(true)} disabled={!hasAccess || (typeof hasAccess === 'object' && hasAccess.role === 'viewer')}>
+                Add Task
+            </Button>
+             <div className="flex items-center rounded-md border bg-background">
+                <Button
+                 variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
+                 size="sm"
+                 onClick={() => setViewMode('kanban')}
+                 className="rounded-r-none"
+               >
+                 <LayoutGrid className="h-4 w-4" />
+               </Button>
                <Button
-                variant={viewMode === 'kanban' ? 'secondary' : 'ghost'}
-                size="sm"
-                onClick={() => setViewMode('kanban')}
-                className="rounded-r-none"
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-                size="sm"
-                onClick={() => setViewMode('list')}
-                className="rounded-l-none"
-              >
-                <List className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </div>
-        
-        {/* Filters */}
-        <div className="flex items-center gap-2 mt-4">
-          <Input 
-            placeholder="Search tasks..." 
-            className="max-w-sm" 
-            value={filters.searchQuery}
-            onChange={(e) => handleFilterChange('searchQuery', e.target.value)}
-          />
-
-          <DataTableFacetedFilter 
-            title="Status"
-            options={statusOptions}
-            selectedValues={new Set(filters.status)}
-            onFilterChange={(selected) => handleFilterChange('status', Array.from(selected))}
-          />
-          <DataTableFacetedFilter 
-            title="Priority"
-            options={priorityOptions}
-            selectedValues={new Set(filters.priority)}
-            onFilterChange={(selected) => handleFilterChange('priority', Array.from(selected))}
-          />
+                 variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+                 size="sm"
+                 onClick={() => setViewMode('list')}
+                 className="rounded-l-none"
+               >
+                 <List className="h-4 w-4" />
+               </Button>
+             </div>
+           </div>
+         </div>
+         
+         {/* Filters */}
+         <div className="flex items-center gap-2 mt-4">
+           <Input 
+             placeholder="Search tasks..." 
+             className="max-w-sm" 
+             value={filters.searchQuery}
+             onChange={(e) => handleFilterChange('searchQuery', e.target.value)}
+           />
+ 
            <DataTableFacetedFilter 
-            title="Assignee"
-            options={assignedToOptions}
-            selectedValues={new Set(filters.assignedTo)}
-            onFilterChange={(selected) => handleFilterChange('assignedTo', Array.from(selected))}
-          />
-          <DataTableFacetedFilter
-            title="Tags"
-            options={tagsOptions}
-            selectedValues={new Set(filters.tags)}
-            onFilterChange={(selected) => handleFilterChange('tags', Array.from(selected))}
-          />
+             title="Status"
+             options={statusOptions}
+             selectedValues={new Set(filters.status)}
+             onFilterChange={(selected) => handleFilterChange('status', Array.from(selected))}
+           />
+           <DataTableFacetedFilter 
+             title="Priority"
+             options={priorityOptions}
+             selectedValues={new Set(filters.priority)}
+             onFilterChange={(selected) => handleFilterChange('priority', Array.from(selected))}
+           />
+            <DataTableFacetedFilter 
+             title="Assignee"
+             options={assignedToOptions}
+             selectedValues={new Set(filters.assignedTo)}
+             onFilterChange={(selected) => handleFilterChange('assignedTo', Array.from(selected))}
+           />
+           <DataTableFacetedFilter
+             title="Tags"
+             options={tagsOptions}
+             selectedValues={new Set(filters.tags)}
+             onFilterChange={(selected) => handleFilterChange('tags', Array.from(selected))}
+           />
+ 
+           {isFiltered && <Button variant="ghost" onClick={clearFilters} className="h-8 px-2 lg:px-3">Reset <X className="ml-2 h-4 w-4"/></Button>}
+         </div>
+       </div>
+      <Dialog open={isTaskFormOpen} onOpenChange={setIsTaskFormOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Create a new task</DialogTitle>
+          </DialogHeader>
+          {project && (
+            <TaskForm
+              projectId={project._id}
+              teamId={project.teamId}
+              teamMembers={teamMembers || []}
+              currency={project.currency}
+              setIsOpen={setIsTaskFormOpen}
+              onTaskCreated={() => {
+                // Optionally refetch tasks or handle UI update
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
-          {isFiltered && <Button variant="ghost" onClick={clearFilters} className="h-8 px-2 lg:px-3">Reset <X className="ml-2 h-4 w-4"/></Button>}
-        </div>
-      </div>
-      
-      {/* Content */}
-      <main className="flex-grow p-4 overflow-y-auto relative">
-        <Dialog open={isTaskFormOpen} onOpenChange={setIsTaskFormOpen}>
-          <DialogContent className="max-w-4xl">
-            <DialogHeader>
-              <DialogTitle>Create a new task</DialogTitle>
-            </DialogHeader>
-            <TaskForm projectId={project._id} setIsOpen={setIsTaskFormOpen} />
-          </DialogContent>
-        </Dialog>
-
-       <div className={cn("relative transition-opacity", isRefetching && "opacity-50")}>
-         {isRefetching && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/20">
-              <Loader2 className="h-8 w-8 animate-spin" />
-            </div>
-         )}
-          {viewMode === "kanban" ? (
-            <KanbanProvider
-              data={localKanbanTasks}
-              columns={statusOptions.map(s => ({ id: s.value, name: s.label }))}
-              onDragEnd={handleDragEnd}
-              onDataChange={handleDataChange}
-            >
-              {(column) => (
-                <KanbanBoard key={column.id} id={column.id} className="w-80 min-w-80">
-                  <KanbanHeader>{column.name}</KanbanHeader>
-                  <KanbanCards id={column.id}>
-                    {(task: KanbanTask) => (
-                      <KanbanCard {...task}>
-                        <TaskCardContent task={task} projectSlug={params.projectSlug} companySlug={params.slug} />
-                      </KanbanCard>
-                    )}
+      <div className="flex-grow overflow-y-auto">
+        {viewMode === "kanban" ? (
+          <KanbanProvider onDragEnd={handleDragEnd}>
+            <div className="grid flex-grow grid-cols-1 gap-4 items-start md:grid-cols-2 lg:grid-cols-4">
+              {statusOptions.map((status) => (
+                <KanbanBoard id={status.value} key={status.value}>
+                  <KanbanHeader 
+                    name={status.label} 
+                    color={status.color}
+                  />
+                  <KanbanCards>
+                    {localKanbanTasks
+                      .filter((task) => task.column === status.value)
+                      .map((task, index) => (
+                        <KanbanCard 
+                          key={task.id} 
+                          id={task.id} 
+                          name={task.name}
+                          index={index}
+                          parent={status.value}
+                        >
+                          <TaskCardContent 
+                            task={task} 
+                            projectSlug={params.projectSlug} 
+                            companySlug={params.slug} 
+                          />
+                        </KanbanCard>
+                      ))}
                   </KanbanCards>
                 </KanbanBoard>
-              )}
-            </KanbanProvider>
-          ) : (
-             <div className="border rounded-lg overflow-hidden">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead onClick={() => handleSortChange('title')}>
-                                <div className="flex items-center cursor-pointer">
-                                    Task <ChevronsUpDown className="ml-2 h-4 w-4" />
-                                </div>
-                            </TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Priority</TableHead>
-                            <TableHead>Assignee</TableHead>
-                            <TableHead onClick={() => handleSortChange('endDate')}>
-                                <div className="flex items-center cursor-pointer">
-                                    Due Date <ChevronsUpDown className="ml-2 h-4 w-4" />
-                                </div>
-                            </TableHead>
-                            <TableHead>Tags</TableHead>
-                            <TableHead></TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {tasksToDisplay?.map((task) => (
-                            <TableRow key={task._id}>
-                                <TableCell className="font-medium">
-                                  <Link href={`/${params.slug}/${params.projectSlug}/tasks/${task._id}`}>
-                                    {task.title}
-                                  </Link>
-                                </TableCell>
-                                <TableCell>
-                                    <Badge style={{ 
-                                      backgroundColor: project.taskStatusSettings?.[task.status]?.color,
-                                      color: 'white',
-                                    }}>
-                                        {project.taskStatusSettings?.[task.status]?.name || task.status}
-                                    </Badge>
-                                </TableCell>
-                                <TableCell>
-                                    <Badge variant="outline">{task.priority || 'N/A'}</Badge>
-                                </TableCell>
-                                <TableCell>
-                                    <div className="flex items-center gap-2">
-                                        <Avatar className="h-6 w-6">
-                                            <AvatarImage src={task.assignedToImageUrl} />
-                                            <AvatarFallback>{task.assignedToName?.charAt(0)}</AvatarFallback>
-                                        </Avatar>
-                                        <span>{task.assignedToName || "Unassigned"}</span>
-                                    </div>
-                                </TableCell>
-                                <TableCell>
-                                    {task.endDate ? new Date(task.endDate).toLocaleDateString() : 'N/A'}
-                                </TableCell>
-                                 <TableCell>
-                                  <div className="flex gap-1">
-                                    {task.tags?.map(tag => <Badge key={tag} variant="secondary">{tag}</Badge>)}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" className="h-8 w-8 p-0">
-                                                <span className="sr-only">Open menu</span>
-                                                <ChevronsUpDown className="h-4 w-4" />
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end">
-                                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                            <DropdownMenuItem>Edit</DropdownMenuItem>
-                                            <DropdownMenuItem>Delete</DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-                                </TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
-             </div>
-          )}
-       </div>
-      </main>
+              ))}
+            </div>
+          </KanbanProvider>
+        ) : (
+          <Card className="flex-grow">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead onClick={() => handleSortChange('title')}>
+                    <div className="flex items-center cursor-pointer">
+                      Task <ChevronsUpDown className="ml-2 h-4 w-4" />
+                    </div>
+                  </TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Priority</TableHead>
+                  <TableHead>Assignee</TableHead>
+                  <TableHead onClick={() => handleSortChange('endDate')}>
+                    <div className="flex items-center cursor-pointer">
+                      Due Date <ChevronsUpDown className="ml-2 h-4 w-4" />
+                    </div>
+                  </TableHead>
+                  <TableHead>Tags</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tasksToDisplay?.map((task) => (
+                  <TableRow key={task._id}>
+                    <TableCell className="font-medium">
+                      <Link href={`/${params.slug}/${params.projectSlug}/tasks/${task._id}`}>
+                        {task.title}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <Badge style={{ 
+                        backgroundColor: project.taskStatusSettings?.[task.status]?.color,
+                        color: 'white',
+                      }}>
+                        {project.taskStatusSettings?.[task.status]?.name || task.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{task.priority || 'N/A'}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Avatar className="h-6 w-6">
+                          <AvatarImage src={task.assignedToImageUrl} />
+                          <AvatarFallback>{task.assignedToName?.charAt(0)}</AvatarFallback>
+                        </Avatar>
+                        <span>{task.assignedToName || "Unassigned"}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {formatDateTime(task.endDate)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        {task.tags?.map(tag => <Badge key={tag} variant="secondary">{tag}</Badge>)}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" className="h-8 w-8 p-0">
+                            <span className="sr-only">Open menu</span>
+                            <ChevronsUpDown className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                          <DropdownMenuItem>Edit</DropdownMenuItem>
+                          <DropdownMenuItem>Delete</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }
 
 function TaskCardContent({ task, projectSlug, companySlug }: { task: KanbanTask, projectSlug: string, companySlug: string }) {
-  const { label, color } = getPriorityDisplay(task.priority);
-  
+  const priority = getPriorityDisplay(task.priority);
   return (
-    <Link href={`/${companySlug}/${projectSlug}/tasks/${task.id}`}>
-      <Card className="mb-2 hover:shadow-md transition-shadow">
-        <div className="p-3">
-          <div className="flex justify-between items-start mb-2">
-            <p className="font-semibold leading-tight pr-2">{task.title}</p>
-            <Badge className={cn("text-xs whitespace-nowrap", color)}>{label}</Badge>
+    <div className="block">
+      <div className="flex justify-between items-start">
+        <Link href={`/${companySlug}/${projectSlug}/tasks/${task.id}`}>
+          <h4 className="font-semibold text-sm mb-2 hover:underline">{task.title}</h4>
+        </Link>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge className={`${priority.color} text-xs`}>{priority.label}</Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Priority: {priority.label}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+      {task.description && <p className="text-xs text-muted-foreground mb-2">{task.description}</p>}
+      
+      {task.endDate && (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <span>Due: {formatDateTime(task.endDate)}</span>
           </div>
-          
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <div className="flex items-center gap-2">
-              {task.assignedTo && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger>
-                      <Avatar className="h-6 w-6">
-                        <AvatarImage src={task.assignedToImageUrl} />
-                        <AvatarFallback>{task.assignedToName?.charAt(0) || '?'}</AvatarFallback>
-                      </Avatar>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{task.assignedToName}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-               {task.commentCount > 0 && 
-                  <div className="flex items-center gap-1">
-                    <MessageSquare className="h-4 w-4"/>
-                    {task.commentCount}
-                  </div>
-                }
-            </div>
-            {task.endDate && (
-              <span className="text-xs">
-                {new Date(task.endDate).toLocaleDateString()}
-              </span>
-            )}
-          </div>
-          {task.tags && task.tags.length > 0 && 
-            <div className="mt-2 flex flex-wrap gap-1">
-              {task.tags.map((tag: string) => <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>)}
-            </div>
-          }
+      )}
+
+      <div className="flex flex-wrap gap-1 mb-2">
+        {task.tags?.map(tag => (
+          <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
+        ))}
+      </div>
+
+      <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-100">
+        <div className="flex items-center gap-1 text-muted-foreground text-xs">
+          <MessageSquare className="w-3 h-3" />
+          <span>{task.commentCount}</span>
         </div>
-      </Card>
-    </Link>
+        <div className="flex items-center -space-x-2">
+          {task.assignedTo && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Avatar className="w-6 h-6 border-2 border-white">
+                    <AvatarImage src={task.assignedToImageUrl} />
+                    <AvatarFallback>{task.assignedToName?.charAt(0)}</AvatarFallback>
+                  </Avatar>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Assigned to {task.assignedToName}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </div>
+      </div>
+    </div>
   );
 } 

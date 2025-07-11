@@ -159,7 +159,7 @@ export const deleteTeamInternal = internalMutation({
         // Delete all invitations related to the project
         const projectInvitations = await ctx.db
           .query("invitations")
-          .filter(q => q.eq(q.field("projectId"), project._id))
+          .filter(q => q.eq(q.field("teamId"), project.teamId)) // Filter by teamId instead
           .collect();
 
         // Delete all pending client invitations for this project
@@ -238,7 +238,6 @@ export const deleteTeamInternal = internalMutation({
       const teamInvitations = await ctx.db
         .query("invitations")
         .withIndex("by_team", q => q.eq("teamId", team._id))
-        .filter(q => q.eq(q.field("projectId"), undefined))
         .collect();
 
       // Delete all remaining clients for this team
@@ -558,6 +557,58 @@ export const parseTaskFromChat = action({
     }
     */
   }
+});
+
+// Create an invitation from a Clerk webhook
+export const createInvitation = internalMutation({
+  args: {
+    clerkInvitationId: v.string(),
+    email: v.string(),
+    role: v.string(),
+    clerkOrgId: v.string(),
+    invitedBy: v.optional(v.string()),
+  },
+  async handler(ctx, args) {
+    const team = await ctx.db
+      .query("teams")
+      .withIndex("by_clerk_org", (q) => q.eq("clerkOrgId", args.clerkOrgId))
+      .unique();
+
+    if (!team) {
+      console.warn(`Team not found for clerkOrgId: ${args.clerkOrgId} during invitation creation.`);
+      return;
+    }
+
+    await ctx.db.insert("invitations", {
+      clerkInvitationId: args.clerkInvitationId,
+      teamId: team._id,
+      email: args.email,
+      role: args.role,
+      status: "pending",
+      invitedBy: args.invitedBy ?? "system", // Domyślna wartość
+    });
+  },
+});
+
+// Update invitation status from a Clerk webhook
+export const updateInvitationStatus = internalMutation({
+  args: {
+    clerkInvitationId: v.string(),
+    status: v.string(),
+  },
+  async handler(ctx, args) {
+    const invitation = await ctx.db
+      .query("invitations")
+      .withIndex("by_clerk_invitation_id", (q) => q.eq("clerkInvitationId", args.clerkInvitationId))
+      .unique();
+
+    if (!invitation) {
+      console.warn(`Invitation not found for clerkInvitationId: ${args.clerkInvitationId} during status update.`);
+      return;
+    }
+
+    await ctx.db.patch(invitation._id, { status: args.status });
+  },
 });
 
 

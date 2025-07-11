@@ -12,7 +12,7 @@ export default function CompanyLayout({
     <SidebarProvider>
       <CompanySidebar />
       <SidebarInset>
-        <header className="md:hidden flex h-16 items-center gap-2 px-4 border-b bg-background">
+        <header className="lg:hidden flex h-16 items-center gap-2 px-4 border-b bg-background">
           <SidebarTrigger className="-ml-1 [&.hidden]:flex" />
         </header>
         <main className="flex-1 p-4 lg:p-8 overflow-auto">

@@ -8,6 +8,11 @@
  * @module
  */
 
+import type * as activityLog from "../activityLog.js";
+import type * as ai from "../ai.js";
+import type * as ai_v8 from "../ai_v8.js";
+import type * as chatChannels from "../chatChannels.js";
+import type * as chatMessages from "../chatMessages.js";
 import type * as clerk from "../clerk.js";
 import type * as clipper from "../clipper.js";
 import type * as comments from "../comments.js";
@@ -18,6 +23,7 @@ import type * as projects from "../projects.js";
 import type * as shopping from "../shopping.js";
 import type * as tasks from "../tasks.js";
 import type * as teams from "../teams.js";
+import type * as users from "../users.js";
 
 import type {
   ApiFromModules,
@@ -34,6 +40,11 @@ import type {
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  activityLog: typeof activityLog;
+  ai: typeof ai;
+  ai_v8: typeof ai_v8;
+  chatChannels: typeof chatChannels;
+  chatMessages: typeof chatMessages;
   clerk: typeof clerk;
   clipper: typeof clipper;
   comments: typeof comments;
@@ -44,6 +55,7 @@ declare const fullApi: ApiFromModules<{
   shopping: typeof shopping;
   tasks: typeof tasks;
   teams: typeof teams;
+  users: typeof users;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
 

@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalQuery } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 
 // ====== SHOPPING LIST SECTIONS ======
@@ -81,7 +81,7 @@ export const createShoppingListItem = mutation({
         name: v.string(),
         notes: v.optional(v.string()),
         buyBefore: v.optional(v.number()),
-        priority: v.union(v.literal("LOW"), v.literal("MEDIUM"), v.literal("HIGH"), v.literal("URGENT")),
+        priority: v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent")),
         imageUrl: v.optional(v.string()),
         productLink: v.optional(v.string()),
         supplier: v.optional(v.string()),
@@ -134,7 +134,7 @@ export const updateShoppingListItem = mutation({
         name: v.optional(v.string()),
         notes: v.optional(v.string()),
         buyBefore: v.optional(v.number()),
-        priority: v.optional(v.union(v.literal("LOW"), v.literal("MEDIUM"), v.literal("HIGH"), v.literal("URGENT"))),
+        priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent"))),
         imageUrl: v.optional(v.string()),
         productLink: v.optional(v.string()),
         supplier: v.optional(v.string()),
@@ -185,5 +185,17 @@ export const getShoppingListItemsByProject = query({
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .collect();
     return items;
+  },
+}); 
+
+export const getShoppingListForIndexing = internalQuery({
+  args: {
+    projectId: v.id("projects"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("shoppingListItems")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
   },
 }); 

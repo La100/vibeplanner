@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
+import { Id, Doc } from "@/convex/_generated/dataModel";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,10 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
-import { format } from "date-fns";
-import { CalendarIcon, Trash2, Tags, User } from "lucide-react";
+
+import { Trash2, Tags, User, Loader2, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -33,6 +31,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { DateRangePickerWithTime } from "@/components/ui/DateRangePickerWithTime";
+import { DateRange } from "react-day-picker";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface TaskStatusSetting {
   name: string;
@@ -56,11 +57,12 @@ interface TaskDetailSidebarProps {
     cost?: number;
     startDate?: number;
     endDate?: number;
-    assignedTo?: string;
+    assignedTo?: string | null;
     assignedToName?: string;
     estimatedHours?: number;
     tags?: string[];
     teamId: Id<"teams">;
+    projectId: Id<"projects">;
   };
   project: {
     currency?: string;
@@ -72,15 +74,18 @@ interface TaskDetailSidebarProps {
 export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetailSidebarProps) {
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
   const [tagsInput, setTagsInput] = useState(task.tags?.join(", ") || "");
+  const [aiMessage, setAiMessage] = useState("");
+  const [isParsing, setIsParsing] = useState(false);
 
   const updateTask = useMutation(api.tasks.updateTask);
   const deleteTask = useMutation(api.tasks.deleteTask);
+  const generateTaskDetails = useAction(api.tasks.generateTaskDetailsFromPrompt);
   
   const teamMembers = useQuery(api.teams.getTeamMembers, { teamId: task.teamId });
 
   const currencySymbol = project.currency === "EUR" ? "€" : project.currency === "PLN" ? "zł" : project.currency === "USD" ? "$" : "$";
 
-  const handleUpdate = async (field: string, value: string | string[] | number | undefined) => {
+  const handleUpdate = async (field: string, value: string | string[] | number | undefined | null) => {
     setIsUpdating(field);
     try {
       await updateTask({
@@ -95,6 +100,72 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
       setIsUpdating(null);
     }
   };
+
+  const handleAiParse = async () => {
+    if (!aiMessage) return;
+    setIsParsing(true);
+    try {
+        const timezoneOffsetInMinutes = new Date().getTimezoneOffset();
+        const result = await generateTaskDetails({ 
+            prompt: aiMessage, 
+            projectId: task.projectId,
+            timezoneOffsetInMinutes,
+            taskId: task._id
+        });
+
+        // Prepare a payload with only the fields returned by the AI
+        const updatePayload: Partial<Doc<"tasks">> = {};
+        if (result.title) updatePayload.title = result.title;
+        if (result.description) updatePayload.description = result.description;
+        if (result.hasOwnProperty('priority')) updatePayload.priority = result.priority;
+        if (result.status) updatePayload.status = result.status;
+        if (result.cost) updatePayload.cost = result.cost;
+        if (result.assignedTo) updatePayload.assignedTo = result.assignedTo;
+        if (result.tags) updatePayload.tags = result.tags;
+        if (result.estimatedHours) updatePayload.estimatedHours = result.estimatedHours;
+
+        if (result.dateRange) {
+            if (result.dateRange.from) {
+                updatePayload.startDate = new Date(result.dateRange.from).getTime();
+            }
+            if (result.dateRange.to) {
+                updatePayload.endDate = new Date(result.dateRange.to).getTime();
+            }
+        }
+        
+        if (Object.keys(updatePayload).length > 0) {
+            await updateTask({
+              taskId: task._id,
+              ...updatePayload,
+            });
+            toast.success("Task updated with AI!");
+        }
+        setAiMessage("");
+
+    } catch (error) {
+        toast.error("AI parsing failed.");
+        console.error(error);
+    } finally {
+        setIsParsing(false);
+    }
+  };
+
+  const handleDateUpdate = async (range: DateRange | undefined) => {
+    setIsUpdating('dates');
+     try {
+      await updateTask({
+        taskId: task._id,
+        startDate: range?.from?.getTime(),
+        endDate: range?.to?.getTime(),
+      });
+      toast.success("Zapisano zmiany daty");
+    } catch (error) {
+      toast.error("Błąd podczas zapisywania daty");
+      console.error(error);
+    } finally {
+      setIsUpdating(null);
+    }
+  }
 
   const handleTagsUpdate = () => {
     const newTags = tagsInput.split(",").map(tag => tag.trim()).filter(Boolean);
@@ -111,10 +182,9 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
     }
   };
 
-  const formatDate = (timestamp?: number) => {
-    if (!timestamp) return "Pick a date";
-    return format(new Date(timestamp), "PPP");
-  };
+  
+
+  const assignedMember = teamMembers?.find((m: TeamMemberWithUser) => m.clerkUserId === task.assignedTo);
 
   return (
     <Card className="sticky top-24">
@@ -123,6 +193,36 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
         <p className="text-sm text-muted-foreground">Edytuj pola bezpośrednio</p>
       </CardHeader>
       <CardContent className="space-y-6">
+        <div className="space-y-2">
+            <Label className="text-sm font-medium">Szybka edycja AI</Label>
+            <div className="flex flex-col sm:flex-row gap-2">
+                <Input 
+                    value={aiMessage}
+                    onChange={(e) => setAiMessage(e.target.value)}
+                    placeholder="np. zmień priorytet na wysoki"
+                    disabled={isParsing}
+                    className="flex-1"
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            if (!isParsing && aiMessage) {
+                                handleAiParse();
+                            }
+                        }
+                    }}
+                />
+                <Button 
+                    onClick={handleAiParse} 
+                    disabled={isParsing || !aiMessage}
+                    className="w-full sm:w-auto shrink-0"
+                >
+                    {isParsing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                </Button>
+            </div>
+        </div>
+        
+        <div className="h-px bg-border" />
+
         {/* Status */}
         <div>
           <Label className="text-sm font-medium">Status</Label>
@@ -145,9 +245,9 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
         {/* Priority */}
         <div>
           <Label className="text-sm font-medium">Priority</Label>
-          <Select 
-            value={task.priority || "none"} 
-            onValueChange={(value) => handleUpdate('priority', value === "none" ? undefined : value)}
+          <Select
+            value={task.priority || 'none'}
+            onValueChange={(value) => handleUpdate('priority', value === 'none' ? null : value)}
             disabled={isUpdating === 'priority'}
           >
             <SelectTrigger className="mt-1">
@@ -167,18 +267,36 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
         <div>
           <Label className="text-sm font-medium flex items-center"><User className="mr-2 h-4 w-4"/>Assigned to</Label>
            <Select
-            value={task.assignedTo || "unassigned"}
-            onValueChange={(value) => handleUpdate('assignedTo', value === "unassigned" ? undefined : value)}
+            value={task.assignedTo || 'unassigned'}
+            onValueChange={(value) => handleUpdate('assignedTo', value === 'unassigned' ? null : value)}
             disabled={isUpdating === 'assignedTo'}
           >
             <SelectTrigger className="mt-1">
-              <SelectValue placeholder="Unassigned" />
+                <div className="flex items-center gap-2">
+                  {assignedMember ? (
+                    <>
+                      <Avatar className="h-6 w-6">
+                        <AvatarImage src={assignedMember.imageUrl} />
+                        <AvatarFallback>{assignedMember.name?.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                      <span>{assignedMember.name}</span>
+                    </>
+                  ) : (
+                    <span>Unassigned</span>
+                  )}
+                </div>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="unassigned">Unassigned</SelectItem>
               {teamMembers?.map((member: TeamMemberWithUser) => (
                 <SelectItem key={member.clerkUserId} value={member.clerkUserId!}>
-                  {member.name}
+                  <div className="flex items-center gap-2">
+                    <Avatar className="h-6 w-6">
+                      <AvatarImage src={member.imageUrl} />
+                      <AvatarFallback>{member.name?.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                    <span>{member.name}</span>
+                  </div>
                 </SelectItem>
               ))}
             </SelectContent>
@@ -188,35 +306,15 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
         {/* Date Range */}
         <div>
           <Label className="text-sm font-medium">Date</Label>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                className={cn(
-                  "w-full mt-1 justify-start text-left font-normal",
-                  !task.startDate && !task.endDate && "text-muted-foreground"
-                )}
-                disabled={isUpdating === 'dates'}
-              >
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {task.startDate && task.endDate ? 
-                  `${formatDate(task.startDate)} - ${formatDate(task.endDate)}` :
-                  (task.startDate ? formatDate(task.startDate) : "Date")
-                }
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0">
-              <Calendar
-                mode="range"
-                selected={{ from: task.startDate ? new Date(task.startDate) : undefined, to: task.endDate ? new Date(task.endDate) : undefined }}
-                onSelect={(range) => {
-                  handleUpdate('startDate', range?.from?.getTime());
-                  handleUpdate('endDate', range?.to?.getTime());
-                }}
-                initialFocus
-              />
-            </PopoverContent>
-          </Popover>
+          <DateRangePickerWithTime
+            className="mt-1"
+            value={{
+              from: task.startDate ? new Date(task.startDate) : undefined,
+              to: task.endDate ? new Date(task.endDate) : undefined,
+            }}
+            onChange={handleDateUpdate}
+            disabled={isUpdating === 'dates'}
+          />
         </div>
 
         {/* Cost */}
@@ -227,7 +325,7 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
             step="0.01"
             placeholder="0.00"
             defaultValue={task.cost || ""}
-            className="mt-1"
+            className="mt-1 no-arrows"
             disabled={isUpdating === 'cost'}
             onBlur={(e) => handleUpdate('cost', e.target.valueAsNumber)}
             onKeyDown={(e) => e.key === 'Enter' && handleUpdate('cost', (e.target as HTMLInputElement).valueAsNumber)}

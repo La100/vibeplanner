@@ -236,7 +236,7 @@ function MemberRow({
       await changeTeamMemberRole({
         clerkUserId: member.clerkUserId,
         teamId: teamId,
-        newRole: "client",
+        role: "client",
         projectId: projectId,
       });
       toast.success("Member changed to project client");

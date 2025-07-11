@@ -80,7 +80,7 @@ export default function ProjectGantt() {
     project ? { projectId: project._id } : "skip"
   );
   
-  const updateTaskDates = useMutation(api.tasks.updateTaskDates);
+  const updateTask = useMutation(api.tasks.updateTask);
 
   if (!project || !tasks) {
     // This will be handled by Suspense
@@ -103,7 +103,7 @@ export default function ProjectGantt() {
 
   const handleMove = async (id: string, startAt: Date, endAt: Date | null) => {
     try {
-      await updateTaskDates({
+      await updateTask({
         taskId: id as Id<"tasks">,
         startDate: startAt.getTime(),
         endDate: endAt?.getTime(),

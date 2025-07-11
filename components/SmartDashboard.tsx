@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 
 export function SmartDashboard() {
   const { userMemberships } = useOrganizationList({
@@ -76,7 +76,6 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
   const [newProject, setNewProject] = useState({
     name: "",
     description: "",
-    priority: "medium" as "low" | "medium" | "high" | "urgent",
     client: "",
     location: "",
     budget: "",
@@ -97,7 +96,6 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
         description: newProject.description,
         clerkOrgId: organization.id,
         teamId: team._id,
-        priority: newProject.priority,
         client: newProject.client,
         location: newProject.location,
         budget: newProject.budget ? parseInt(newProject.budget) : undefined,
@@ -109,7 +107,6 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
       setNewProject({
         name: "",
         description: "",
-        priority: "medium",
         client: "",
         location: "",
         budget: "",
@@ -183,23 +180,7 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
                   />
                 </div>
                 
-                <div className="space-y-2">
-                  <Label htmlFor="priority">Priorytet</Label>
-                  <Select
-                    value={newProject.priority}
-                    onValueChange={(value) => setNewProject({ ...newProject, priority: value as "low" | "medium" | "high" | "urgent" })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="low">Niski</SelectItem>
-                      <SelectItem value="medium">Średni</SelectItem>
-                      <SelectItem value="high">Wysoki</SelectItem>
-                      <SelectItem value="urgent">Pilny</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                
 
                 <div className="space-y-2">
                   <Label htmlFor="client">Klient</Label>
@@ -270,22 +251,22 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
       {/* Projects Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {projects?.map((project) => (
-          <ProjectCard 
-            key={project._id} 
-            project={project} 
-            onClick={() => router.push(`/project/${project._id}`)}
+          <ProjectCard
+            key={project._id}
+            project={{...project, taskCount: 0, completedTasks: 0}}
+            onClick={() => router.push(`/${team?.slug}/${project.slug}`)}
           />
         ))}
         
         {(!projects || projects.length === 0) && (
-          <Card className="col-span-full">
+           <Card className="col-span-full">
             <CardContent className="flex flex-col items-center justify-center py-8">
               <FolderOpen className="h-16 w-16 text-muted-foreground mb-4" />
               <CardTitle className="mb-2">Brak projektów</CardTitle>
               <CardDescription className="text-center mb-4">
                 Utwórz pierwszy projekt, aby rozpocząć pracę.
               </CardDescription>
-              <Button onClick={() => setShowNewProjectForm(true)}>
+              <Button onClick={() => setShowNewProjectForm(true)} disabled={!team?._id}>
                 <Plus className="mr-2 h-4 w-4" />
                 Nowy projekt
               </Button>
@@ -298,56 +279,62 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
 }
 
 function MultiOrgDashboard({ organizations }: { organizations: { id: string; name: string; role: string }[] }) {
-  const router = useRouter();
+  const { setActive } = useOrganizationList();
+
+  if (!setActive) {
+    return <div>Loading...</div>
+  }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-3xl font-bold tracking-tight">Twoje zespoły</h2>
-        <p className="text-muted-foreground">Wybierz zespół, aby zarządzać projektami</p>
-      </div>
-
+      <h2 className="text-3xl font-bold tracking-tight">Wybierz organizację</h2>
+      <p className="text-muted-foreground">
+        Jesteś członkiem wielu organizacji. Wybierz jedną, aby kontynuować.
+      </p>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {organizations.map((org) => (
-          <Card key={org.id} className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => router.push(`/organization/${org.id}`)}>
+        {organizations.map(org => (
+          <Card 
+            key={org.id} 
+            className="cursor-pointer hover:shadow-md transition-shadow"
+            onClick={() => setActive({ organization: org.id })}
+          >
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  <Building2 className="h-5 w-5" />
-                  {org.name}
-                </CardTitle>
-                <ArrowRight className="h-4 w-4 text-muted-foreground" />
-              </div>
-              <CardDescription>
-                Twoja rola: {org.role}
-              </CardDescription>
+              <CardTitle>{org.name}</CardTitle>
+              <CardDescription>Rola: {org.role}</CardDescription>
             </CardHeader>
+            <CardContent className="flex items-center justify-between text-muted-foreground">
+              <span>Przejdź do organizacji</span>
+              <ArrowRight className="h-4 w-4" />
+            </CardContent>
           </Card>
         ))}
       </div>
     </div>
-  );
+  )
 }
 
 function NoOrgDashboard() {
-  return (
-    <div className="space-y-6">
-      <div className="text-center">
-        <h2 className="text-3xl font-bold tracking-tight">Witaj w VibePlanner!</h2>
-        <p className="text-muted-foreground">Utwórz lub dołącz do zespołu, aby rozpocząć pracę</p>
-      </div>
+  const { createOrganization } = useOrganizationList();
 
-      <Card className="max-w-md mx-auto">
-        <CardContent className="flex flex-col items-center justify-center py-8">
-          <Users className="h-16 w-16 text-muted-foreground mb-4" />
-          <CardTitle className="mb-2">Brak zespołów</CardTitle>
-          <CardDescription className="text-center mb-4">
-            Użyj przycisku w nagłówku, aby utworzyć zespół lub poproś o zaproszenie.
-          </CardDescription>
-        </CardContent>
-      </Card>
-    </div>
-  );
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Witaj w VibePlanner!</CardTitle>
+        <CardDescription>
+          Wygląda na to, że nie należysz do żadnej organizacji.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <p className="mb-4">
+          Aby rozpocząć, utwórz nową organizację dla swojego zespołu.
+        </p>
+        <Button onClick={() => createOrganization ? createOrganization({name: "My Organization"}) : null}>
+          <Plus className="mr-2 h-4 w-4" />
+          Utwórz organizację
+        </Button>
+      </CardContent>
+    </Card>
+  )
 }
 
 function ProjectCard({ project, onClick }: { 
@@ -355,7 +342,6 @@ function ProjectCard({ project, onClick }: {
     _id: string;
     name: string;
     description?: string;
-    priority: string;
     client?: string;
     location?: string;
     budget?: number;
@@ -366,53 +352,47 @@ function ProjectCard({ project, onClick }: {
 }) {
   const progress = project.taskCount > 0 ? (project.completedTasks / project.taskCount) * 100 : 0;
 
-  const getPriorityVariant = (priority: string): "default" | "secondary" | "destructive" | "outline" => {
-    switch (priority) {
-      case "urgent": return "destructive";
-      case "high": return "default";
-      case "medium": return "secondary";
-      case "low": return "outline";
-      default: return "secondary";
-    }
-  };
-
   return (
-    <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={onClick}>
+    <Card onClick={onClick} className="cursor-pointer hover:shadow-md transition-shadow">
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex justify-between items-start">
           <CardTitle className="text-lg">{project.name}</CardTitle>
-                     <Badge variant={getPriorityVariant(project.priority)}>
-             {project.priority === "urgent" ? "Pilny" : project.priority === "high" ? "Wysoki" : project.priority === "medium" ? "Średni" : "Niski"}
-           </Badge>
         </div>
-        {project.description && (
-          <CardDescription className="line-clamp-2">
-            {project.description}
-          </CardDescription>
-        )}
+        <CardDescription>{project.description || 'No description'}</CardDescription>
       </CardHeader>
-      
       <CardContent className="space-y-4">
-        {(project.client || project.location) && (
-          <div className="space-y-1 text-sm text-muted-foreground">
-            {project.client && <p>Klient: {project.client}</p>}
-            {project.location && <p>Lokalizacja: {project.location}</p>}
+        <div className="space-y-2 text-sm text-muted-foreground">
+            {project.client && (
+              <div className="flex items-center">
+                <Building2 className="mr-2 h-4 w-4" />
+                <span>{project.client}</span>
+              </div>
+            )}
+            {project.location && (
+              <div className="flex items-center">
+                <Users className="mr-2 h-4 w-4" />
+                <span>{project.location}</span>
+              </div>
+            )}
+            {project.budget && (
+                <div className="flex items-center">
+                    <span className="font-semibold">${project.budget.toLocaleString()}</span>
+                </div>
+            )}
+        </div>
+        <div>
+          <div className="flex justify-between items-center mb-1">
+            <span className="text-sm font-medium">Progress</span>
+            <span className="text-sm text-muted-foreground">{project.completedTasks}/{project.taskCount} tasks</span>
           </div>
-        )}
-        
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span>Postęp zadań</span>
-            <span>{project.completedTasks}/{project.taskCount}</span>
-          </div>
-          <div className="w-full bg-secondary rounded-full h-2">
+          <div className="w-full bg-secondary rounded-full h-2.5">
             <div 
-              className="bg-primary h-2 rounded-full transition-all" 
+              className="bg-primary h-2.5 rounded-full"
               style={{ width: `${progress}%` }}
-            />
+            ></div>
           </div>
         </div>
       </CardContent>
     </Card>
   );
-} 
+}

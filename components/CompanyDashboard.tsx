@@ -9,7 +9,7 @@ import { Doc } from "@/convex/_generated/dataModel";
 import { ArrowLeft, FolderOpen, MapPin, DollarSign, Building2, CheckSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+
 
 function ProjectOverview({ tasks, projects }: { tasks: Doc<"tasks">[], projects: Doc<"projects">[] }) {
     const totalProjects = projects.length;
@@ -129,13 +129,7 @@ export default function CompanyDashboard() {
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-lg">{project.name}</CardTitle>
-                  <Badge variant={
-                    project.priority === "urgent" ? "destructive" :
-                    project.priority === "high" ? "secondary" :
-                    "outline"
-                  }>
-                    {project.priority}
-                  </Badge>
+                  
                 </div>
                 {project.description && (
                   <CardDescription className="line-clamp-2">

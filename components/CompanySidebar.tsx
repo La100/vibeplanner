@@ -22,7 +22,8 @@ import {
   Users,
   FolderOpen,
   ArrowLeft,
-  BarChart3
+  BarChart3,
+  MessageSquare
 } from "lucide-react";
 import { Suspense } from "react";
 
@@ -43,6 +44,7 @@ function CompanySidebarContent() {
     { href: `/${params.slug}`, label: "Dashboard", icon: LayoutDashboard },
     { href: `/${params.slug}/projects`, label: "Projects", icon: FolderOpen },
     { href: `/${params.slug}/team`, label: "Team", icon: Users },
+    { href: `/${params.slug}/chat`, label: "Chat", icon: MessageSquare },
     { href: `/${params.slug}/reports`, label: "Reports", icon: BarChart3 },
     { href: `/${params.slug}/settings`, label: "Settings", icon: Settings },
   ];

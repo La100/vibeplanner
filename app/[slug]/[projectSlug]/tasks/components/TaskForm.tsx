@@ -4,8 +4,8 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { format } from "date-fns";
-import { CalendarIcon, Loader2, Wand2 } from "lucide-react";
+
+import {  Loader2, Wand2 } from "lucide-react";
 
 import { useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -30,9 +30,9 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
-import { cn } from "@/lib/utils";
+
+import { DateRangePickerWithTime } from "@/components/ui/DateRangePickerWithTime";
+
 
 
 const taskFormSchema = z.object({
@@ -40,7 +40,7 @@ const taskFormSchema = z.object({
     description: z.string().optional(),
     priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
     status: z.enum(["todo", "in_progress", "review", "done"]).optional(),
-    assignedTo: z.string().optional(),
+    assignedTo: z.string().nullable().optional(),
     dateRange: z.object({
         from: z.date(),
         to: z.date().optional(),
@@ -60,18 +60,21 @@ type TaskFormValues = z.infer<typeof taskFormSchema>;
 
 interface TaskFormProps {
     projectId: Id<"projects">;
+    teamId: Id<"teams">;
+    teamMembers: { clerkUserId: string; name: string; }[];
+    currency?: string;
     task?: Doc<"tasks">;
     onTaskCreated?: () => void;
     setIsOpen: (isOpen: boolean) => void;
 }
   
-export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: TaskFormProps) {
+export default function TaskForm({ projectId, teamId, teamMembers, currency, task, onTaskCreated, setIsOpen }: TaskFormProps) {
     const [aiMessage, setAiMessage] = useState("");
     const [isParsing, setIsParsing] = useState(false);
 
-      const updateTask = useMutation(api.tasks.updateTask);
-  const createTask = useMutation(api.tasks.createTask);
-    const parseTask = useAction(api.tasks.parseTaskFromChat);
+    const updateTask = useMutation(api.tasks.updateTask);
+    const createTask = useMutation(api.tasks.createTask);
+    const generateTaskDetails = useAction(api.tasks.generateTaskDetailsFromPrompt);
 
     const form = useForm<TaskFormValues>({
       resolver: zodResolver(taskFormSchema),
@@ -81,7 +84,7 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
             description: task.description,
             priority: task.priority as TaskFormValues["priority"],
             status: task.status as TaskFormValues["status"],
-            assignedTo: task.assignedTo,
+            assignedTo: task.assignedTo || undefined,
             dateRange: {
               from: task.startDate ? new Date(task.startDate) : undefined,
               to: task.endDate ? new Date(task.endDate) : undefined,
@@ -99,8 +102,6 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
           },
     });
 
-
-  
     useEffect(() => {
       if (task) {
         form.reset({
@@ -108,7 +109,7 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
             description: task.description,
             priority: task.priority as TaskFormValues["priority"],
             status: task.status as TaskFormValues["status"],
-            assignedTo: task.assignedTo,
+            assignedTo: task.assignedTo || undefined,
             dateRange: {
               from: task.startDate ? new Date(task.startDate) : undefined,
               to: task.endDate ? new Date(task.endDate) : undefined,
@@ -119,28 +120,31 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
     }, [task, form]);
   
     const handleParse = async () => {
+        if (!aiMessage) return;
         setIsParsing(true);
         try {
-            const result = await parseTask({ message: aiMessage, projectId });
-            if (result && result.isTask) {
-                const startDate = result.startDate ? new Date(result.startDate) : undefined;
-                const endDate = result.endDate ? new Date(result.endDate) : undefined;
-                
-                form.reset({
-                    title: result.title || "",
-                    description: result.description || "",
-                    priority: result.priority as TaskFormValues["priority"],
-                    status: result.status as TaskFormValues["status"] || "todo",
-                    dateRange: {
-                      from: startDate,
-                      to: endDate,
-                    },
-                    cost: result.cost || undefined,
-                });
-                toast.success("Task parsed from message!");
-            } else {
-                toast.info("Could not find a task in the message.");
-            }
+            const timezoneOffsetInMinutes = new Date().getTimezoneOffset();
+            const result = await generateTaskDetails({ 
+                prompt: aiMessage, 
+                projectId,
+                timezoneOffsetInMinutes 
+            });
+            
+            const startDate = result.dateRange?.from ? new Date(result.dateRange.from) : undefined;
+            const endDate = result.dateRange?.to ? new Date(result.dateRange.to) : undefined;
+            
+            form.reset({
+                title: result.title || "",
+                description: result.description || "",
+                priority: result.priority as TaskFormValues["priority"],
+                status: result.status as TaskFormValues["status"] || "todo",
+                assignedTo: result.assignedTo || "UNASSIGNED",
+                dateRange: startDate ? { from: startDate, to: endDate } : undefined,
+                cost: result.cost || undefined,
+            });
+
+            toast.success("Task details generated by AI!");
+            
         } catch (error) {
             toast.error("AI parsing failed.");
             console.error(error);
@@ -155,11 +159,11 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
             title: values.title,
             description: values.description,
             priority: values.priority,
-            status: values.status,
+            status: values.status || "todo", // Ensure status is not undefined
             assignedTo: values.assignedTo,
             cost: values.cost,
-            startDate: values.dateRange?.from ? values.dateRange.from.getTime() : undefined,
-            endDate: values.dateRange?.to ? values.dateRange.to.getTime() : undefined,
+            startDate: values.dateRange?.from?.getTime(),
+            endDate: values.dateRange?.to?.getTime(),
         };
 
         if (task) {
@@ -171,6 +175,7 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
         } else {
           await createTask({
             projectId,
+            teamId,
             ...submissionData,
             tags: [], 
           });
@@ -191,9 +196,17 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
                 <Input 
                     value={aiMessage}
                     onChange={(e) => setAiMessage(e.target.value)}
-                    placeholder="Create a task for 'Design review' on Monday or from tomorrow to next Friday with high priority and cost 150..."
+                    placeholder="Create a task for 'Design review' tomorrow at 3 PM with high priority and cost 150..."
                     disabled={isParsing}
                     className="flex-1"
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            if (!isParsing && aiMessage) {
+                                handleParse();
+                            }
+                        }
+                    }}
                 />
                 <Button 
                     onClick={handleParse} 
@@ -269,6 +282,31 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
                         )}
                     />
                 </div>
+                <FormField
+                    control={form.control}
+                    name="assignedTo"
+                    render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Assign to</FormLabel>
+                        <Select onValueChange={(value) => field.onChange(value === "UNASSIGNED" ? undefined : value)} value={field.value || "UNASSIGNED"}>
+                        <FormControl>
+                            <SelectTrigger>
+                            <SelectValue placeholder="Select a team member" />
+                            </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                            <SelectItem value="UNASSIGNED">Unassigned</SelectItem>
+                            {teamMembers?.map((member) => (
+                                <SelectItem key={member.clerkUserId} value={member.clerkUserId}>
+                                    {member.name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                        </Select>
+                        <FormMessage />
+                    </FormItem>
+                    )}
+                />
                 
                 {/* Date Range Picker */}
                 <FormField
@@ -277,58 +315,74 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
                     render={({ field }) => (
                     <FormItem className="flex flex-col">
                         <FormLabel>Date Range</FormLabel>
-                        <Popover>
-                        <PopoverTrigger asChild>
-                            <FormControl>
-                            <Button
-                                variant={"outline"}
-                                className={cn(
-                                "pl-3 text-left font-normal w-full",
-                                !field.value?.from && "text-muted-foreground"
-                                )}
-                            >
-                                {field.value?.from ? (
-                                field.value.to ? (
-                                    <>
-                                    {format(field.value.from, "LLL dd, y")} -{" "}
-                                    {format(field.value.to, "LLL dd, y")}
-                                    </>
-                                ) : (
-                                    format(field.value.from, "LLL dd, y")
-                                )
-                                ) : (
-                                <span>Pick a date or date range</span>
-                                )}
-                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                            </Button>
-                            </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                            <Calendar
-                            mode="range"
-                            defaultMonth={field.value?.from}
-                            selected={field.value}
-                            onSelect={field.onChange}
-                            numberOfMonths={2}
-                            showOutsideDays={false}
-                            initialFocus
-                            />
-                        </PopoverContent>
-                        </Popover>
+                        <DateRangePickerWithTime
+                            value={field.value}
+                            onChange={field.onChange}
+                        />
                         <FormMessage />
                     </FormItem>
                     )}
                 />
+
+                {/*
+                <div className="flex items-center space-x-2">
+                    <Switch
+                        id="add-time"
+                        checked={showTime}
+                        onCheckedChange={(checked) => {
+                            setShowTime(checked);
+                            if (!checked) {
+                                setStartTime("");
+                                setEndTime("");
+                            }
+                        }}
+                    />
+                    <Label htmlFor="add-time">Add specific time</Label>
+                </div>
+
+                {showTime && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <FormItem>
+                            <FormLabel>Start Time</FormLabel>
+                            <FormControl>
+                                <Input
+                                    type="time"
+                                    value={startTime}
+                                    onChange={(e) => setStartTime(e.target.value)}
+                                    disabled={!form.watch("dateRange.from")}
+                                />
+                            </FormControl>
+                        </FormItem>
+                        <FormItem>
+                            <FormLabel>End Time</FormLabel>
+                            <FormControl>
+                                <Input
+                                    type="time"
+                                    value={endTime}
+                                    onChange={(e) => setEndTime(e.target.value)}
+                                    disabled={!form.watch("dateRange.to")}
+                                />
+                            </FormControl>
+                        </FormItem>
+                    </div>
+                )}
+                */}
 
                 <FormField
                     control={form.control}
                     name="cost"
                     render={({ field }) => (
                     <FormItem>
-                        <FormLabel>Cost</FormLabel>
-                        <FormControl>
-                        <Input type="number" placeholder="Task cost" {...field} onChange={e => field.onChange(e.target.valueAsNumber)} />
-                        </FormControl>
+                        <FormLabel>Cost {currency && `(${currency === 'PLN' ? 'zł' : currency})`}</FormLabel>
+                            <FormControl>
+                                <Input 
+                                    type="number" 
+                                    placeholder="Task cost" 
+                                    {...field} 
+                                    value={field.value ?? ""}
+                                    onChange={(e) => field.onChange(e.target.valueAsNumber)}
+                                />
+                            </FormControl>
                         <FormMessage />
                     </FormItem>
                     )}
@@ -337,17 +391,18 @@ export default function TaskForm({ projectId, task, onTaskCreated, setIsOpen }: 
                     control={form.control}
                     name="description"
                     render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>Description</FormLabel>
-                        <FormControl>
-                        <Textarea 
-                            placeholder="Add a more detailed description..." 
-                            {...field} 
-                            className="min-h-[100px] resize-none"
-                        />
-                        </FormControl>
-                        <FormMessage />
-                    </FormItem>
+                        <FormItem>
+                            <FormLabel>Description</FormLabel>
+                            <FormControl>
+                                <Textarea
+                                    placeholder="Add a more detailed description..."
+                                    className="resize-none"
+                                    {...field}
+                                    value={field.value ?? ""}
+                                />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
                     )}
                 />
                 <Button type="submit" disabled={form.formState.isSubmitting} className="w-full sm:w-auto">

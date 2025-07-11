@@ -107,12 +107,6 @@ export const createProjectInOrg = mutation({
     description: v.optional(v.string()),
     clerkOrgId: v.string(),
     teamId: v.id("teams"),
-    priority: v.union(
-      v.literal("low"),
-      v.literal("medium"),
-      v.literal("high"),
-      v.literal("urgent")
-    ),
     client: v.optional(v.string()),
     location: v.optional(v.string()),
     budget: v.optional(v.number()),
@@ -187,7 +181,6 @@ export const createProjectInOrg = mutation({
       slug: slug,
       projectId: nextProjectId,
       status: "planning",
-      priority: args.priority,
       client: args.client,
       location: args.location,
       budget: args.budget,
@@ -196,6 +189,12 @@ export const createProjectInOrg = mutation({
       createdBy: identity.subject,
       assignedTo: [],
       taskStatusSettings: defaultStatusSettings,
+    });
+
+    // Automatically create default project channel
+    await ctx.scheduler.runAfter(0, internal.chatChannels.createDefaultProjectChannel, {
+      projectId: projectId,
+      creatorId: identity.subject,
     });
 
     return { id: projectId, slug: slug };
@@ -248,12 +247,6 @@ export const updateProject = mutation({
       v.literal("on_hold"),
       v.literal("completed"),
       v.literal("cancelled")
-    )),
-    priority: v.optional(v.union(
-      v.literal("low"),
-      v.literal("medium"),
-      v.literal("high"),
-      v.literal("urgent")
     )),
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
@@ -409,24 +402,25 @@ export const checkUserProjectAccess = query({
       .withIndex("by_team_and_user", q => 
         q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
       )
+      .filter(q => q.eq(q.field("isActive"), true))
       .unique();
 
-    // Admin i member mają dostęp do wszystkich projektów zespołu
-    if (teamMember && teamMember.isActive && (teamMember.role === "admin" || teamMember.role === "member")) {
-      return true;
+    if (!teamMember) {
+      return false;
     }
 
-    // Sprawdź czy użytkownik jest klientem z dostępem do tego projektu
-    const clientAccess = await ctx.db
-      .query("clients")
-      .withIndex("by_clerk_user", q => q.eq("clerkUserId", identity.subject))
-      .filter(q => q.and(
-        q.eq(q.field("projectId"), args.projectId),
-        q.eq(q.field("status"), "active")
-      ))
-      .unique();
+    // Admin, member, i viewer mają dostęp do wszystkich projektów w zespole
+    if (["admin", "member", "viewer"].includes(teamMember.role)) {
+      return teamMember;
+    }
 
-    return clientAccess !== null;
+    // Klienci mają dostęp tylko do przypisanych projektów
+    if (teamMember.role === "client") {
+      return teamMember.projectIds?.includes(args.projectId) ? teamMember : false;
+    }
+    
+    // W innych przypadkach, brak dostępu
+    return false;
   }
 });
 
@@ -615,36 +609,11 @@ export const deleteProject = mutation({
       )
     ).then(results => results.flat());
 
-    const allFiles = [...projectFiles, ...taskFiles];
-    const fileDeletionPromises = allFiles.map(file => ctx.db.delete(file._id));
-    await Promise.all(fileDeletionPromises);
-
-    // Delete all invitations related to the project
-    const invitations = await ctx.db
-      .query("invitations")
-      .filter(q => q.eq(q.field("projectId"), args.projectId))
-      .collect();
-
-    const invitationDeletionPromises = invitations.map(invitation => ctx.db.delete(invitation._id));
-    await Promise.all(invitationDeletionPromises);
-
-    // Delete all pending client invitations for this project
-    const pendingInvitations = await ctx.db
-      .query("pendingClientInvitations")
-      .filter(q => q.eq(q.field("projectId"), args.projectId))
-      .collect();
-
-    const pendingInvitationDeletionPromises = pendingInvitations.map(invitation => ctx.db.delete(invitation._id));
-    await Promise.all(pendingInvitationDeletionPromises);
-
     // Delete all client records associated with this project
-    const clients = await ctx.db
+    const projectClients = await ctx.db
       .query("clients")
       .filter(q => q.eq(q.field("projectId"), args.projectId))
       .collect();
-
-    const clientDeletionPromises = clients.map(client => ctx.db.delete(client._id));
-    await Promise.all(clientDeletionPromises);
 
     // Handle team members with role "client" - remove project or delete member entirely
     const clientTeamMembers = await ctx.db
@@ -757,4 +726,20 @@ export const updateProjectTaskStatusSettings = mutation({
 
     return { success: true };
   }
+}); 
+
+export const updateProjectIndexingStatus = internalMutation({
+    args: {
+        projectId: v.id("projects"),
+        status: v.union(
+            v.literal("idle"),
+            v.literal("indexing"),
+            v.literal("done")
+        ),
+    },
+    handler: async (ctx, args) => {
+        await ctx.db.patch(args.projectId, {
+            aiIndexingStatus: args.status,
+        });
+    },
 }); 

@@ -43,12 +43,6 @@ export default defineSchema({
       v.literal("completed"),
       v.literal("cancelled")
     ),
-    priority: v.union(
-      v.literal("low"),
-      v.literal("medium"),
-      v.literal("high"),
-      v.literal("urgent")
-    ),
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
     budget: v.optional(v.number()),
@@ -75,7 +69,12 @@ export default defineSchema({
       files: v.optional(v.object({ visible: v.boolean() })),
       shopping_list: v.optional(v.object({ visible: v.boolean() })),
       settings: v.optional(v.object({ visible: v.boolean() })),
-    }))
+    })),
+    aiIndexingStatus: v.optional(v.union(
+        v.literal("idle"),
+        v.literal("indexing"),
+        v.literal("done")
+    )),
   })
     .index("by_team", ["teamId"])
     .index("by_team_and_slug", ["teamId", "slug"])
@@ -97,12 +96,12 @@ export default defineSchema({
         v.literal("done")
     ),
     priority: v.optional(v.union(
-      v.literal("low"),
-      v.literal("medium"),
-      v.literal("high"),
-      v.literal("urgent")
+        v.literal("low"),
+        v.literal("medium"),
+        v.literal("high"),
+        v.literal("urgent")
     )),
-    assignedTo: v.optional(v.string()), // Clerk user ID
+    assignedTo: v.optional(v.union(v.string(), v.null())), // Clerk user ID
     createdBy: v.string(), // Clerk user ID
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
@@ -178,6 +177,66 @@ export default defineSchema({
     .index("by_author", ["authorId"])
     .index("by_parent", ["parentCommentId"]),
 
+  // Kanały chatu (dla organizacji i projektów)
+  chatChannels: defineTable({
+    name: v.string(),
+    description: v.optional(v.string()),
+    type: v.union(
+      v.literal("team"),      // Kanał organizacji  
+      v.literal("project")    // Kanał projektu
+    ),
+    teamId: v.id("teams"),
+    projectId: v.optional(v.id("projects")), // null dla kanałów organizacji
+    createdBy: v.string(),    // Clerk user ID
+    isPrivate: v.boolean(),   // czy kanał jest prywatny
+    allowedUsers: v.optional(v.array(v.string())), // tylko dla prywatnych
+    isDefault: v.boolean(),   // czy to domyślny kanał (np. "General")
+  })
+    .index("by_team", ["teamId"])
+    .index("by_project", ["projectId"])
+    .index("by_type_and_team", ["type", "teamId"])
+    .index("by_type_and_project", ["type", "projectId"])
+    .index("by_created_by", ["createdBy"]),
+
+  // Wiadomości w kanałach
+  chatMessages: defineTable({
+    content: v.string(),
+    channelId: v.id("chatChannels"),
+    authorId: v.string(),    // Clerk user ID
+    teamId: v.id("teams"),   // dla szybszego dostępu i uprawnień
+    projectId: v.optional(v.id("projects")), // dla kanałów projektu
+    replyToId: v.optional(v.id("chatMessages")), // odpowiedzi na wiadomości
+    isEdited: v.boolean(),
+    editedAt: v.optional(v.number()),
+    messageType: v.union(
+      v.literal("text"),
+      v.literal("file"),
+      v.literal("system")    // wiadomości systemowe np. "User joined"
+    ),
+    fileUrl: v.optional(v.string()),
+    fileName: v.optional(v.string()),
+  })
+    .index("by_channel", ["channelId"])
+    .index("by_author", ["authorId"])
+    .index("by_team", ["teamId"])
+    .index("by_project", ["projectId"])
+    .index("by_reply_to", ["replyToId"]),
+
+  // Członkostwo w kanałach
+  chatChannelMembers: defineTable({
+    channelId: v.id("chatChannels"),
+    userId: v.string(),      // Clerk user ID
+    joinedAt: v.number(),
+    role: v.union(
+      v.literal("admin"),
+      v.literal("member")
+    ),
+    lastReadAt: v.optional(v.number()), // dla oznaczania nieprzeczytanych
+  })
+    .index("by_channel", ["channelId"])
+    .index("by_user", ["userId"])
+    .index("by_channel_and_user", ["channelId", "userId"]),
+
   // Członkowie zespołów (cache dla Clerk data)
   teamMembers: defineTable({
     teamId: v.id("teams"),
@@ -198,33 +257,17 @@ export default defineSchema({
     .index("by_user", ["clerkUserId"])
     .index("by_team", ["teamId"]),
 
-  // Zaproszenia do zespołów
+  // Zaproszenia do zespołów (synchronizowane z Clerk)
   invitations: defineTable({
+    clerkInvitationId: v.string(),
     teamId: v.id("teams"),
-    projectId: v.optional(v.id("projects")),
     email: v.string(),
-    role: v.union(
-      v.literal("admin"),
-      v.literal("member"),
-      v.literal("viewer"),
-      v.literal("client")
-    ),
+    role: v.string(), // 'admin', 'member'
+    status: v.string(), // 'pending', 'accepted', 'revoked'
     invitedBy: v.string(), // Clerk user ID
-    status: v.union(
-      v.literal("pending"),
-      v.literal("accepted"),
-      v.literal("declined"),
-      v.literal("expired")
-    ),
-    expiresAt: v.number(),
-    token: v.string(), // Unique invitation token
   })
-    .index("by_team", ["teamId"])
-    .index("by_email", ["email"])
-    .index("by_token", ["token"])
-    .index("by_status", ["status"]),
-
-  
+    .index("by_clerk_invitation_id", ["clerkInvitationId"])
+    .index("by_team", ["teamId"]),
 
   // Tymczasowe zaproszenia klientów (do konkretnych projektów)
   pendingClientInvitations: defineTable({
@@ -276,7 +319,16 @@ export default defineSchema({
     .index("by_clerk_user_id", ["clerkUserId"])
     .index("by_email", ["email"]),
 
-  // Shopping List
+  projectEmbeddings: defineTable({
+    projectId: v.id("projects"),
+    embedding: v.array(v.float64()),
+    text: v.string(),
+  }).vectorIndex("by_embedding", {
+    vectorField: "embedding",
+    dimensions: 256,
+    filterFields: ["projectId"],
+  }),
+    
   shoppingListSections: defineTable({
     name: v.string(),
     projectId: v.id("projects"),
@@ -292,12 +344,12 @@ export default defineSchema({
     completed: v.boolean(),
     completedAt: v.optional(v.number()),
     buyBefore: v.optional(v.number()),
-    priority: v.union(
-      v.literal("LOW"),
-      v.literal("MEDIUM"),
-      v.literal("HIGH"),
-      v.literal("URGENT")
-    ),
+    priority: v.optional(v.union(
+        v.literal("low"),
+        v.literal("medium"),
+        v.literal("high"),
+        v.literal("urgent")
+    )),
     imageUrl: v.optional(v.string()),
     productLink: v.optional(v.string()),
     supplier: v.optional(v.string()),
@@ -324,4 +376,17 @@ export default defineSchema({
   .index("by_project", ["projectId"])
   .index("by_section", ["sectionId"])
   .index("by_status", ["realizationStatus"]),
+
+  // Dziennik aktywności (Changelog)
+  activityLog: defineTable({
+    teamId: v.id("teams"),
+    projectId: v.id("projects"),
+    userId: v.string(), // Clerk User ID
+    actionType: v.string(), // np. "task.create", "file.upload", "comment.add"
+    details: v.any(), // np. { taskTitle: "...", fromStatus: "...", toStatus: "..." }
+    entityId: v.string(), // ID powiązanego obiektu (np. taskId)
+  })
+    .index("by_project", ["projectId"])
+    .index("by_team", ["teamId"])
+    .index("by_user", ["userId"]),
 });

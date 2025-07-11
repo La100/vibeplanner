@@ -124,7 +124,7 @@ export const saveProduct = mutation({
             imageUrl: args.imageUrl,
             totalPrice,
             completed: false,
-            priority: "MEDIUM",
+            priority: "medium",
             realizationStatus: "PLANNED",
         });
     },
@@ -174,10 +174,10 @@ export const addShoppingListItem = mutation({
     productLink: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
     priority: v.union(
-      v.literal("LOW"),
-      v.literal("MEDIUM"),
-      v.literal("HIGH"),
-      v.literal("URGENT")
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high"),
+      v.literal("urgent")
     ),
     realizationStatus: v.union(
         v.literal("PLANNED"),

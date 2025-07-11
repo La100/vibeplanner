@@ -23,7 +23,10 @@ import {
   ShoppingCart,
   ArrowLeft,
   CheckSquare,
-  Files
+  Files,
+  Sparkles,
+  MessageSquare,
+  History
 } from "lucide-react";
 import { Suspense } from "react";
 
@@ -44,10 +47,13 @@ function ProjectSidebarContent() {
   const allNavItems = [
     { href: `/${params.slug}/${params.projectSlug}`, label: "Overview", icon: LayoutDashboard, key: "overview" },
     { href: `/${params.slug}/${params.projectSlug}/tasks`, label: "Tasks", icon: CheckSquare, key: "tasks" },
+    { href: `/${params.slug}/${params.projectSlug}/chat`, label: "Chat", icon: MessageSquare, key: "chat" },
+    { href: `/${params.slug}/${params.projectSlug}/ai`, label: "AI", icon: Sparkles, key: "ai" },
     { href: `/${params.slug}/${params.projectSlug}/calendar`, label: "Calendar", icon: Calendar, key: "calendar" },
     { href: `/${params.slug}/${params.projectSlug}/gantt`, label: "Gantt", icon: GanttChartSquare, key: "gantt" },
     { href: `/${params.slug}/${params.projectSlug}/files`, label: "Files", icon: Files, key: "files" },
     { href: `/${params.slug}/${params.projectSlug}/shopping-list`, label: "Shopping List", icon: ShoppingCart, key: "shopping_list" },
+    { href: `/${params.slug}/${params.projectSlug}/activity`, label: "Activity Log", icon: History, key: "activity" },
     { href: `/${params.slug}/${params.projectSlug}/settings`, label: "Settings", icon: Settings, key: "settings" },
   ];
 

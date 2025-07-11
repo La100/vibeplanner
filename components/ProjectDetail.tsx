@@ -75,6 +75,8 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
         title: newTask.title,
         description: newTask.description || undefined,
         projectId,
+        teamId: project.teamId,
+        status: "todo",
         priority: newTask.priority,
         startDate: newTask.startDate ? new Date(newTask.startDate).getTime() : undefined,
         endDate: newTask.endDate ? new Date(newTask.endDate).getTime() : undefined,
@@ -157,9 +159,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                   <User className="h-4 w-4" />
                   {project.teamName}
                 </span>
-                <span className={`px-2 py-1 rounded-full text-xs ${getPriorityColor(project.priority)}`}>
-                  {project.priority.toUpperCase()}
-                </span>
+                
                 <span className={`px-2 py-1 rounded-full text-xs ${
                   project.status === "completed" ? "bg-green-100 text-green-800" :
                   project.status === "active" ? "bg-blue-100 text-blue-800" :

@@ -27,7 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { useParams } from "next/navigation";
 
 type Team = {
@@ -55,7 +55,6 @@ type Project = {
   name: string;
   description?: string;
   status: string;
-  priority: string;
   client?: string;
   location?: string;
   createdBy: string;
@@ -83,7 +82,6 @@ export default function TeamManager({ team, onBack, onProjectClick }: TeamManage
   const [newProject, setNewProject] = useState({
     name: "",
     description: "",
-    priority: "medium" as "low" | "medium" | "high" | "urgent",
     client: "",
     location: "",
     budget: "",
@@ -101,7 +99,6 @@ export default function TeamManager({ team, onBack, onProjectClick }: TeamManage
         description: newProject.description || undefined,
         clerkOrgId: team.clerkOrgId,
         teamId: team._id,
-        priority: newProject.priority,
         client: newProject.client || undefined,
         location: newProject.location || undefined,
         budget: newProject.budget ? parseFloat(newProject.budget) : undefined,
@@ -112,7 +109,6 @@ export default function TeamManager({ team, onBack, onProjectClick }: TeamManage
       setNewProject({
         name: "",
         description: "",
-        priority: "medium",
         client: "",
         location: "",
         budget: "",
@@ -220,7 +216,6 @@ function ProjectsTab({
   newProject: {
     name: string;
     description: string;
-    priority: "low" | "medium" | "high" | "urgent";
     client: string;
     location: string;
     budget: string;
@@ -230,7 +225,6 @@ function ProjectsTab({
   setNewProject: (project: {
     name: string;
     description: string;
-    priority: "low" | "medium" | "high" | "urgent";
     client: string;
     location: string;
     budget: string;
@@ -272,24 +266,6 @@ function ProjectsTab({
                   />
                 </div>
                 
-                <div className="space-y-2">
-                  <Label htmlFor="priority">Priorytet</Label>
-                  <Select
-                    value={newProject.priority}
-                    onValueChange={(value) => setNewProject({ ...newProject, priority: value as "low" | "medium" | "high" | "urgent" })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="low">Niski</SelectItem>
-                      <SelectItem value="medium">Średni</SelectItem>
-                      <SelectItem value="high">Wysoki</SelectItem>
-                      <SelectItem value="urgent">Pilny</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
                 <div className="space-y-2">
                   <Label htmlFor="client">Klient</Label>
                   <Input
@@ -386,73 +362,45 @@ function ProjectsTab({
 }
 
 function ProjectCard({ project, onClick }: { project: Project; onClick: () => void }) {
-  const getPriorityVariant = (priority: string): "default" | "secondary" | "destructive" | "outline" => {
-    switch (priority) {
-      case "urgent":
-        return "destructive";
-      case "high":
-        return "default";
-      case "medium":
-        return "secondary";
-      case "low":
-        return "outline";
-      default:
-        return "secondary";
-    }
-  };
+  const progress = project.taskCount > 0 ? (project.completedTasks / project.taskCount) * 100 : 0;
 
   const getStatusVariant = (status: string): "default" | "secondary" | "destructive" | "outline" => {
     switch (status) {
-      case "completed":
-        return "default";
-      case "active":
-        return "secondary";
-      case "on_hold":
-        return "outline";
-      case "planning":
-        return "outline";
-      default:
-        return "secondary";
+      case "active": return "default";
+      case "planning": return "secondary";
+      case "on_hold": return "outline";
+      case "completed": return "default"; // Maybe a different color for completed
+      case "cancelled": return "destructive";
+      default: return "secondary";
     }
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "completed":
-        return <CheckCircle2 className="h-3 w-3" />;
-      case "active":
-        return <Play className="h-3 w-3" />;
-      case "on_hold":
-        return <Pause className="h-3 w-3" />;
-      case "planning":
-        return <Clock className="h-3 w-3" />;
-      default:
-        return <AlertCircle className="h-3 w-3" />;
+      case "active": return <Play className="h-3 w-3" />;
+      case "planning": return <Clock className="h-3 w-3" />;
+      case "on_hold": return <Pause className="h-3 w-3" />;
+      case "completed": return <CheckCircle2 className="h-3 w-3" />;
+      case "cancelled": return <AlertCircle className="h-3 w-3" />;
+      default: return null;
     }
   };
 
-  const progress = project.taskCount > 0 ? (project.completedTasks / project.taskCount) * 100 : 0;
-
   return (
-    <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={onClick}>
+    <Card onClick={onClick} className="cursor-pointer hover:bg-muted/50 transition-all">
       <CardHeader>
         <div className="flex items-start justify-between">
-          <CardTitle className="line-clamp-1">{project.name}</CardTitle>
-          <Badge variant={getPriorityVariant(project.priority)}>
-            {project.priority.toUpperCase()}
-          </Badge>
+          <CardTitle className="text-lg font-semibold line-clamp-1">{project.name}</CardTitle>
         </div>
-        
-        {project.description && (
-          <CardDescription className="line-clamp-2">{project.description}</CardDescription>
-        )}
-        
         <div className="flex items-center gap-2">
           <Badge variant={getStatusVariant(project.status)} className="flex items-center gap-1">
             {getStatusIcon(project.status)}
-            {project.status.replace("_", " ").toUpperCase()}
+            <span>{project.status.replace('_', ' ').toUpperCase()}</span>
           </Badge>
         </div>
+        {project.description && (
+          <CardDescription className="line-clamp-2 mt-2">{project.description}</CardDescription>
+        )}
       </CardHeader>
       
       <CardContent className="space-y-4">

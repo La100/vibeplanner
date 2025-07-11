@@ -556,3 +556,18 @@
 .react-pdf__Page__annotations {
   display: none;
 }
+
+.time-input-icon-only::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+}
+
+/* Hide number input arrows */
+.no-arrows::-webkit-outer-spin-button,
+.no-arrows::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.no-arrows {
+  -moz-appearance: textfield;
+}

@@ -71,6 +71,7 @@ const handleClerkWebhook = httpAction(async (ctx, request) => {
             clerkUserId: event.data.id,
             email: event.data.email_addresses[0].email_address,
             name: event.data.first_name + " " + event.data.last_name,
+            imageUrl: event.data.image_url,
         });
         break;
     case "user.updated":
@@ -78,6 +79,7 @@ const handleClerkWebhook = httpAction(async (ctx, request) => {
             clerkUserId: event.data.id,
             email: event.data.email_addresses[0].email_address,
             name: event.data.first_name + " " + event.data.last_name,
+            imageUrl: event.data.image_url,
         });
         break;
     case "user.deleted":
@@ -86,6 +88,26 @@ const handleClerkWebhook = httpAction(async (ctx, request) => {
           clerkUserId: event.data.id,
         });
       }
+      break;
+    case "organizationInvitation.created":
+      await ctx.runMutation(internal.myFunctions.createInvitation, {
+        clerkInvitationId: event.data.id,
+        email: event.data.email_address,
+        role: event.data.role.replace('org:', ''),
+        clerkOrgId: event.data.organization_id,
+      });
+      break;
+    case "organizationInvitation.accepted":
+      await ctx.runMutation(internal.myFunctions.updateInvitationStatus, {
+        clerkInvitationId: event.data.id,
+        status: "accepted",
+      });
+      break;
+    case "organizationInvitation.revoked":
+      await ctx.runMutation(internal.myFunctions.updateInvitationStatus, {
+        clerkInvitationId: event.data.id,
+        status: "revoked",
+      });
       break;
     default: {
       console.log("Ignored Clerk webhook event:", event.type);

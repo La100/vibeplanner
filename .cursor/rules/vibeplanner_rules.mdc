@@ -1,0 +1,83 @@
+
+# VibePlanner Project Rules for LLM
+
+This document outlines the core architecture, data models, and conventions for the VibePlanner project to guide the LLM assistant.
+
+## 1. Core Technologies
+
+- **Framework**: Next.js (App Router)
+- **Language**: TypeScript
+- **Backend & Database**: Convex (Real-time data, serverless functions)
+- **Authentication**: Clerk (Manages users, organizations, and invitations)
+- **Styling**: Tailwind CSS with shadcn/ui components
+- **File Storage**: Cloudflare R2 via `@convex-dev/r2`
+- **AI/RAG**: OpenAI SDK (`@ai-sdk/openai`) and `@convex-dev/rag` for project-specific intelligence.
+- **State Management**: React hooks, Jotai for specific cases.
+- **Tables**: TanStack Table
+
+## 2. Project Structure & Routing
+
+The application uses the Next.js App Router. The file system routing is key to understanding the application's contexts.
+
+- **`app/`**: Contains all application routes.
+- **`app/(main)/`**: The main dashboard view after login.
+  - `page.tsx`: Main user dashboard.
+- **`app/[slug]/`**: **Company/Team Context**. `slug` corresponds to `teams.slug`.
+  - `layout.tsx`: Main layout for a company, likely contains `CompanySidebar`.
+  - `page.tsx`: Company-level dashboard (`CompanyDashboard.tsx`).
+  - Sub-routes: `projects`, `team`, `settings`, `reports`.
+- **`app/[slug]/[projectSlug]/`**: **Project Context**. `projectSlug` corresponds to `projects.slug`.
+  - `layout.tsx`: Main layout for a project, contains `ProjectSidebar`.
+  - `page.tsx`: Project overview page (`ProjectOverview.tsx`).
+  - Sub-routes: `tasks`, `calendar`, `gantt`, `files`, `chat`, `ai`, `settings`, etc. These correspond to the main features of a project.
+
+- **`components/`**: Reusable, high-level React components (e.g., `CompanyDashboard.tsx`, `ProjectSidebar.tsx`).
+- **`components/ui/`**: Low-level UI components, mostly from shadcn/ui (e.g., `Button.tsx`, `Card.tsx`).
+- **`convex/`**: All backend logic. Each file corresponds to a data model or feature area.
+- **`hooks/`**: Custom React hooks (e.g., `use-mobile.ts`).
+
+## 3. Backend Data Model (Convex Schema)
+
+The source of truth for the data model is `convex/schema.ts`.
+
+### Key Tables & Relationships:
+
+- **`teams`**: Represents a company/organization. Linked to Clerk Organizations via `clerkOrgId`. Has a unique `slug`.
+- **`projects`**: The core entity. Belongs to one `team` (`projectId: v.id("teams")`). Has a unique `slug` within a team.
+- **`tasks`**: Belongs to one `project` (`projectId: v.id("projects")`). The main work unit.
+- **`users`**: Synced from Clerk users via `clerkUserId`.
+- **`teamMembers`**: Junction table for `users` and `teams`, defining roles (`admin`, `member`).
+- **`files`**: Stored in Cloudflare R2 (`storageId`). Can be linked to `projects` or `tasks`. Organized via `folders`.
+- **`chatChannels`**: Channels for communication. Can be of `type: "team"` or `type: "project"`.
+- **`chatMessages`**: Messages within a `chatChannel`.
+- **`activityLog`**: Records all significant actions (`task.create`, `file.upload`) within a project.
+- **`shoppingListItems`**: Items for a project's shopping list, linked to `projects`.
+- **`projectEmbeddings`**: Vector embeddings of project data for AI/RAG features. Linked to `projects`.
+
+### Backend Logic:
+
+- Logic is co-located with schema definitions in files like `convex/projects.ts`, `convex/tasks.ts`, etc.
+- These files contain Convex `query` and `mutation` functions that are called from the frontend using `useQuery` and `useMutation` hooks from the `convex/react` package.
+- Authentication in Convex functions is handled by checking the user's identity from the `ctx` (context) object.
+
+## 4. Key Features & Code Locations
+
+- **Project/Task Management**:
+  - UI: `app/[slug]/[projectSlug]/tasks/`, `app/[slug]/[projectSlug]/components/ProjectOverview.tsx`
+  - Backend: `convex/tasks.ts`, `convex/projects.ts`
+- **Chat**:
+  - UI: `components/chat/*`, `app/[slug]/chat/`, `app/[slug]/[projectSlug]/chat/`
+  - Backend: `convex/chatChannels.ts`, `convex/chatMessages.ts`
+- **File Management**:
+  - UI: `app/[slug]/[projectSlug]/files/`, `components/ui/PDFViewer.tsx`
+  - Backend: `convex/files.ts`, `convex/folders.ts`
+- **AI Features**:
+  - UI: `app/[slug]/[projectSlug]/ai/`
+  - Backend: `convex/ai.ts`, `convex/ai_v8.ts`, `convex/schema.ts` (`projectEmbeddings` table)
+- **Authentication & User Management**:
+  - Auth Provider: `components/ConvexClientProvider.tsx` (wraps the app with Clerk and Convex providers)
+  - Team Management UI: `app/[slug]/team/`, `components/TeamManager.tsx`
+  - Backend Logic: `convex/clerk.ts`, `convex/users.ts`, `convex/teamMembers.ts`
+- **Shopping List**:
+  - UI: `app/[slug]/[projectSlug]/shopping-list/`
+  - Backend: `convex/shopping.ts`

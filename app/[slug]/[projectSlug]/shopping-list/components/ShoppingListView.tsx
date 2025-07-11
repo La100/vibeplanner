@@ -5,7 +5,6 @@ import { useParams } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Doc, Id } from '@/convex/_generated/dataModel';
-import Image from 'next/image';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,25 +15,53 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { 
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar";
+import { 
   PlusIcon, 
   TrashIcon, 
   ShoppingCartIcon,
-
   LinkIcon,
-
   ChevronDownIcon,
   ChevronUpIcon,
   FolderPlusIcon,
-  PenIcon
+  PenIcon,
+  X,
+  Undo2,
+  CalendarIcon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ShoppingListItemDetails } from './ShoppingListItemDetails';
+
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+
 
 type ShoppingListItem = Doc<"shoppingListItems">;
 type Priority = ShoppingListItem["priority"];
 type Status = ShoppingListItem["realizationStatus"];
+
+// Define TeamMember type based on the structure returned by getTeamMembers
+type TeamMember = {
+  _id: Id<"teamMembers">;
+  _creationTime: number;
+  teamId: Id<"teams">;
+  clerkUserId: string;
+  clerkOrgId: string;
+  role: string;
+  permissions: string[];
+  name: string;
+  email: string;
+  imageUrl?: string;
+  joinedAt?: number;
+  projectIds?: Id<"projects">[];
+  isActive: boolean;
+};
 
 interface EditFormData {
   name?: string;
@@ -68,6 +95,12 @@ const statusLabels: Record<Status, string> = {
   DELIVERED: 'Delivered',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
+};
+
+const selectableStatuses = {
+  PLANNED: 'Planned',
+  ORDERED: 'Ordered',
+  COMPLETED: 'Completed',
 };
 
 export function ShoppingListViewSkeleton() {
@@ -140,6 +173,7 @@ export default function ShoppingListView() {
 
   const items = useQuery(api.shopping.listShoppingListItems, project ? { projectId: project._id } : 'skip');
   const sections = useQuery(api.shopping.listShoppingListSections, project ? { projectId: project._id } : 'skip');
+  const teamMembers = useQuery(api.teams.getTeamMembers, project ? { teamId: project.teamId } : 'skip');
 
   const createItem = useMutation(api.shopping.createShoppingListItem);
   const updateItem = useMutation(api.shopping.updateShoppingListItem);
@@ -162,6 +196,8 @@ export default function ShoppingListView() {
   const [newItemUnitPrice, setNewItemUnitPrice] = useState('');
   const [newItemProductLink, setNewItemProductLink] = useState('');
   const [newItemImageUrl, setNewItemImageUrl] = useState('');
+  const [newItemAssignedTo, setNewItemAssignedTo] = useState<string>('none');
+  const [newItemBuyBefore, setNewItemBuyBefore] = useState<Date | undefined>(undefined);
   const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
   
   const [localNotes, setLocalNotes] = useState<Record<string, string>>({});
@@ -238,8 +274,10 @@ export default function ShoppingListView() {
             unitPrice: unitPrice,
             productLink: newItemProductLink.trim() || undefined,
             imageUrl: newItemImageUrl.trim() || undefined,
-            priority: "MEDIUM",
+            priority: "medium",
             realizationStatus: "PLANNED",
+            assignedTo: newItemAssignedTo === 'none' ? undefined : newItemAssignedTo,
+            buyBefore: newItemBuyBefore?.getTime(),
         });
 
         // Reset form
@@ -253,6 +291,8 @@ export default function ShoppingListView() {
         setNewItemUnitPrice('');
         setNewItemProductLink('');
         setNewItemImageUrl('');
+        setNewItemAssignedTo('none');
+        setNewItemBuyBefore(undefined);
         setIsAddFormExpanded(false);
         toast.success("Product added");
       } catch (error) {
@@ -304,7 +344,7 @@ export default function ShoppingListView() {
       imageUrl: item.imageUrl || '',
       priority: item.priority,
       buyBefore: item.buyBefore ? format(new Date(item.buyBefore), 'yyyy-MM-dd') : '',
-      assigneeId: item.assignedTo || ''
+      assigneeId: item.assignedTo || 'none'
     });
   };
 
@@ -327,7 +367,7 @@ export default function ShoppingListView() {
                 imageUrl: editFormData.imageUrl?.trim() || undefined,
                 priority: editFormData.priority,
                 buyBefore: editFormData.buyBefore ? new Date(editFormData.buyBefore).getTime() : undefined,
-                assignedTo: editFormData.assigneeId?.trim() || undefined
+                assignedTo: editFormData.assigneeId === 'none' ? undefined : editFormData.assigneeId
             });
             setEditingItemId(null);
             toast.success("Item updated");
@@ -574,8 +614,58 @@ export default function ShoppingListView() {
                     placeholder="https://..."
                   />
                 </div>
+                <div>
+                  <label className="text-sm font-medium">Assign To</label>
+                  <Select
+                    value={newItemAssignedTo}
+                    onValueChange={setNewItemAssignedTo}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select user" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Unassigned</SelectItem>
+                      {teamMembers?.map((member: TeamMember) => (
+                        <SelectItem key={member.clerkUserId} value={member.clerkUserId}>
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-5 w-5">
+                              <AvatarImage src={member.imageUrl} />
+                              <AvatarFallback>{member.name?.[0]}</AvatarFallback>
+                            </Avatar>
+                            {member.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Buy Before</label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant={"outline"}
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !newItemBuyBefore && "text-muted-foreground"
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {newItemBuyBefore ? format(newItemBuyBefore, "PPP") : <span>Pick a date</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={newItemBuyBefore}
+                        onSelect={setNewItemBuyBefore}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex justify-end">
                 <Button onClick={handleAddItem} disabled={isPending || !newItemName.trim()}>
                   {isPending ? 'Adding...' : 'Add Product'}
                 </Button>
@@ -737,19 +827,53 @@ export default function ShoppingListView() {
                             </div>
                             <div>
                               <label className="text-sm font-medium">Buy Before</label>
-                              <Input
-                                type="date"
-                                value={editFormData.buyBefore}
-                                onChange={(e) => setEditFormData({...editFormData, buyBefore: e.target.value})}
-                              />
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    variant={"outline"}
+                                    className={cn(
+                                      "w-full justify-start text-left font-normal",
+                                      !editFormData.buyBefore && "text-muted-foreground"
+                                    )}
+                                  >
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {editFormData.buyBefore ? format(new Date(editFormData.buyBefore), "PPP") : <span>Pick a date</span>}
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0">
+                                  <Calendar
+                                    mode="single"
+                                    selected={editFormData.buyBefore ? new Date(editFormData.buyBefore) : undefined}
+                                    onSelect={(date) => setEditFormData({...editFormData, buyBefore: date ? format(date, 'yyyy-MM-dd') : ''})}
+                                    initialFocus
+                                  />
+                                </PopoverContent>
+                              </Popover>
                             </div>
                             <div>
                               <label className="text-sm font-medium">Assigned To</label>
-                              <Input
+                              <Select
                                 value={editFormData.assigneeId}
-                                onChange={(e) => setEditFormData({...editFormData, assigneeId: e.target.value})}
-                                placeholder="User ID or name"
-                              />
+                                onValueChange={(value) => setEditFormData({...editFormData, assigneeId: value})}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select user" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">Unassigned</SelectItem>
+                                  {teamMembers?.map((member: TeamMember) => (
+                                    <SelectItem key={member.clerkUserId} value={member.clerkUserId}>
+                                      <div className="flex items-center gap-2">
+                                        <Avatar className="h-6 w-6">
+                                          <AvatarImage src={member.imageUrl} />
+                                          <AvatarFallback>{member.name?.[0]}</AvatarFallback>
+                                        </Avatar>
+                                        {member.name}
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </div>
                           </div>
                           <div className="flex gap-2">
@@ -767,7 +891,7 @@ export default function ShoppingListView() {
                           <div className="flex items-start gap-4">
                             <div className="w-16 h-16 bg-gray-100 rounded-lg flex-shrink-0 flex items-center justify-center overflow-hidden">
                               {item.imageUrl ? (
-                                <Image src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" width={64} height={64} />
+                                <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" width={64} height={64} />
                               ) : (
                                 <ShoppingCartIcon className="h-6 w-6 text-gray-400" />
                               )}
@@ -797,6 +921,7 @@ export default function ShoppingListView() {
                                   {statusLabels[item.realizationStatus]}
                                 </Badge>
                               </div>
+                              <ShoppingListItemDetails item={item} />
                             </div>
 
                             <div className="text-right flex-shrink-0">
@@ -808,36 +933,9 @@ export default function ShoppingListView() {
                                 {item.unitPrice ? `${currencySymbol}${item.unitPrice.toFixed(2)}/pc` : ''}
                               </div>
                             </div>
-                          </div>
+                        </div>
 
-                          <div className="space-y-3 py-3 px-4 bg-gray-50 rounded-lg">
-                            {/* Details grid... */}
-                          </div>
-
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-4">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-gray-700">Quantity:</span>
-                                <span className="text-lg font-semibold text-gray-900">{item.quantity} pcs</span>
-                              </div>
-                              
-                              <Select
-                                value={item.realizationStatus}
-                                onValueChange={(value) => handleUpdateItem(item._id, { realizationStatus: value as Status })}
-                              >
-                                <SelectTrigger className="w-48">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {Object.entries(statusLabels).map(([value, label]) => (
-                                    <SelectItem key={value} value={value}>
-                                      {label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-
+                          <div className="mt-4 flex flex-col sm:flex-row justify-between items-end w-full space-y-4 sm:space-y-0">
                             <div className="flex items-center gap-2">
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -846,7 +944,6 @@ export default function ShoppingListView() {
                                     size="sm"
                                     onClick={() => handleStartEdit(item)}
                                     className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 border-blue-200"
-                                    disabled={item.realizationStatus === 'CANCELLED'}
                                   >
                                     <PenIcon className="h-4 w-4" />
                                   </Button>
@@ -855,24 +952,6 @@ export default function ShoppingListView() {
                                   <p>Edit Product</p>
                                 </TooltipContent>
                               </Tooltip>
-
-                              {item.realizationStatus !== 'CANCELLED' && (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => handleRejectItem(item._id)}
-                                      className="text-orange-600 hover:text-orange-800 hover:bg-orange-50 border-orange-200"
-                                    >
-                                      <TrashIcon className="h-4 w-4" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Reject Product</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              )}
 
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -889,6 +968,77 @@ export default function ShoppingListView() {
                                   <p>Delete Product</p>
                                 </TooltipContent>
                               </Tooltip>
+                            </div>
+
+                            <div className="flex items-center gap-4">
+                              {item.assignedTo ? (
+                                (() => {
+                                  const member = teamMembers?.find((m: TeamMember) => m.clerkUserId === item.assignedTo);
+                                  return member ? (
+                                    <div className="flex items-center gap-2">
+                                      <Avatar className="h-6 w-6">
+                                        <AvatarImage src={member.imageUrl} />
+                                        <AvatarFallback>{member.name?.[0]}</AvatarFallback>
+                                      </Avatar>
+                                      <span className="font-semibold">{member.name}</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-500">Unknown User</span>
+                                  );
+                                })()
+                              ) : (
+                                <span className="text-gray-500">Unassigned</span>
+                              )}
+
+                              <Select
+                                value={item.realizationStatus}
+                                onValueChange={(value) => handleUpdateItem(item._id, { realizationStatus: value as Status })}
+                              >
+                                <SelectTrigger className="w-48">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {Object.entries(selectableStatuses).map(([value, label]) => (
+                                    <SelectItem key={value} value={value}>
+                                      {label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+
+                              {item.realizationStatus === 'CANCELLED' ? (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleUpdateItem(item._id, { realizationStatus: 'PLANNED' })}
+                                      className="text-green-600 hover:text-green-800 hover:bg-green-50 border-green-200"
+                                    >
+                                      <Undo2 className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Restore Product</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              ) : (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleRejectItem(item._id)}
+                                      className="text-orange-600 hover:text-orange-800 hover:bg-orange-50 border-orange-200"
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Reject Product</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              )}
                             </div>
                           </div>
 
