@@ -298,9 +298,11 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                           {task.endDate && `Termin: ${formatDate(task.endDate)}`}
                         </p>
                       </div>
-                      <span className={`px-2 py-1 rounded-full text-xs ${getPriorityColor(task.priority)}`}>
-                        {task.priority}
-                      </span>
+                      {task.priority && task.priority !== null && (
+                        <span className={`px-2 py-1 rounded-full text-xs ${getPriorityColor(task.priority)}`}>
+                          {task.priority}
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -484,9 +486,11 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                           </div>
                           
                           <div className="flex items-center gap-2">
-                            <span className={`px-2 py-1 rounded-full text-xs ${getPriorityColor(task.priority)}`}>
-                              {task.priority}
-                            </span>
+                            {task.priority && task.priority !== null && (
+                              <span className={`px-2 py-1 rounded-full text-xs ${getPriorityColor(task.priority)}`}>
+                                {task.priority}
+                              </span>
+                            )}
                             <select
                               value={task.status}
                               onChange={(e) => handleStatusChange(task._id, e.target.value as "todo" | "in_progress" | "review" | "done")}

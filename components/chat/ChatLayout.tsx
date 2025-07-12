@@ -58,6 +58,16 @@ export function ChatLayout({ teamId, projectId, type }: ChatLayoutProps) {
     }
   }
 
+  const handleChannelDeleted = () => {
+    if (channels && channels.length > 1) {
+      const remainingChannels = channels.filter(c => c._id !== selectedChannelId);
+      const defaultChannel = remainingChannels.find(ch => ch.isDefault) || remainingChannels[0];
+      setSelectedChannelId(defaultChannel._id);
+    } else {
+      setSelectedChannelId(null);
+    }
+  }
+
   // Unified Empty State - show create channel UI if no channels exist
   if (channels && channels.length === 0) {
     return (
@@ -117,6 +127,7 @@ export function ChatLayout({ teamId, projectId, type }: ChatLayoutProps) {
             type={type}
             teamId={teamId}
             projectId={projectId}
+            onChannelDeleted={handleChannelDeleted}
           />
         ) : (
           <div className="flex items-center justify-center h-full">

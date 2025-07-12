@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 
-type TaskPriority = "low" | "medium" | "high" | "urgent";
+type TaskPriority = "low" | "medium" | "high" | "urgent" | null;
 
 const priorityColors = {
   low: "bg-green-100 text-green-700",
@@ -81,7 +81,7 @@ export default function TaskDetail() {
         });
 
         const result = await fetch(url, {
-            method: "POST",
+            method: "PUT",
             headers: { "Content-Type": file.type },
             body: file,
         });
@@ -175,9 +175,11 @@ export default function TaskDetail() {
             </div>
             
             <div className="flex items-center space-x-3">
-               <Badge variant="outline" className={priorityColors[task.priority as TaskPriority]}>
-                {task.priority}
-              </Badge>
+               {task.priority && task.priority !== null && (
+                 <Badge variant="outline" className={priorityColors[task.priority as Exclude<TaskPriority, null>]}>
+                  {task.priority}
+                </Badge>
+               )}
               <Badge variant="outline" className={statusColors[task.status as keyof typeof statusColors]}>
                 {project.taskStatusSettings?.[task.status]?.name || task.status}
               </Badge>

@@ -1,9 +1,9 @@
 "use client";
 
-import { useParams } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
+import { useProject } from "@/components/providers/ProjectProvider";
 import { 
   GanttProvider,
   GanttSidebar,
@@ -68,21 +68,17 @@ export function ProjectGanttSkeleton() {
 }
 
 export default function ProjectGantt() {
-  const params = useParams<{ slug: string, projectSlug: string }>();
   const [range, setRange] = useState<"daily" | "monthly">("monthly");
 
-  const project = useQuery(api.projects.getProjectBySlug, {
-    teamSlug: params.slug,
-    projectSlug: params.projectSlug,
-  });
+  const { project } = useProject();
 
-  const tasks = useQuery(api.tasks.listProjectTasks, 
-    project ? { projectId: project._id } : "skip"
-  );
+  const tasks = useQuery(api.tasks.listProjectTasks, {
+    projectId: project._id,
+  });
   
   const updateTask = useMutation(api.tasks.updateTask);
 
-  if (!project || !tasks) {
+  if (!tasks) {
     // This will be handled by Suspense
     return null;
   }

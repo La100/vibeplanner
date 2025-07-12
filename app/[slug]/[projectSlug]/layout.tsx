@@ -1,6 +1,5 @@
-"use client";
-
 import { ProjectSidebar } from "@/components/ProjectSidebar";
+import { ProjectProvider } from "@/components/providers/ProjectProvider";
 import { 
   SidebarProvider, 
   SidebarInset, 
@@ -36,11 +35,17 @@ function ProjectLayoutContent({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function ProjectLayout({
-  children,
-}: {
+interface ProjectLayoutProps {
   children: React.ReactNode;
-}) {
+  params: Promise<{
+    slug: string;
+    projectSlug: string;
+  }>;
+}
+
+export default async function ProjectLayout({
+  children,
+}: ProjectLayoutProps) {
   return (
     <Suspense fallback={
       <div className="flex h-screen">
@@ -58,7 +63,9 @@ export default function ProjectLayout({
         </div>
       </div>
     }>
-      <ProjectLayoutContent>{children}</ProjectLayoutContent>
+      <ProjectProvider>
+        <ProjectLayoutContent>{children}</ProjectLayoutContent>
+      </ProjectProvider>
     </Suspense>
   );
 } 

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery } from "convex/react";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Doc, Id } from "@/convex/_generated/dataModel";
 
@@ -9,9 +9,26 @@ import { MessageList } from "./MessageList";
 import { MessageInput } from "./MessageInput";
 import { ChannelMembersModal } from "./ChannelMembersModal";
 import { Button } from "@/components/ui/button";
-import { Menu, Hash, Lock, Settings, Users } from "lucide-react";
+import { Menu, Hash, Lock, Settings} from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChannelSidebar } from "./ChannelSidebar";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 
 // NOTE: This should ideally be in a shared types file
 interface Channel {
@@ -34,6 +51,7 @@ interface ChatWindowProps {
   type?: "team" | "project";
   teamId?: Id<"teams">;
   projectId?: Id<"projects">;
+  onChannelDeleted?: () => void;
 }
 
 export function ChatWindow({ 
@@ -45,18 +63,66 @@ export function ChatWindow({
   type,
   teamId,
   projectId,
+  onChannelDeleted,
 }: ChatWindowProps) {
   const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
   const [isChannelListVisible, setIsChannelListVisible] = useState(false);
+  const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [newChannelName, setNewChannelName] = useState("");
   
   const channel = useQuery(api.chatChannels.getChannel, { channelId });
-  
+  const updateChannel = useMutation(api.chatChannels.updateChannel);
+  const deleteChannel = useMutation(api.chatChannels.deleteChannel);
+
   const messagesData = useQuery(api.chatMessages.listChannelMessages, { 
     channelId, 
     paginationOpts: { numItems: 50, cursor: null }
   });
   
   const messages = messagesData ? messagesData.page : undefined;
+
+  const markChannelAsRead = useMutation(api.chatMessages.markChannelAsRead);
+
+  // Automatically mark channel as read when user opens it
+  useEffect(() => {
+    if (channel) {
+      markChannelAsRead({ channelId }).catch(console.error);
+    }
+  }, [channelId, channel, markChannelAsRead]);
+
+  useEffect(() => {
+    if (channel) {
+      setNewChannelName(channel.name);
+    }
+  }, [channel]);
+
+  const handleRenameChannel = async () => {
+    if (!newChannelName.trim() || newChannelName.trim() === channel?.name) {
+      setIsRenameModalOpen(false);
+      return;
+    }
+    try {
+      await updateChannel({ channelId: channel!._id, name: newChannelName.trim() });
+      toast.success("Channel renamed");
+      setIsRenameModalOpen(false);
+    } catch (error) {
+      toast.error("Failed to rename channel");
+      console.error(error);
+    }
+  };
+
+  const handleDeleteChannel = async () => {
+    try {
+      await deleteChannel({ channelId: channel!._id });
+      toast.success("Channel deleted");
+      if (onChannelDeleted) {
+        onChannelDeleted();
+      }
+    } catch (error) {
+      toast.error("Failed to delete channel");
+      console.error(error);
+    }
+  };
 
   if (channel === undefined || messages === undefined) {
     return <ChatWindowSkeleton />;
@@ -103,17 +169,21 @@ export function ChatWindow({
         </div>
 
         <div className="flex items-center gap-2">
-          <Button 
-            variant="ghost" 
-            size="sm"
-            onClick={() => setIsMembersModalOpen(true)}
-          >
-            <Users className="h-4 w-4" />
-          </Button>
-          
-          <Button variant="ghost" size="sm">
-            <Settings className="h-4 w-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <Settings className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onSelect={() => setIsRenameModalOpen(true)}>
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={handleDeleteChannel} className="text-red-500">
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       
@@ -151,6 +221,33 @@ export function ChatWindow({
           placeholder={`Message #${channel.name}`}
         />
       </div>
+
+      <Dialog open={isRenameModalOpen} onOpenChange={setIsRenameModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Channel</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="channelName">Channel Name</Label>
+            <Input
+              id="channelName"
+              value={newChannelName}
+              onChange={(e) => setNewChannelName(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button type="submit" onClick={handleRenameChannel}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Channel Members Modal */}
       <ChannelMembersModal

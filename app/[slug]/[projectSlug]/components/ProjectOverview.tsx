@@ -1,8 +1,8 @@
 "use client";
 
-import { useParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { useProject } from "@/components/providers/ProjectProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, AlertTriangle, Calendar, TrendingUp } from "lucide-react";
@@ -57,25 +57,21 @@ function ProjectOverviewSkeleton() {
 }
 
 function ProjectOverviewContent() {
-  const params = useParams<{ slug: string, projectSlug: string }>();
+  const { project } = useProject();
   
-  const project = useQuery(api.projects.getProjectBySlug, 
-    { teamSlug: params.slug, projectSlug: params.projectSlug }
-  );
-  
-  const hasAccess = useQuery(api.projects.checkUserProjectAccess, 
-    project ? { projectId: project._id } : "skip"
-  );
+  const hasAccess = useQuery(api.projects.checkUserProjectAccess, {
+    projectId: project._id,
+  });
   
   const tasks = useQuery(api.tasks.listProjectTasks, 
-    project && hasAccess ? { projectId: project._id } : "skip"
+    hasAccess ? { projectId: project._id } : "skip"
   );
 
   const shoppingListItems = useQuery(api.shopping.getShoppingListItemsByProject,
-    project && hasAccess ? { projectId: project._id } : "skip"
+    hasAccess ? { projectId: project._id } : "skip"
   );
 
-  if (!project || hasAccess === false || !tasks || !shoppingListItems) {
+  if (hasAccess === false || !tasks || !shoppingListItems) {
     if (hasAccess === false) {
       return (
         <div className="flex flex-col items-center justify-center min-h-[400px] text-center">

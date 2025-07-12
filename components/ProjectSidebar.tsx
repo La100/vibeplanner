@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { useProject } from "@/components/providers/ProjectProvider";
 import { 
   Sidebar,
   SidebarContent,
@@ -26,7 +27,7 @@ import {
   Files,
   Sparkles,
   MessageSquare,
-  History
+  ClipboardList
 } from "lucide-react";
 import { Suspense } from "react";
 
@@ -34,32 +35,32 @@ function ProjectSidebarContent() {
   const params = useParams<{ slug: string, projectSlug: string }>();
   const router = useRouter();
   const { setOpenMobile } = useSidebar();
-  
-  const project = useQuery(api.projects.getProjectBySlug, { 
-    teamSlug: params.slug, 
-    projectSlug: params.projectSlug 
+  const { project, permissions: sidebarPermissions } = useProject();
+
+  // Get unread counts for project channels
+  const unreadCounts = useQuery(api.chatMessages.getAllUnreadCounts, {
+    projectId: project._id,
   });
 
-  const sidebarPermissions = useQuery(api.projects.getProjectSidebarPermissions, 
-    project ? { projectId: project._id } : "skip"
-  );
+  // Calculate total unread messages
+  const totalUnreadCount = unreadCounts ? Object.values(unreadCounts).reduce((sum, count) => sum + count, 0) : 0;
 
   const allNavItems = [
     { href: `/${params.slug}/${params.projectSlug}`, label: "Overview", icon: LayoutDashboard, key: "overview" },
     { href: `/${params.slug}/${params.projectSlug}/tasks`, label: "Tasks", icon: CheckSquare, key: "tasks" },
-    { href: `/${params.slug}/${params.projectSlug}/chat`, label: "Chat", icon: MessageSquare, key: "chat" },
+    { href: `/${params.slug}/${params.projectSlug}/chat`, label: "Chat", icon: MessageSquare, key: "chat", hasUnread: totalUnreadCount > 0 },
+    { href: `/${params.slug}/${params.projectSlug}/surveys`, label: "Surveys", icon: ClipboardList, key: "surveys" },
     { href: `/${params.slug}/${params.projectSlug}/ai`, label: "AI", icon: Sparkles, key: "ai" },
     { href: `/${params.slug}/${params.projectSlug}/calendar`, label: "Calendar", icon: Calendar, key: "calendar" },
     { href: `/${params.slug}/${params.projectSlug}/gantt`, label: "Gantt", icon: GanttChartSquare, key: "gantt" },
     { href: `/${params.slug}/${params.projectSlug}/files`, label: "Files", icon: Files, key: "files" },
     { href: `/${params.slug}/${params.projectSlug}/shopping-list`, label: "Shopping List", icon: ShoppingCart, key: "shopping_list" },
-    { href: `/${params.slug}/${params.projectSlug}/activity`, label: "Activity Log", icon: History, key: "activity" },
     { href: `/${params.slug}/${params.projectSlug}/settings`, label: "Settings", icon: Settings, key: "settings" },
   ];
 
   // Filter navigation items based on permissions
-  const navItems = sidebarPermissions ? allNavItems.filter(item => {
-    const permission = sidebarPermissions.permissions[item.key as keyof typeof sidebarPermissions.permissions];
+  const navItems = sidebarPermissions?.permissions ? allNavItems.filter(item => {
+    const permission = sidebarPermissions.permissions![item.key as keyof typeof sidebarPermissions.permissions];
     return permission?.visible !== false; // Show item if permission is undefined or visible is true
   }) : allNavItems;
 
@@ -90,7 +91,7 @@ function ProjectSidebarContent() {
           
           <div className="px-2 py-1">
             <h2 className="text-lg font-semibold text-sidebar-foreground/90">
-              {project?.name || "Loading..."}
+              {project.name}
             </h2>
             
           </div>
@@ -109,9 +110,15 @@ function ProjectSidebarContent() {
                       href={item.href}
                       onClick={handleLinkClick}
                       onMouseEnter={() => handleLinkHover(item.href)}
+                      className="flex items-center justify-between"
                     >
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.label}</span>
+                      <div className="flex items-center gap-2">
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.label}</span>
+                      </div>
+                      {'hasUnread' in item && item.hasUnread && (
+                        <div className="w-2 h-2 bg-red-500 rounded-full" />
+                      )}
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

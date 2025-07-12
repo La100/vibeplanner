@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useParams } from 'next/navigation';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Doc, Id } from '@/convex/_generated/dataModel';
+import { useProject } from '@/components/providers/ProjectProvider';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -163,17 +163,13 @@ export function ShoppingListViewSkeleton() {
 }
 
 export default function ShoppingListView() {
-  const params = useParams<{ slug: string, projectSlug: string }>();
   const [isPending, startTransition] = useTransition();
 
-  const project = useQuery(api.projects.getProjectBySlug, {
-    teamSlug: params.slug,
-    projectSlug: params.projectSlug,
-  });
+  const { project } = useProject();
 
-  const items = useQuery(api.shopping.listShoppingListItems, project ? { projectId: project._id } : 'skip');
-  const sections = useQuery(api.shopping.listShoppingListSections, project ? { projectId: project._id } : 'skip');
-  const teamMembers = useQuery(api.teams.getTeamMembers, project ? { teamId: project.teamId } : 'skip');
+  const items = useQuery(api.shopping.listShoppingListItems, { projectId: project._id });
+  const sections = useQuery(api.shopping.listShoppingListSections, { projectId: project._id });
+  const teamMembers = useQuery(api.teams.getTeamMembers, { teamId: project.teamId });
 
   const createItem = useMutation(api.shopping.createShoppingListItem);
   const updateItem = useMutation(api.shopping.updateShoppingListItem);
@@ -206,7 +202,7 @@ export default function ShoppingListView() {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<EditFormData>({});
 
-  if (!project || items === undefined || sections === undefined) {
+  if (items === undefined || sections === undefined) {
     // This will be handled by Suspense
     return null;
   }

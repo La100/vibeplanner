@@ -221,6 +221,7 @@ export const getProjectBySlug = query({
   },
 });
 
+
 export const getProject = query({
   args: { projectId: v.id("projects") },
   async handler(ctx, args) {
@@ -430,6 +431,7 @@ export const updateProjectSidebarPermissions = mutation({
     sidebarPermissions: v.object({
       overview: v.optional(v.object({ visible: v.boolean() })),
       tasks: v.optional(v.object({ visible: v.boolean() })),
+      surveys: v.optional(v.object({ visible: v.boolean() })),
       calendar: v.optional(v.object({ visible: v.boolean() })),
       gantt: v.optional(v.object({ visible: v.boolean() })),
       files: v.optional(v.object({ visible: v.boolean() })),
@@ -500,6 +502,7 @@ export const getProjectSidebarPermissions = query({
     const defaultPermissions = {
       overview: { visible: true },
       tasks: { visible: true },
+      surveys: { visible: true },
       calendar: { visible: true },
       gantt: { visible: true },
       files: { visible: true },
@@ -524,6 +527,7 @@ export const getProjectSidebarPermissions = query({
         permissions: {
           overview: sidebarPermissions.overview || defaultPermissions.overview,
           tasks: sidebarPermissions.tasks || defaultPermissions.tasks,
+          surveys: sidebarPermissions.surveys || defaultPermissions.surveys,
           calendar: sidebarPermissions.calendar || defaultPermissions.calendar,
           gantt: sidebarPermissions.gantt || defaultPermissions.gantt,
           files: sidebarPermissions.files || defaultPermissions.files,

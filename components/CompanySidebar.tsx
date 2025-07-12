@@ -40,11 +40,19 @@ function CompanySidebarContent() {
     params.slug ? { slug: params.slug } : "skip"
   );
 
+  // Get unread counts for team channels
+  const unreadCounts = useQuery(api.chatMessages.getAllUnreadCounts, 
+    team ? { teamId: team._id } : "skip"
+  );
+
+  // Calculate total unread messages
+  const totalUnreadCount = unreadCounts ? Object.values(unreadCounts).reduce((sum, count) => sum + count, 0) : 0;
+
   const navItems = [
     { href: `/${params.slug}`, label: "Dashboard", icon: LayoutDashboard },
     { href: `/${params.slug}/projects`, label: "Projects", icon: FolderOpen },
     { href: `/${params.slug}/team`, label: "Team", icon: Users },
-    { href: `/${params.slug}/chat`, label: "Chat", icon: MessageSquare },
+    { href: `/${params.slug}/chat`, label: "Chat", icon: MessageSquare, hasUnread: totalUnreadCount > 0 },
     { href: `/${params.slug}/reports`, label: "Reports", icon: BarChart3 },
     { href: `/${params.slug}/settings`, label: "Settings", icon: Settings },
   ];
@@ -95,9 +103,15 @@ function CompanySidebarContent() {
                       href={item.href}
                       onClick={handleLinkClick}
                       onMouseEnter={() => handleLinkHover(item.href)}
+                      className="flex items-center justify-between"
                     >
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.label}</span>
+                      <div className="flex items-center gap-2">
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.label}</span>
+                      </div>
+                      {'hasUnread' in item && item.hasUnread && (
+                        <div className="w-2 h-2 bg-red-500 rounded-full" />
+                      )}
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

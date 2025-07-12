@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useParams } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
+import { useProject } from "@/components/providers/ProjectProvider";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -59,7 +59,6 @@ export function FilesViewSkeleton() {
 }
 
 export default function FilesView() {
-  const params = useParams<{ slug: string, projectSlug: string }>();
   const [currentFolderId, setCurrentFolderId] = useState<Id<"folders"> | undefined>(undefined);
   const [folderPath, setFolderPath] = useState<Array<{id: Id<"folders"> | undefined, name: string}>>([]);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
@@ -73,24 +72,21 @@ export default function FilesView() {
     mimeType: string;
   } | null>(null);
 
-  const project = useQuery(api.projects.getProjectBySlug, {
-    teamSlug: params.slug,
-    projectSlug: params.projectSlug,
-  });
+  const { project } = useProject();
 
-  const content = useQuery(
-    api.files.getProjectContent,
-    project ? { projectId: project._id, folderId: currentFolderId } : "skip"
-  );
+  const content = useQuery(api.files.getProjectContent, {
+    projectId: project._id, 
+    folderId: currentFolderId 
+  });
 
   const currentFolder = useQuery(
     api.files.getFolder,
     currentFolderId ? { folderId: currentFolderId } : "skip"
   );
 
-  const hasAccess = useQuery(api.projects.checkUserProjectAccess, 
-    project ? { projectId: project._id } : "skip"
-  );
+  const hasAccess = useQuery(api.projects.checkUserProjectAccess, {
+    projectId: project._id,
+  });
 
   const generateUploadUrl = useMutation(api.files.generateUploadUrlWithCustomKey);
   const addFile = useMutation(api.files.addFile);
@@ -166,7 +162,7 @@ export default function FilesView() {
     try {
       // 1. Generate upload URL with custom folder structure
       const uploadData = await generateUploadUrl({
-        projectId: project!._id,
+        projectId: project._id,
         fileName: file.name,
       });
 
@@ -188,7 +184,7 @@ export default function FilesView() {
       
       // 4. Attach file to project
       await addFile({
-        projectId: project!._id,
+        projectId: project._id,
         folderId: currentFolderId,
         fileKey,
         fileName: file.name,
@@ -210,7 +206,7 @@ export default function FilesView() {
 
     try {
       await createFolder({
-        projectId: project!._id,
+        projectId: project._id,
         name: newFolderName.trim(),
         parentFolderId: currentFolderId,
       });

@@ -6,7 +6,7 @@ import { Id } from "@/convex/_generated/dataModel";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { MessageSquare, Edit, Reply } from "lucide-react";
+import { MessageSquare, Edit, Reply, Paperclip } from "lucide-react";
 
 interface Message {
   _id: Id<"chatMessages">;
@@ -17,6 +17,9 @@ interface Message {
   _creationTime: number;
   isEdited: boolean;
   editedAt?: number;
+  messageType?: "text" | "file" | "system";
+  fileUrl?: string;
+  fileName?: string;
   replyToMessage?: {
     content: string;
     authorName: string;
@@ -124,7 +127,40 @@ export function MessageList({  messages }: MessageListProps) {
                     )}
                     
                     <div className="text-sm leading-relaxed break-words">
-                      {message.content}
+                      {/* File attachment */}
+                      {message.messageType === "file" && message.fileUrl && (
+                        <div className="mb-2">
+                          {message.fileUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                            // Image preview
+                            <div className="max-w-xs">
+                              <img
+                                src={message.fileUrl}
+                                alt={message.fileName || "Image"}
+                                className="rounded-lg max-w-full h-auto cursor-pointer hover:opacity-90 transition-opacity"
+                                onClick={() => window.open(message.fileUrl, '_blank')}
+                              />
+                            </div>
+                          ) : (
+                            // File link
+                            <a
+                              href={message.fileUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-2 p-3 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
+                            >
+                              <Paperclip className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-sm font-medium">
+                                {message.fileName || "Download file"}
+                              </span>
+                            </a>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Message content */}
+                      {message.content && message.content !== `📎 ${message.fileName}` && (
+                        <div>{message.content}</div>
+                      )}
                     </div>
                   </div>
                   
@@ -159,12 +195,47 @@ export function MessageList({  messages }: MessageListProps) {
                     )}
                     
                     <div className="text-sm leading-relaxed break-words">
-                      {message.content}
-                      {message.isEdited && (
-                        <Badge variant="outline" className="text-xs h-4 ml-2">
-                          <Edit className="h-3 w-3 mr-1" />
-                          edited
-                        </Badge>
+                      {/* File attachment */}
+                      {message.messageType === "file" && message.fileUrl && (
+                        <div className="mb-2">
+                          {message.fileUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                            // Image preview
+                            <div className="max-w-xs">
+                              <img
+                                src={message.fileUrl}
+                                alt={message.fileName || "Image"}
+                                className="rounded-lg max-w-full h-auto cursor-pointer hover:opacity-90 transition-opacity"
+                                onClick={() => window.open(message.fileUrl, '_blank')}
+                              />
+                            </div>
+                          ) : (
+                            // File link
+                            <a
+                              href={message.fileUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-2 p-3 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
+                            >
+                              <Paperclip className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-sm font-medium">
+                                {message.fileName || "Download file"}
+                              </span>
+                            </a>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Message content */}
+                      {message.content && message.content !== `📎 ${message.fileName}` && (
+                        <div>
+                          {message.content}
+                          {message.isEdited && (
+                            <Badge variant="outline" className="text-xs h-4 ml-2">
+                              <Edit className="h-3 w-3 mr-1" />
+                              edited
+                            </Badge>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>

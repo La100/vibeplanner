@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 
@@ -61,6 +61,12 @@ export function ChannelSidebar({
 
   const createTeamChannel = useMutation(api.chatChannels.createTeamChannel);
   const createProjectChannel = useMutation(api.chatChannels.createProjectChannel);
+
+  // Get unread counts for all channels
+  const unreadCounts = useQuery(api.chatMessages.getAllUnreadCounts, {
+    teamId: type === "team" ? teamId : undefined,
+    projectId: type === "project" ? projectId : undefined,
+  });
 
   const handleCreateChannel = async () => {
     if (!newChannelName.trim()) {
@@ -177,31 +183,47 @@ export function ChannelSidebar({
       {channels.length > 0 && (
         <ScrollArea className="flex-1">
           <div className="p-2 space-y-1">
-            {channels.map((channel) => (
-              <button
-                key={channel._id}
-                onClick={() => onChannelSelect(channel._id)}
-                className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors hover:bg-accent hover:text-accent-foreground ${
-                  selectedChannelId === channel._id
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground"
-                }`}
-              >
-                {channel.isPrivate ? (
-                  <Lock className="h-4 w-4 text-muted-foreground/50" />
-                ) : (
-                  <Hash className="h-4 w-4 text-muted-foreground/50" />
-                )}
-                
-                <span className="flex-1 truncate">{channel.name}</span>
-                
-                {channel.isDefault && (
-                  <Badge variant="secondary" className="text-xs">
-                    Default
-                  </Badge>
-                )}
-              </button>
-            ))}
+            {channels.map((channel) => {
+              const unreadCount = unreadCounts?.[channel._id] || 0;
+              
+              return (
+                <button
+                  key={channel._id}
+                  onClick={() => onChannelSelect(channel._id)}
+                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors hover:bg-accent hover:text-accent-foreground ${
+                    selectedChannelId === channel._id
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {channel.isPrivate ? (
+                    <Lock className="h-4 w-4 text-muted-foreground/50" />
+                  ) : (
+                    <Hash className="h-4 w-4 text-muted-foreground/50" />
+                  )}
+                  
+                  <span className="flex-1 truncate">{channel.name}</span>
+                  
+                  {/* Unread indicator */}
+                  {unreadCount > 0 && (
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 bg-red-500 rounded-full" />
+                      {unreadCount > 9 && (
+                        <Badge variant="destructive" className="text-xs px-1 py-0 h-4 min-w-4">
+                          {unreadCount > 99 ? "99+" : unreadCount}
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                  
+                  {channel.isDefault && (
+                    <Badge variant="secondary" className="text-xs">
+                      Default
+                    </Badge>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </ScrollArea>
       )}

@@ -10,8 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { 
   Send, 
   Paperclip, 
-  Smile,
-  AtSign
+  X
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -34,22 +33,77 @@ export function MessageInput({
 }: MessageInputProps) {
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const sendMessage = useMutation(api.chatMessages.sendMessage);
+  const generateChatUploadUrl = useMutation(api.files.generateChatUploadUrl);
+  const addChatFile = useMutation(api.files.addChatFile);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSendMessage = async () => {
     const trimmedMessage = message.trim();
-    if (!trimmedMessage || isSending) return;
+    if ((!trimmedMessage && !selectedFile) || isSending) return;
 
     setIsSending(true);
     try {
+      let fileUrl = "";
+      let fileName = "";
+      let fileData: { fileId: Id<"files">, fileUrl: string } | null = null;
+
+      // Upload file if selected
+      if (selectedFile) {
+        setIsUploading(true);
+        
+        // Generate upload URL
+        const uploadData = await generateChatUploadUrl({
+          channelId,
+          fileName: selectedFile.name,
+        });
+
+        // Upload file to R2
+        const uploadResponse = await fetch(uploadData.url, {
+          method: 'PUT',
+          body: selectedFile,
+          headers: {
+            'Content-Type': selectedFile.type,
+          },
+        });
+
+        if (!uploadResponse.ok) {
+          throw new Error(`Upload failed: ${uploadResponse.status}`);
+        }
+
+        // Add file to database
+        fileData = await addChatFile({
+          channelId,
+          fileKey: uploadData.key,
+          fileName: selectedFile.name,
+          fileType: selectedFile.type,
+          fileSize: selectedFile.size,
+        });
+
+        fileUrl = fileData.fileUrl;
+        fileName = selectedFile.name;
+        setIsUploading(false);
+      }
+
+      // Send message
       await sendMessage({
         channelId,
-        content: trimmedMessage,
+        content: trimmedMessage || `📎 ${fileName}`,
         replyToId: replyToMessage?._id,
+        messageType: selectedFile ? "file" : "text",
+        fileUrl: fileUrl || undefined,
+        fileName: fileName || undefined,
+        fileId: fileData?.fileId,
       });
       
       setMessage("");
+      setSelectedFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       if (onCancelReply) {
         onCancelReply();
       }
@@ -63,6 +117,7 @@ export function MessageInput({
       console.error(error);
     } finally {
       setIsSending(false);
+      setIsUploading(false);
     }
   };
 
@@ -82,8 +137,40 @@ export function MessageInput({
     textarea.style.height = Math.min(textarea.scrollHeight, 150) + 'px';
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Check file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error("File size must be less than 10MB");
+        return;
+      }
+      setSelectedFile(file);
+    }
+  };
+
+  const handleRemoveFile = () => {
+    setSelectedFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleAttachmentClick = () => {
+    fileInputRef.current?.click();
+  };
+
   return (
     <div className="space-y-3">
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        onChange={handleFileSelect}
+        accept="image/*,video/*,application/pdf,.doc,.docx,.txt"
+        className="hidden"
+      />
+
       {/* Reply indicator */}
       {replyToMessage && (
         <div className="flex items-start gap-2 p-3 bg-muted rounded-lg">
@@ -104,7 +191,26 @@ export function MessageInput({
             onClick={onCancelReply}
             className="h-6 w-6 p-0"
           >
-            ×
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
+      {/* Selected file preview */}
+      {selectedFile && (
+        <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+          <Paperclip className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm flex-1 truncate">{selectedFile.name}</span>
+          <span className="text-xs text-muted-foreground">
+            {(selectedFile.size / 1024 / 1024).toFixed(1)} MB
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRemoveFile}
+            className="h-6 w-6 p-0"
+          >
+            <X className="h-4 w-4" />
           </Button>
         </div>
       )}
@@ -117,31 +223,12 @@ export function MessageInput({
             value={message}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
-            placeholder={placeholder}
-            className="min-h-[40px] max-h-[150px] resize-none pr-12"
-            disabled={isSending}
+            placeholder={selectedFile ? "Add a message (optional)" : placeholder}
+            className="min-h-[40px] max-h-[150px] resize-none"
+            disabled={isSending || isUploading}
           />
           
-          {/* Emoji and mention buttons */}
-          <div className="absolute right-2 bottom-2 flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              disabled={isSending}
-            >
-              <Smile className="h-4 w-4" />
-            </Button>
-            
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              disabled={isSending}
-            >
-              <AtSign className="h-4 w-4" />
-            </Button>
-          </div>
+
         </div>
 
         {/* Action buttons */}
@@ -149,18 +236,19 @@ export function MessageInput({
           <Button
             variant="ghost"
             size="sm"
-            disabled={isSending}
+            disabled={isSending || isUploading}
+            onClick={handleAttachmentClick}
           >
             <Paperclip className="h-4 w-4" />
           </Button>
           
           <Button
             onClick={handleSendMessage}
-            disabled={!message.trim() || isSending}
+            disabled={(!message.trim() && !selectedFile) || isSending || isUploading}
             size="sm"
             className="px-3"
           >
-            {isSending ? (
+            {isSending || isUploading ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
             ) : (
               <Send className="h-4 w-4" />

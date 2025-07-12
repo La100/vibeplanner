@@ -51,6 +51,15 @@ export const getTeamBySlug = query({
     }
 });
 
+export const getTeam = query({
+  args: {
+    teamId: v.id("teams"),
+  },
+  async handler(ctx, args) {
+    return await ctx.db.get(args.teamId);
+  }
+});
+
 export const getCurrentUserTeamMember = query({
   args: {
     teamId: v.id("teams"),

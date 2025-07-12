@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
+import { useProject } from "@/components/providers/ProjectProvider";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,7 +52,7 @@ const formatDateTime = (timestamp: number | undefined): string => {
 type TaskStatusKey = "todo" | "in_progress" | "review" | "done";
 
 type TaskStatusLiterals = "todo" | "in_progress" | "review" | "done";
-type TaskPriority = "low" | "medium" | "high" | "urgent" | undefined;
+type TaskPriority = "low" | "medium" | "high" | "urgent" | null | undefined;
 
 const columnOrder: TaskStatusKey[] = ["todo", "in_progress", "review", "done"];
 
@@ -102,7 +103,7 @@ const priorityColors: Record<NonNullable<TaskPriority>, string> = {
 };
 
 const getPriorityDisplay = (priority: TaskPriority) => {
-  if (!priority) return { label: "No priority", color: "bg-gray-50 text-gray-400" };
+  if (!priority || priority === null) return { label: "No priority", color: "bg-gray-50 text-gray-400" };
   return { label: priority, color: priorityColors[priority] };
 };
 
@@ -178,24 +179,21 @@ export default function TasksView() {
 
   const debouncedSearchQuery = useDebounce(filters.searchQuery, 300);
 
-  const project = useQuery(api.projects.getProjectBySlug, {
-    teamSlug: params.slug,
-    projectSlug: params.projectSlug,
-  });
+  const { project } = useProject();
   
-  const teamMembers = useQuery(api.teams.getTeamMembers, project ? { teamId: project.teamId } : "skip");
+  const teamMembers = useQuery(api.teams.getTeamMembers, {
+    teamId: project.teamId,
+  });
 
-  const tasks = useQuery(api.tasks.listProjectTasks, 
-    project ? { 
-      projectId: project._id,
-      filters: {
-        ...filters,
-        searchQuery: debouncedSearchQuery,
-      },
-      sortBy: sorting.sortBy,
-      sortOrder: sorting.sortOrder
-    } : "skip"
-  );
+  const tasks = useQuery(api.tasks.listProjectTasks, {
+    projectId: project._id,
+    filters: {
+      ...filters,
+      searchQuery: debouncedSearchQuery,
+    },
+    sortBy: sorting.sortBy,
+    sortOrder: sorting.sortOrder
+  });
 
   const [preservedTasks, setPreservedTasks] = useState<typeof tasks>(undefined);
 
@@ -214,7 +212,7 @@ export default function TasksView() {
   const updateTaskStatus = useMutation(api.tasks.updateTaskStatus);
   
   const statusOptions = useMemo(() => 
-    project?.taskStatusSettings 
+    project.taskStatusSettings 
       ? Object.entries(project.taskStatusSettings)
           .map(([id, { name, color }]) => ({ value: id, label: name, color }))
           .sort((a, b) => columnOrder.indexOf(a.value as TaskStatusKey) - columnOrder.indexOf(b.value as TaskStatusKey))
@@ -497,7 +495,7 @@ export default function TasksView() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">{task.priority || 'N/A'}</Badge>
+                      {task.priority && <Badge variant="outline">{task.priority}</Badge>}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -550,16 +548,18 @@ function TaskCardContent({ task, projectSlug, companySlug }: { task: KanbanTask,
         <Link href={`/${companySlug}/${projectSlug}/tasks/${task.id}`}>
           <h4 className="font-semibold text-sm mb-2 hover:underline">{task.title}</h4>
         </Link>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge className={`${priority.color} text-xs`}>{priority.label}</Badge>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Priority: {priority.label}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        {task.priority && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge className={`${priority.color} text-xs`}>{priority.label}</Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Priority: {priority.label}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
       </div>
       {task.description && <p className="text-xs text-muted-foreground mb-2">{task.description}</p>}
       
@@ -576,10 +576,12 @@ function TaskCardContent({ task, projectSlug, companySlug }: { task: KanbanTask,
       </div>
 
       <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-100">
-        <div className="flex items-center gap-1 text-muted-foreground text-xs">
-          <MessageSquare className="w-3 h-3" />
-          <span>{task.commentCount}</span>
-        </div>
+        {task.commentCount > 0 && (
+          <div className="flex items-center gap-1 text-muted-foreground text-xs">
+            <MessageSquare className="w-3 h-3" />
+            <span>{task.commentCount}</span>
+          </div>
+        )}
         <div className="flex items-center -space-x-2">
           {task.assignedTo && (
             <TooltipProvider>

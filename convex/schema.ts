@@ -64,6 +64,7 @@ export default defineSchema({
     sidebarPermissions: v.optional(v.object({
       overview: v.optional(v.object({ visible: v.boolean() })),
       tasks: v.optional(v.object({ visible: v.boolean() })),
+      surveys: v.optional(v.object({ visible: v.boolean() })),
       calendar: v.optional(v.object({ visible: v.boolean() })),
       gantt: v.optional(v.object({ visible: v.boolean() })),
       files: v.optional(v.object({ visible: v.boolean() })),
@@ -99,7 +100,8 @@ export default defineSchema({
         v.literal("low"),
         v.literal("medium"),
         v.literal("high"),
-        v.literal("urgent")
+        v.literal("urgent"),
+        v.null()
     )),
     assignedTo: v.optional(v.union(v.string(), v.null())), // Clerk user ID
     createdBy: v.string(), // Clerk user ID
@@ -215,6 +217,7 @@ export default defineSchema({
     ),
     fileUrl: v.optional(v.string()),
     fileName: v.optional(v.string()),
+    fileId: v.optional(v.id("files")),
   })
     .index("by_channel", ["channelId"])
     .index("by_author", ["authorId"])
@@ -389,4 +392,99 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_team", ["teamId"])
     .index("by_user", ["userId"]),
+
+  // Ankiety
+  surveys: defineTable({
+    title: v.string(),
+    description: v.optional(v.string()),
+    teamId: v.id("teams"),
+    projectId: v.id("projects"),
+    createdBy: v.string(), // Clerk user ID
+    status: v.union(
+      v.literal("draft"),
+      v.literal("active"),
+      v.literal("closed")
+    ),
+    isRequired: v.boolean(), // czy ankieta jest obowiązkowa
+    allowMultipleResponses: v.boolean(), // czy można wypełnić wiele razy
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+    targetAudience: v.union(
+      v.literal("all_clients"), // wszyscy klienci projektu
+      v.literal("specific_clients"), // konkretni klienci
+      v.literal("team_members") // członkowie zespołu
+    ),
+    targetClientIds: v.optional(v.array(v.string())), // konkretni klienci (Clerk user IDs)
+  })
+    .index("by_project", ["projectId"])
+    .index("by_team", ["teamId"])
+    .index("by_status", ["status"])
+    .index("by_created_by", ["createdBy"]),
+
+  // Pytania w ankietach
+  surveyQuestions: defineTable({
+    surveyId: v.id("surveys"),
+    questionText: v.string(),
+    questionType: v.union(
+      v.literal("text_short"), // krótki tekst
+      v.literal("text_long"), // długi tekst
+      v.literal("multiple_choice"), // wielokrotny wybór
+      v.literal("single_choice"), // jeden wybór
+      v.literal("rating"), // skala oceny
+      v.literal("yes_no"), // tak/nie
+      v.literal("number") // liczba
+    ),
+    options: v.optional(v.array(v.string())), // opcje dla multiple/single choice
+    isRequired: v.boolean(),
+    order: v.number(), // kolejność pytania
+    ratingScale: v.optional(v.object({
+      min: v.number(),
+      max: v.number(),
+      minLabel: v.optional(v.string()),
+      maxLabel: v.optional(v.string())
+    })), // dla rating type
+  })
+    .index("by_survey", ["surveyId"])
+    .index("by_order", ["surveyId", "order"]),
+
+  // Odpowiedzi na ankiety
+  surveyResponses: defineTable({
+    surveyId: v.id("surveys"),
+    respondentId: v.string(), // Clerk user ID
+    teamId: v.id("teams"),
+    projectId: v.id("projects"),
+    isComplete: v.boolean(),
+    submittedAt: v.optional(v.number()),
+    metadata: v.optional(v.object({
+      ipAddress: v.optional(v.string()),
+      userAgent: v.optional(v.string()),
+      timeSpent: v.optional(v.number()) // czas w sekundach
+    })),
+  })
+    .index("by_survey", ["surveyId"])
+    .index("by_respondent", ["respondentId"])
+    .index("by_project", ["projectId"])
+    .index("by_survey_and_respondent", ["surveyId", "respondentId"]),
+
+  // Odpowiedzi na konkretne pytania
+  surveyAnswers: defineTable({
+    responseId: v.id("surveyResponses"),
+    questionId: v.id("surveyQuestions"),
+    surveyId: v.id("surveys"),
+    answerType: v.union(
+      v.literal("text"),
+      v.literal("choice"),
+      v.literal("rating"),
+      v.literal("number"),
+      v.literal("boolean")
+    ),
+    textAnswer: v.optional(v.string()),
+    choiceAnswers: v.optional(v.array(v.string())), // dla multiple choice
+    ratingAnswer: v.optional(v.number()),
+    numberAnswer: v.optional(v.number()),
+    booleanAnswer: v.optional(v.boolean()),
+  })
+    .index("by_response", ["responseId"])
+    .index("by_question", ["questionId"])
+    .index("by_survey", ["surveyId"]),
 });

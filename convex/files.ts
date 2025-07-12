@@ -57,15 +57,69 @@ export const generateUploadUrlWithCustomKey = mutation({
       throw new Error("No access to this project");
     }
 
-    let path = `${team.slug}/${project.slug}`;
-    if (args.taskId) {
-        const task = await ctx.db.get(args.taskId);
-        if(task) {
-            path = `${path}/${task._id}`;
-        }
+    const contextFolder = args.taskId ? 'tasks' : 'files';
+    const path = `${team.slug}/${project.slug}/${contextFolder}`;
+
+    // Generate folder structure: team/project/context/uuid-filename
+    const fileExtension = args.fileName.includes('.') 
+      ? args.fileName.split('.').pop() 
+      : '';
+    const baseName = args.fileName.replace(/\.[^/.]+$/, ""); // Remove extension
+    const uuid = crypto.randomUUID();
+    const customKey = `${path}/${uuid}-${baseName}${fileExtension ? '.' + fileExtension : ''}`;
+
+    const uploadData = await r2.generateUploadUrl(customKey);
+    
+    return {
+      url: uploadData.url,
+      key: customKey,
+    };
+  },
+});
+
+// Generate upload URL for chat files - stored in chat folder
+export const generateChatUploadUrl = mutation({
+  args: {
+    channelId: v.id("chatChannels"),
+    fileName: v.string(),
+  },
+  returns: v.object({
+    url: v.string(),
+    key: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const channel = await ctx.db.get(args.channelId);
+    if (!channel) throw new Error("Channel not found");
+
+    const team = await ctx.db.get(channel.teamId);
+    if (!team) throw new Error("Team not found");
+
+    // Check access to channel
+    const hasAccess = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", channel.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!hasAccess || !hasAccess.isActive) {
+      throw new Error("No access to this channel");
     }
 
-    // Generate folder structure: team/project/uuid-filename
+    // Generate folder structure: team/project/chat/uuid-filename or team/chat/uuid-filename
+    let path = `${team.slug}`;
+    if (channel.projectId) {
+      const project = await ctx.db.get(channel.projectId);
+      if (project) {
+        path = `${path}/${project.slug}`;
+      }
+    }
+    path = `${path}/chat`;
+
+    // Generate unique filename
     const fileExtension = args.fileName.includes('.') 
       ? args.fileName.split('.').pop() 
       : '';
@@ -180,6 +234,71 @@ export const addFile = mutation({
       version: 1,
       isLatest: true,
     });
+  },
+});
+
+// Add chat file to database
+export const addChatFile = mutation({
+  args: {
+    channelId: v.id("chatChannels"),
+    fileKey: v.string(),
+    fileName: v.string(),
+    fileType: v.string(),
+    fileSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const channel = await ctx.db.get(args.channelId);
+    if (!channel) throw new Error("Channel not found");
+
+    // Check access to channel
+    const hasAccess = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", channel.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!hasAccess || !hasAccess.isActive) {
+      throw new Error("No access to this channel");
+    }
+
+    // Determine file type based on MIME type
+    const getFileType = (mimeType: string) => {
+      if (mimeType.startsWith("image/")) return "image";
+      if (mimeType.startsWith("video/")) return "video";
+      if (mimeType === "application/pdf" || mimeType.includes("document")) return "document";
+      if (mimeType.includes("dwg") || mimeType.includes("dxf")) return "drawing";
+      return "other";
+    };
+
+    // Create file record
+    const fileId = await ctx.db.insert("files", {
+      name: args.fileName,
+      teamId: channel.teamId,
+      projectId: channel.projectId,
+      taskId: undefined,
+      folderId: undefined, // Chat files don't belong to folders
+      fileType: getFileType(args.fileType),
+      storageId: args.fileKey,
+      size: args.fileSize || 0,
+      mimeType: args.fileType,
+      uploadedBy: identity.subject,
+      version: 1,
+      isLatest: true,
+    });
+
+    // Get file URL for immediate use
+    const fileUrl = await r2.getUrl(args.fileKey, {
+      expiresIn: 60 * 60 * 24, // 24 hours
+    });
+
+    return {
+      fileId,
+      fileUrl,
+    };
   },
 });
 

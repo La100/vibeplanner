@@ -3,6 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { useProject } from "@/components/providers/ProjectProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -88,20 +89,17 @@ export default function ProjectCalendar() {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   
-  const project = useQuery(api.projects.getProjectBySlug, {
-    teamSlug: params.slug,
-    projectSlug: params.projectSlug,
+  const { project } = useProject();
+
+  const hasAccess = useQuery(api.projects.checkUserProjectAccess, {
+    projectId: project._id,
   });
 
-  const hasAccess = useQuery(api.projects.checkUserProjectAccess, 
-    project ? { projectId: project._id } : "skip"
-  );
+  const allTasks = useQuery(api.tasks.listProjectTasks, {
+    projectId: project._id,
+  });
 
-  const allTasks = useQuery(api.tasks.listProjectTasks, 
-    project ? { projectId: project._id } : "skip"
-  );
-
-  if (!project || !allTasks || hasAccess === false) {
+  if (!allTasks || hasAccess === false) {
     // Convex useQuery will suspend here, so this logic is for handling
     // null project or access denied after data is loaded.
     if (hasAccess === false) {
@@ -280,7 +278,7 @@ export default function ProjectCalendar() {
                                 {dayTasks.map(task => (
                                   <div
                                     key={task._id}
-                                    className={`text-xs p-2 rounded border-l-2 ${priorityColors[task.priority as TaskPriority]}`}
+                                    className={`text-xs p-2 rounded border-l-2 ${task.priority && task.priority !== null ? priorityColors[task.priority as TaskPriority] : 'border-l-gray-200'}`}
                                   >
                                     <div className="flex items-center justify-between">
                                       <span className="font-medium truncate">{task.title}</span>
@@ -332,7 +330,7 @@ export default function ProjectCalendar() {
                     {selectedDateTasks.map(task => (
                       <div
                         key={task._id}
-                        className={`p-3 rounded-lg border-l-4 ${priorityColors[task.priority as TaskPriority]} hover:bg-accent/50 transition-colors`}
+                        className={`p-3 rounded-lg border-l-4 ${task.priority && task.priority !== null ? priorityColors[task.priority as TaskPriority] : 'border-l-gray-200'} hover:bg-accent/50 transition-colors`}
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
@@ -442,7 +440,7 @@ export default function ProjectCalendar() {
                   {upcomingTasks.slice(0, 8).map(task => (
                     <div
                       key={task._id}
-                      className={`p-2 rounded border-l-2 ${priorityColors[task.priority as TaskPriority]}`}
+                      className={`p-2 rounded border-l-2 ${task.priority && task.priority !== null ? priorityColors[task.priority as TaskPriority] : 'border-l-gray-200'}`}
                     >
                       <h5 className="font-medium text-sm">{task.title}</h5>
                       <p className="text-xs text-muted-foreground">

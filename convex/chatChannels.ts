@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation, internalMutation } from "./_generated/server";
+import { api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { Doc } from "./_generated/dataModel";
 
@@ -161,6 +162,95 @@ export const getChannel = query({
 
     return channel;
   }
+});
+
+export const updateChannel = mutation({
+    args: {
+        channelId: v.id("chatChannels"),
+        name: v.string(),
+    },
+    async handler(ctx, args) {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) {
+            throw new Error("Not authenticated");
+        }
+
+        const channel = await ctx.db.get(args.channelId);
+        if (!channel) {
+            throw new Error("Channel not found");
+        }
+
+        const member = await ctx.db
+            .query("chatChannelMembers")
+            .withIndex("by_channel_and_user", (q) =>
+                q.eq("channelId", args.channelId).eq("userId", identity.subject)
+            )
+            .first();
+
+        if (!member || member.role !== "admin") {
+            throw new Error("Only channel admins can rename the channel");
+        }
+
+        await ctx.db.patch(args.channelId, { name: args.name });
+    }
+});
+
+export const deleteChannel = mutation({
+    args: {
+        channelId: v.id("chatChannels"),
+    },
+    async handler(ctx, args) {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) {
+            throw new Error("Not authenticated");
+        }
+
+        const channel = await ctx.db.get(args.channelId);
+        if (!channel) {
+            throw new Error("Channel not found");
+        }
+
+        if (channel.isDefault) {
+            throw new Error("Cannot delete a default channel");
+        }
+
+        const member = await ctx.db
+            .query("chatChannelMembers")
+            .withIndex("by_channel_and_user", (q) =>
+                q.eq("channelId", args.channelId).eq("userId", identity.subject)
+            )
+            .first();
+
+        if (!member || member.role !== "admin") {
+            throw new Error("Only channel admins can delete the channel");
+        }
+
+        // Delete messages and files
+        const messages = await ctx.db
+            .query("chatMessages")
+            .withIndex("by_channel", (q) => q.eq("channelId", args.channelId))
+            .collect();
+
+        for (const message of messages) {
+            if (message.fileId) {
+                // this will delete from R2 and the files table
+                await ctx.runMutation(api.files.deleteFile, { fileId: message.fileId });
+            }
+            await ctx.db.delete(message._id);
+        }
+
+        // Delete channel members
+        const memberships = await ctx.db
+            .query("chatChannelMembers")
+            .withIndex("by_channel", (q) => q.eq("channelId", args.channelId))
+            .collect();
+        for (const membership of memberships) {
+            await ctx.db.delete(membership._id);
+        }
+
+        // Delete channel
+        await ctx.db.delete(args.channelId);
+    }
 });
 
 // ====== MUTATIONS ======

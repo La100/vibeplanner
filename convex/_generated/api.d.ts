@@ -21,6 +21,7 @@ import type * as http from "../http.js";
 import type * as myFunctions from "../myFunctions.js";
 import type * as projects from "../projects.js";
 import type * as shopping from "../shopping.js";
+import type * as surveys from "../surveys.js";
 import type * as tasks from "../tasks.js";
 import type * as teams from "../teams.js";
 import type * as users from "../users.js";
@@ -53,6 +54,7 @@ declare const fullApi: ApiFromModules<{
   myFunctions: typeof myFunctions;
   projects: typeof projects;
   shopping: typeof shopping;
+  surveys: typeof surveys;
   tasks: typeof tasks;
   teams: typeof teams;
   users: typeof users;

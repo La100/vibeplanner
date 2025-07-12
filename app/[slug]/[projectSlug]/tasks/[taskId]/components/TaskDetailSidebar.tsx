@@ -53,7 +53,7 @@ interface TaskDetailSidebarProps {
   task: {
     _id: Id<"tasks">;
     status: string;
-    priority?: string;
+    priority?: string | null;
     cost?: number;
     startDate?: number;
     endDate?: number;

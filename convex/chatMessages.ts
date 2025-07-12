@@ -44,7 +44,7 @@ export const listChannelMessages = query({
       .withIndex("by_channel", (q) =>
         q.eq("channelId", args.channelId)
       )
-      .order("desc")
+      .order("asc")
       .paginate(args.paginationOpts);
 
     // Enrich messages with author information
@@ -146,25 +146,100 @@ export const getUnreadCount = query({
 
     // Get user's last read timestamp
     let lastReadAt = 0;
-    if (channel.isPrivate) {
+    const membership = await ctx.db
+      .query("chatChannelMembers")
+      .withIndex("by_channel_and_user", (q) =>
+        q.eq("channelId", args.channelId).eq("userId", identity.subject)
+      )
+      .first();
+    
+    lastReadAt = membership?.lastReadAt || 0;
+
+    // Count messages since last read (excluding own messages)
+    const unreadMessages = await ctx.db
+      .query("chatMessages")
+      .withIndex("by_channel", (q) => q.eq("channelId", args.channelId))
+      .filter((q) => 
+        q.and(
+          q.gt(q.field("_creationTime"), lastReadAt),
+          q.neq(q.field("authorId"), identity.subject)
+        )
+      )
+      .collect();
+
+    return unreadMessages.length;
+  },
+});
+
+export const getAllUnreadCounts = query({
+  args: {
+    teamId: v.optional(v.id("teams")),
+    projectId: v.optional(v.id("projects")),
+  },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return {};
+    }
+
+    let channels: any[] = [];
+
+    // Get team channels if teamId is provided
+    if (args.teamId) {
+      const teamId = args.teamId;
+      const teamChannels = await ctx.db
+        .query("chatChannels")
+        .withIndex("by_team", (q) => q.eq("teamId", teamId))
+        .filter((q) => q.eq(q.field("type"), "team"))
+        .collect();
+      channels = [...channels, ...teamChannels];
+    }
+
+    // Get project channels if projectId is provided
+    if (args.projectId) {
+      const projectId = args.projectId;
+      const projectChannels = await ctx.db
+        .query("chatChannels")
+        .withIndex("by_project", (q) => q.eq("projectId", projectId))
+        .filter((q) => q.eq(q.field("type"), "project"))
+        .collect();
+      channels = [...channels, ...projectChannels];
+    }
+
+    const unreadCounts: Record<string, number> = {};
+
+    // Calculate unread count for each channel
+    for (const channel of channels) {
+      const hasAccess = await hasChannelAccess(ctx, channel._id);
+      if (!hasAccess) continue;
+
+      // Get user's last read timestamp
+      let lastReadAt = 0;
       const membership = await ctx.db
         .query("chatChannelMembers")
         .withIndex("by_channel_and_user", (q) =>
-          q.eq("channelId", args.channelId).eq("userId", identity.subject)
+          q.eq("channelId", channel._id).eq("userId", identity.subject)
         )
         .first();
       
       lastReadAt = membership?.lastReadAt || 0;
+
+      // Count messages since last read (excluding own messages)
+      const unreadMessages = await ctx.db
+        .query("chatMessages")
+        .withIndex("by_channel", (q) => q.eq("channelId", channel._id))
+        .filter((q) => 
+          q.and(
+            q.gt(q.field("_creationTime"), lastReadAt),
+            q.neq(q.field("authorId"), identity.subject)
+          )
+        )
+        .collect();
+
+      unreadCounts[channel._id] = unreadMessages.length;
     }
 
-    // Count messages since last read
-    const unreadMessages = await ctx.db
-      .query("chatMessages")
-      .withIndex("by_channel", (q) => q.eq("channelId", args.channelId))
-      .filter((q) => q.gt(q.field("_creationTime"), lastReadAt))
-      .collect();
-
-    return unreadMessages.length;
+    return unreadCounts;
   },
 });
 
@@ -182,6 +257,7 @@ export const sendMessage = mutation({
     )),
     fileUrl: v.optional(v.string()),
     fileName: v.optional(v.string()),
+    fileId: v.optional(v.id("files")),
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -207,7 +283,7 @@ export const sendMessage = mutation({
       }
     }
 
-    const messageId = await ctx.db.insert("chatMessages", {
+    await ctx.db.insert("chatMessages", {
       content: args.content,
       channelId: args.channelId,
       authorId: identity.subject,
@@ -218,25 +294,13 @@ export const sendMessage = mutation({
       messageType: args.messageType || "text",
       fileUrl: args.fileUrl,
       fileName: args.fileName,
+      fileId: args.fileId,
     });
 
-    // Auto-mark as read for sender if it's a private channel
-    if (channel.isPrivate) {
-      const membership = await ctx.db
-        .query("chatChannelMembers")
-        .withIndex("by_channel_and_user", (q) =>
-          q.eq("channelId", args.channelId).eq("userId", identity.subject)
-        )
-        .first();
+    // Update members' last read time, but not for the sender
+    // This is handled when user opens the channel instead
 
-      if (membership) {
-        await ctx.db.patch(membership._id, {
-          lastReadAt: Date.now(),
-        });
-      }
-    }
-
-    return messageId;
+    return true;
   },
 });
 
@@ -351,12 +415,11 @@ export const markChannelAsRead = mutation({
     }
 
     const channel = await ctx.db.get(args.channelId);
-    if (!channel || !channel.isPrivate) {
-      // Only track read status for private channels
+    if (!channel) {
       return true;
     }
 
-    const membership = await ctx.db
+    let membership = await ctx.db
       .query("chatChannelMembers")
       .withIndex("by_channel_and_user", (q) =>
         q.eq("channelId", args.channelId).eq("userId", identity.subject)
@@ -365,6 +428,15 @@ export const markChannelAsRead = mutation({
 
     if (membership) {
       await ctx.db.patch(membership._id, {
+        lastReadAt: Date.now(),
+      });
+    } else {
+      // Create membership if it doesn't exist
+      await ctx.db.insert("chatChannelMembers", {
+        channelId: args.channelId,
+        userId: identity.subject,
+        joinedAt: Date.now(),
+        role: "member",
         lastReadAt: Date.now(),
       });
     }
