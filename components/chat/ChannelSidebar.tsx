@@ -216,11 +216,6 @@ export function ChannelSidebar({
                     </div>
                   )}
                   
-                  {channel.isDefault && (
-                    <Badge variant="secondary" className="text-xs">
-                      Default
-                    </Badge>
-                  )}
                 </button>
               );
             })}

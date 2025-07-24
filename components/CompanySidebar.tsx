@@ -40,6 +40,11 @@ function CompanySidebarContent() {
     params.slug ? { slug: params.slug } : "skip"
   );
 
+  // Get current user role in team
+  const userRole = useQuery(api.teams.getCurrentUserRoleInTeam,
+    params.slug ? { teamSlug: params.slug } : "skip"
+  );
+
   // Get unread counts for team channels
   const unreadCounts = useQuery(api.chatMessages.getAllUnreadCounts, 
     team ? { teamId: team._id } : "skip"
@@ -48,14 +53,20 @@ function CompanySidebarContent() {
   // Calculate total unread messages
   const totalUnreadCount = unreadCounts ? Object.values(unreadCounts).reduce((sum, count) => sum + count, 0) : 0;
 
-  const navItems = [
-    { href: `/${params.slug}`, label: "Dashboard", icon: LayoutDashboard },
-    { href: `/${params.slug}/projects`, label: "Projects", icon: FolderOpen },
-    { href: `/${params.slug}/team`, label: "Team", icon: Users },
-    { href: `/${params.slug}/chat`, label: "Chat", icon: MessageSquare, hasUnread: totalUnreadCount > 0 },
-    { href: `/${params.slug}/reports`, label: "Reports", icon: BarChart3 },
-    { href: `/${params.slug}/settings`, label: "Settings", icon: Settings },
+  // Define navigation items based on user role
+  const allNavItems = [
+    { href: `/${params.slug}`, label: "Dashboard", icon: LayoutDashboard, allowedRoles: ["admin", "member"] },
+    { href: `/${params.slug}/projects`, label: "Projects", icon: FolderOpen, allowedRoles: ["admin", "member", "customer"] },
+    { href: `/${params.slug}/team`, label: "Team", icon: Users, allowedRoles: ["admin", "member"] },
+    { href: `/${params.slug}/chat`, label: "Chat", icon: MessageSquare, hasUnread: totalUnreadCount > 0, allowedRoles: ["admin", "member"] },
+    { href: `/${params.slug}/reports`, label: "Reports", icon: BarChart3, allowedRoles: ["admin", "member"] },
+    { href: `/${params.slug}/settings`, label: "Settings", icon: Settings, allowedRoles: ["admin", "member"] },
   ];
+
+  // Filter navigation items based on user role
+  const navItems = allNavItems.filter(item => 
+    !userRole || item.allowedRoles.includes(userRole)
+  );
 
   const handleLinkClick = () => {
     setOpenMobile(false);

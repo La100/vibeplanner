@@ -31,7 +31,7 @@ http.route({
 
     try {
       // Zapisz tymczasowo informację o zaproszeniu w bazie
-      await ctx.runMutation(internal.teams.createPendingClientInvitation, {
+      await ctx.runMutation(internal.teams.createPendingCustomerInvitation, {
         email,
         projectId,
         clerkOrgId,
@@ -74,5 +74,163 @@ http.route({
     }
   }),
 });
+
+// Stripe webhook endpoint
+http.route({
+  path: "/stripe",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const body = await request.text();
+    const signature = request.headers.get("stripe-signature");
+
+    if (!signature) {
+      return new Response("No Stripe signature found", { status: 400 });
+    }
+
+    try {
+      const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+      const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+      if (!endpointSecret) {
+        throw new Error("Stripe webhook secret not configured");
+      }
+
+      // Verify webhook signature
+      const event = stripe.webhooks.constructEvent(body, signature, endpointSecret);
+
+      switch (event.type) {
+        case 'checkout.session.completed': {
+          const session = event.data.object;
+          const teamId = session.metadata?.teamId;
+          
+          if (teamId && session.subscription) {
+            // Get subscription details
+            const subscription = await stripe.subscriptions.retrieve(session.subscription);
+            
+            // Update team subscription
+            await ctx.runMutation(internal.stripe.updateTeamSubscription, {
+              teamId,
+              subscriptionId: subscription.id,
+              subscriptionStatus: subscription.status,
+              subscriptionPlan: determinePlanFromPriceId(subscription.items.data[0].price.id),
+              priceId: subscription.items.data[0].price.id,
+              currentPeriodStart: subscription.current_period_start * 1000,
+              currentPeriodEnd: subscription.current_period_end * 1000,
+              trialEnd: subscription.trial_end ? subscription.trial_end * 1000 : undefined,
+              cancelAtPeriodEnd: subscription.cancel_at_period_end,
+            });
+          }
+          break;
+        }
+
+        case 'invoice.payment_succeeded': {
+          const invoice = event.data.object;
+          if (invoice.subscription) {
+            const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+            const teamId = subscription.metadata?.teamId;
+            
+            if (teamId) {
+              await ctx.runMutation(internal.stripe.updateTeamSubscription, {
+                teamId,
+                subscriptionId: subscription.id,
+                subscriptionStatus: subscription.status,
+                subscriptionPlan: determinePlanFromPriceId(subscription.items.data[0].price.id),
+                priceId: subscription.items.data[0].price.id,
+                currentPeriodStart: subscription.current_period_start * 1000,
+                currentPeriodEnd: subscription.current_period_end * 1000,
+                trialEnd: subscription.trial_end ? subscription.trial_end * 1000 : undefined,
+                cancelAtPeriodEnd: subscription.cancel_at_period_end,
+              });
+            }
+          }
+          break;
+        }
+
+        case 'invoice.payment_failed': {
+          const invoice = event.data.object;
+          if (invoice.subscription) {
+            const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+            const teamId = subscription.metadata?.teamId;
+            
+            if (teamId) {
+              await ctx.runMutation(internal.stripe.updateTeamSubscription, {
+                teamId,
+                subscriptionId: subscription.id,
+                subscriptionStatus: 'past_due',
+                subscriptionPlan: determinePlanFromPriceId(subscription.items.data[0].price.id),
+                priceId: subscription.items.data[0].price.id,
+                currentPeriodStart: subscription.current_period_start * 1000,
+                currentPeriodEnd: subscription.current_period_end * 1000,
+                trialEnd: subscription.trial_end ? subscription.trial_end * 1000 : undefined,
+                cancelAtPeriodEnd: subscription.cancel_at_period_end,
+              });
+            }
+          }
+          break;
+        }
+
+        case 'customer.subscription.updated':
+        case 'customer.subscription.deleted': {
+          const subscription = event.data.object;
+          const teamId = subscription.metadata?.teamId;
+          
+          if (teamId) {
+            if (event.type === 'customer.subscription.deleted') {
+              // Revert to free plan
+              await ctx.runMutation(internal.stripe.updateTeamToFree, {
+                teamId,
+              });
+            } else {
+              // Update subscription
+              await ctx.runMutation(internal.stripe.updateTeamSubscription, {
+                teamId,
+                subscriptionId: subscription.id,
+                subscriptionStatus: subscription.status,
+                subscriptionPlan: determinePlanFromPriceId(subscription.items.data[0].price.id),
+                priceId: subscription.items.data[0].price.id,
+                currentPeriodStart: subscription.current_period_start * 1000,
+                currentPeriodEnd: subscription.current_period_end * 1000,
+                trialEnd: subscription.trial_end ? subscription.trial_end * 1000 : undefined,
+                cancelAtPeriodEnd: subscription.cancel_at_period_end,
+              });
+            }
+          }
+          break;
+        }
+
+        default:
+          console.log(`Unhandled Stripe event type: ${event.type}`);
+      }
+
+      return new Response(JSON.stringify({ received: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+
+    } catch (error) {
+      console.error("Stripe webhook error:", error);
+      return new Response(JSON.stringify({ error: (error as Error).message }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }),
+});
+
+// Helper function to determine plan from Stripe price ID
+function determinePlanFromPriceId(priceId: string): string {
+  // You'll need to set these to your actual Stripe price IDs
+  const priceIdToPlan: Record<string, string> = {
+    // Add your actual Stripe price IDs here
+    "price_basic_monthly": "basic",
+    "price_basic_yearly": "basic", 
+    "price_pro_monthly": "pro",
+    "price_pro_yearly": "pro",
+    "price_enterprise_monthly": "enterprise",
+    "price_enterprise_yearly": "enterprise",
+  };
+  
+  return priceIdToPlan[priceId] || "basic";
+}
 
 export default http; 

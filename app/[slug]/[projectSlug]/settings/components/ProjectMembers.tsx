@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Users, Mail, UserX, Crown, User } from "lucide-react";
 import { toast } from "sonner";
-import { InviteClientForm } from "@/components/InviteClientForm";
+import { InviteCustomerForm } from "@/components/InviteCustomerForm";
 import { AddFromOrganizationForm } from "@/components/AddFromOrganizationForm";
 import { Id } from "@/convex/_generated/dataModel";
 
@@ -22,7 +22,7 @@ interface ProjectMembersProps {
 
 interface TeamMember {
   _id: Id<"teamMembers">;
-  role: "admin" | "member" | "viewer" | "client";
+  role: "admin" | "member" | "customer";
   name: string;
   email: string;
   imageUrl?: string;
@@ -49,8 +49,7 @@ export default function ProjectMembers({ project }: ProjectMembersProps) {
   // Filter team members by role
   const admins = teamMembers.filter((member: TeamMember) => member.role === "admin");
   const members = teamMembers.filter((member: TeamMember) => member.role === "member");
-  const viewers = teamMembers.filter((member: TeamMember) => member.role === "viewer");
-  const clients = teamMembers.filter((member: TeamMember) => member.role === "client");
+  const customers = teamMembers.filter((member: TeamMember) => member.role === "customer");
 
   return (
     <div className="space-y-4 lg:space-y-6">
@@ -114,50 +113,27 @@ export default function ProjectMembers({ project }: ProjectMembersProps) {
             </div>
           )}
 
-          {/* Viewers */}
-          {viewers.length > 0 && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 pt-4 border-t">
-                <Users className="h-4 w-4 text-gray-500" />
-                <h4 className="text-sm font-semibold">Viewers</h4>
-                <Badge variant="outline">{viewers.length}</Badge>
-              </div>
-              <div className="space-y-2">
-                {viewers.map((member: TeamMember) => (
-                  <MemberRow 
-                    key={member._id} 
-                    member={member} 
-                    role="Viewer"
-                    description="Read-only access"
-                    canManage={isCurrentUserAdmin}
-                    projectId={project._id}
-                    teamId={project.teamId}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
 
-      {/* Project Clients Section */}
+      {/* Project Customers Section */}
       <Card>
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2 text-lg lg:text-xl">
             <Mail className="h-4 w-4 lg:h-5 lg:w-5" />
-            Project Clients
+            Project Customers
           </CardTitle>
           <CardDescription className="text-sm">
-            Clients invited specifically to this project. They only have access to this project.
+            Customers invited specifically to this project. They only have access to this project.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 px-4 lg:px-6">
-          {clients && clients.length > 0 ? (
+          {customers && customers.length > 0 ? (
             <div className="space-y-2">
-              {clients.map((client: TeamMember) => (
-                <ClientRow
-                  key={client._id}
-                  client={client}
+              {customers.map((customer: TeamMember) => (
+                <CustomerRow
+                  key={customer._id}
+                  customer={customer}
                   canManage={isCurrentUserAdmin}
                   projectId={project._id}
                 />
@@ -166,7 +142,7 @@ export default function ProjectMembers({ project }: ProjectMembersProps) {
           ) : (
             <div className="text-center py-6 text-muted-foreground">
               <Mail className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">No clients invited to this project yet.</p>
+              <p className="text-sm">No customers invited to this project yet.</p>
             </div>
           )}
         </CardContent>
@@ -175,16 +151,16 @@ export default function ProjectMembers({ project }: ProjectMembersProps) {
       {/* Add from Organization Section */}
       <AddFromOrganizationForm projectId={project._id} />
 
-      {/* Invite Client Section */}
+      {/* Invite Customer Section */}
       <Card>
         <CardHeader className="pb-4">
-          <CardTitle className="text-lg lg:text-xl">Invite New Client</CardTitle>
+          <CardTitle className="text-lg lg:text-xl">Invite New Customer</CardTitle>
           <CardDescription className="text-sm">
-            Invite a new client by email. They will be added to the organization and given access to this project.
+            Invite a new customer by email. They will be added to the organization and given access to this project.
           </CardDescription>
         </CardHeader>
         <CardContent className="px-4 lg:px-6">
-          <InviteClientForm projectId={project._id} />
+          <InviteCustomerForm projectId={project._id} />
         </CardContent>
       </Card>
     </div>
@@ -214,7 +190,6 @@ function MemberRow({
     switch (role.toLowerCase()) {
       case 'admin': return 'default';
       case 'member': return 'secondary';
-      case 'viewer': return 'outline';
       default: return 'secondary';
     }
   };
@@ -231,15 +206,15 @@ function MemberRow({
     }
   };
 
-  const handleChangeToClient = async () => {
+  const handleChangeToCustomer = async () => {
     try {
       await changeTeamMemberRole({
         clerkUserId: member.clerkUserId,
         teamId: teamId,
-        role: "client",
+        role: "customer",
         projectId: projectId,
       });
-      toast.success("Member changed to project client");
+      toast.success("Member changed to project customer");
     } catch (error) {
       toast.error("Failed to change role: " + (error as Error).message);
     }
@@ -266,9 +241,9 @@ function MemberRow({
             <Button 
               variant="ghost" 
               size="sm"
-              onClick={handleChangeToClient}
+              onClick={handleChangeToCustomer}
               className="text-blue-600 hover:text-blue-700 h-6 w-6 lg:h-8 lg:w-8 p-0"
-              title="Change to Project Client"
+              title="Change to Project Customer"
             >
               <Mail className="h-3 w-3 lg:h-4 lg:w-4" />
             </Button>
@@ -283,43 +258,32 @@ function MemberRow({
             </Button>
           </>
         )}
-        {canManage && member.role === "viewer" && (
-          <Button 
-            variant="ghost" 
-            size="sm"
-            onClick={handleRemoveMember}
-            className="text-red-600 hover:text-red-700 h-6 w-6 lg:h-8 lg:w-8 p-0"
-            title="Remove from team"
-          >
-            <UserX className="h-3 w-3 lg:h-4 lg:w-4" />
-          </Button>
-        )}
       </div>
     </div>
   );
 }
 
-// Client Row Component
-function ClientRow({ 
-  client, 
+// Customer Row Component
+function CustomerRow({ 
+  customer, 
   canManage,
   projectId
 }: { 
-  client: TeamMember; 
+  customer: TeamMember; 
   canManage: boolean;
   projectId: Id<"projects">;
 }) {
-  const removeProjectFromClient = useMutation(api.teams.removeProjectFromClient);
+  const removeProjectFromCustomer = useMutation(api.teams.removeProjectFromCustomer);
 
-  const handleRemoveClient = async () => {
+  const handleRemoveCustomer = async () => {
     try {
-      await removeProjectFromClient({
-        clerkUserId: client.clerkUserId,
+      await removeProjectFromCustomer({
+        clerkUserId: customer.clerkUserId,
         projectId: projectId,
       });
-      toast.success("Client access removed");
+      toast.success("Customer access removed");
     } catch {
-      toast.error("Failed to remove client access");
+      toast.error("Failed to remove customer access");
     }
   };
 
@@ -328,21 +292,21 @@ function ClientRow({
       <div className="flex items-center gap-2 lg:gap-3 min-w-0 flex-1">
         <Avatar className="h-6 w-6 lg:h-8 lg:w-8 flex-shrink-0">
           <AvatarFallback className="text-xs">
-            {client.email ? client.email[0].toUpperCase() : 'C'}
+            {customer.email ? customer.email[0].toUpperCase() : 'C'}
           </AvatarFallback>
         </Avatar>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{client.email}</p>
-          <p className="text-xs text-muted-foreground hidden sm:block">Project client</p>
+          <p className="text-sm font-medium truncate">{customer.email}</p>
+          <p className="text-xs text-muted-foreground hidden sm:block">Project customer</p>
         </div>
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
-        <Badge variant="default" className="text-xs">Client</Badge>
+        <Badge variant="default" className="text-xs">Customer</Badge>
         {canManage && (
           <Button 
             variant="ghost" 
             size="sm"
-            onClick={handleRemoveClient}
+            onClick={handleRemoveCustomer}
             className="text-red-600 hover:text-red-700 h-6 w-6 lg:h-8 lg:w-8 p-0"
           >
             <UserX className="h-3 w-3 lg:h-4 lg:w-4" />

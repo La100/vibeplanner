@@ -9,11 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Send } from "lucide-react";
+import { ArrowLeft, Send, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 interface SurveyResponsePageProps {
@@ -62,6 +61,8 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
   const startResponse = useMutation(api.surveys.startSurveyResponse);
   const saveAnswer = useMutation(api.surveys.saveAnswer);
   const submitResponse = useMutation(api.surveys.submitSurveyResponse);
+  const generateUploadUrl = useMutation(api.files.generateUploadUrlWithCustomKey);
+  const addFile = useMutation(api.files.addFile);
 
   useEffect(() => {
     if (userResponse && !userResponse.isComplete) {
@@ -86,6 +87,9 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
           case "boolean":
             existingAnswers[questionId] = answer.booleanAnswer;
             break;
+          case "file":
+            existingAnswers[questionId] = answer.fileAnswer;
+            break;
         }
       });
       setAnswers(existingAnswers);
@@ -106,60 +110,81 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
     }
   };
 
-  const handleAnswerChange = async (questionId: string, value: unknown, answerType: string) => {
+  const handleAnswerChange = (questionId: string, value: unknown) => {
     setAnswers(prev => ({ ...prev, [questionId]: value }));
+  };
 
-    if (currentResponseId) {
-      try {
-        const baseAnswerData = {
-          responseId: currentResponseId,
-          questionId: questionId as Id<"surveyQuestions">,
-          answerType: answerType as "text" | "choice" | "rating" | "number" | "boolean",
-        };
+  const handleFileUpload = async (questionId: string, file: File) => {
+    if (!project || !team) return;
 
-        switch (answerType) {
-          case "text":
-            await saveAnswer({
-              ...baseAnswerData,
-              textAnswer: value as string,
-            });
-            break;
-          case "choice":
-            await saveAnswer({
-              ...baseAnswerData,
-              choiceAnswers: Array.isArray(value) ? value as string[] : [value as string],
-            });
-            break;
-          case "rating":
-            await saveAnswer({
-              ...baseAnswerData,
-              ratingAnswer: value as number,
-            });
-            break;
-          case "number":
-            await saveAnswer({
-              ...baseAnswerData,
-              numberAnswer: value as number,
-            });
-            break;
-          case "boolean":
-            await saveAnswer({
-              ...baseAnswerData,
-              booleanAnswer: value as boolean,
-            });
-            break;
-        }
-      } catch (error) {
-        console.error("Error saving answer:", error);
+    try {
+      // Generate upload URL
+      const uploadData = await generateUploadUrl({
+        projectId: project._id,
+        fileName: file.name
+      });
+
+      // Upload file to R2
+      const response = await fetch(uploadData.url, {
+        method: 'PUT',
+        body: file,
+        headers: {
+          'Content-Type': file.type,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Upload failed');
       }
+
+      // Add file to database
+      const fileRecord = await addFile({
+        projectId: project._id,
+        fileKey: uploadData.key,
+        fileName: file.name,
+        fileType: getFileType(file.type),
+        fileSize: file.size,
+      });
+
+      // Save file info as answer
+      const fileAnswer = {
+        fileId: fileRecord,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type
+      };
+
+      handleAnswerChange(questionId, fileAnswer);
+      toast.success("Plik został przesłany");
+    } catch (error) {
+      console.error("Error uploading file:", error);
+      toast.error("Błąd podczas przesyłania pliku");
     }
+  };
+
+  const getFileType = (mimeType: string) => {
+    if (mimeType.startsWith('image/')) return 'image';
+    if (mimeType.startsWith('video/')) return 'video';
+    if (mimeType.includes('pdf') || mimeType.includes('document') || mimeType.includes('text')) return 'document';
+    return 'other';
   };
 
   const handleSubmit = async () => {
     if (!currentResponseId || !routeParams) return;
 
     const requiredQuestions = survey?.questions.filter(q => q.isRequired) || [];
-    const missingAnswers = requiredQuestions.filter(q => !answers[q._id]);
+    const missingAnswers = requiredQuestions.filter(q => {
+      const answer = answers[q._id];
+      // For yes/no questions, false is a valid answer
+      if (q.questionType === "yes_no") {
+        return answer !== true && answer !== false;
+      }
+      // For file questions, check if file exists
+      if (q.questionType === "file") {
+        return !answer || !(answer as { fileId: unknown }).fileId;
+      }
+      return answer === undefined || answer === null || answer === "";
+    });
 
     if (missingAnswers.length > 0) {
       toast.error("Proszę odpowiedzieć na wszystkie obowiązkowe pytania");
@@ -169,14 +194,97 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
     setIsSubmitting(true);
 
     try {
+      // Save all answers first
+      for (const [questionId, value] of Object.entries(answers)) {
+        const question = survey?.questions.find(q => q._id === questionId);
+        if (question) {
+          // For boolean questions, false is a valid answer
+          // For file questions, check if file exists
+          const isValidAnswer = question.questionType === "yes_no" 
+            ? (value === true || value === false)
+            : question.questionType === "file"
+            ? (value && (value as { fileId: unknown }).fileId)
+            : (value !== undefined && value !== null && value !== "");
+          
+          if (isValidAnswer) {
+            const baseAnswerData = {
+              responseId: currentResponseId,
+              questionId: questionId as Id<"surveyQuestions">,
+              answerType: getAnswerType(question.questionType) as "text" | "choice" | "rating" | "number" | "boolean",
+            };
+
+            switch (getAnswerType(question.questionType)) {
+              case "text":
+                await saveAnswer({
+                  ...baseAnswerData,
+                  textAnswer: value as string,
+                });
+                break;
+              case "choice":
+                await saveAnswer({
+                  ...baseAnswerData,
+                  choiceAnswers: Array.isArray(value) ? value as string[] : [value as string],
+                });
+                break;
+              case "rating":
+                await saveAnswer({
+                  ...baseAnswerData,
+                  ratingAnswer: value as number,
+                });
+                break;
+              case "number":
+                await saveAnswer({
+                  ...baseAnswerData,
+                  numberAnswer: value as number,
+                });
+                break;
+              case "boolean":
+                await saveAnswer({
+                  ...baseAnswerData,
+                  booleanAnswer: value as boolean,
+                });
+                break;
+              case "file":
+                await saveAnswer({
+                  ...baseAnswerData,
+                  fileAnswer: value as { fileId: Id<"files">; fileName: string; fileSize: number; fileType: string },
+                });
+                break;
+            }
+          }
+        }
+      }
+
+      // Then submit the response
       await submitResponse({ responseId: currentResponseId });
       toast.success("Ankieta została wysłana!");
-      router.push(`/${team?.slug}/${routeParams.projectSlug}/surveys`);
+      router.push(`/${routeParams.teamSlug}/${routeParams.projectSlug}/surveys`);
     } catch (error) {
       toast.error("Błąd podczas wysyłania ankiety");
       console.error(error);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const getAnswerType = (questionType: string) => {
+    switch (questionType) {
+      case "text_short":
+      case "text_long":
+        return "text";
+      case "multiple_choice":
+      case "single_choice":
+        return "choice";
+      case "rating":
+        return "rating";
+      case "yes_no":
+        return "boolean";
+      case "number":
+        return "number";
+      case "file":
+        return "file";
+      default:
+        return "text";
     }
   };
 
@@ -237,14 +345,6 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
         </div>
       </div>
 
-      <div className="flex items-center gap-2 mb-6">
-        <Badge variant={survey.status === "active" ? "default" : "secondary"}>
-          {survey.status === "active" ? "Aktywna" : "Nieaktywna"}
-        </Badge>
-        {survey.isRequired && (
-          <Badge variant="destructive">Obowiązkowa</Badge>
-        )}
-      </div>
 
       {!hasStarted ? (
         <Card>
@@ -276,27 +376,18 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
                 <CardTitle className="text-lg">{question.questionText}</CardTitle>
               </CardHeader>
               <CardContent>
-                {question.questionType === "text_short" && (
+                {(question.questionType === "text_short" || question.questionType === "text_long") && (
                   <Input
                     value={String(answers[question._id] || "")}
-                    onChange={(e) => handleAnswerChange(question._id, e.target.value, "text")}
+                    onChange={(e) => handleAnswerChange(question._id, e.target.value)}
                     placeholder="Twoja odpowiedź"
-                  />
-                )}
-
-                {question.questionType === "text_long" && (
-                  <Textarea
-                    value={String(answers[question._id] || "")}
-                    onChange={(e) => handleAnswerChange(question._id, e.target.value, "text")}
-                    placeholder="Twoja odpowiedź"
-                    rows={4}
                   />
                 )}
 
                 {question.questionType === "single_choice" && (
                   <RadioGroup
                     value={String(answers[question._id] || "")}
-                    onValueChange={(value) => handleAnswerChange(question._id, value, "choice")}
+                    onValueChange={(value) => handleAnswerChange(question._id, value)}
                   >
                     {question.options?.map((option, optionIndex) => (
                       <div key={optionIndex} className="flex items-center space-x-2">
@@ -319,7 +410,7 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
                             const newAnswers = checked
                               ? [...currentAnswers, option]
                               : currentAnswers.filter((a: string) => a !== option);
-                            handleAnswerChange(question._id, newAnswers, "choice");
+                            handleAnswerChange(question._id, newAnswers);
                           }}
                         />
                         <Label htmlFor={`${question._id}-${optionIndex}`}>{option}</Label>
@@ -336,7 +427,7 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
                     </div>
                     <RadioGroup
                       value={answers[question._id]?.toString() || ""}
-                      onValueChange={(value) => handleAnswerChange(question._id, parseInt(value), "rating")}
+                      onValueChange={(value) => handleAnswerChange(question._id, parseInt(value))}
                     >
                       <div className="flex items-center justify-between">
                         {Array.from(
@@ -358,7 +449,7 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
                 {question.questionType === "yes_no" && (
                   <RadioGroup
                     value={answers[question._id]?.toString() || ""}
-                    onValueChange={(value) => handleAnswerChange(question._id, value === "true", "boolean")}
+                    onValueChange={(value) => handleAnswerChange(question._id, value === "true")}
                   >
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="true" id={`${question._id}-yes`} />
@@ -371,11 +462,53 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
                   </RadioGroup>
                 )}
 
+                {question.questionType === "file" && (
+                  <div className="space-y-3">
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                      <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                      <div className="text-lg font-medium text-gray-900 mb-2">
+                        Prześlij plik
+                      </div>
+                      <p className="text-sm text-gray-600 mb-4">
+                        Kliknij aby wybrać plik lub przeciągnij go tutaj
+                      </p>
+                      <input
+                        type="file"
+                        id={`file-${question._id}`}
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleFileUpload(question._id, file);
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => document.getElementById(`file-${question._id}`)?.click()}
+                      >
+                        Wybierz plik
+                      </Button>
+                    </div>
+                    {(answers[question._id] as { fileName?: string })?.fileName && (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                        <div className="flex items-center text-green-800">
+                          <Upload className="h-4 w-4 mr-2" />
+                          <span className="text-sm font-medium">
+                            Przesłano: {(answers[question._id] as { fileName: string })?.fileName}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {question.questionType === "number" && (
                   <Input
                     type="number"
                     value={String(answers[question._id] || "")}
-                    onChange={(e) => handleAnswerChange(question._id, parseFloat(e.target.value), "number")}
+                    onChange={(e) => handleAnswerChange(question._id, parseFloat(e.target.value))}
                     placeholder="Wprowadź liczbę"
                   />
                 )}

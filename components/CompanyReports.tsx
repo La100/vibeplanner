@@ -193,7 +193,9 @@ export default function CompanyReports() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {Object.entries(projectsByStatus).map(([status, count]) => (
+                  {Object.entries(projectsByStatus).map(([status, count]) => {
+                    const numCount = count as number;
+                    return (
                     <div key={status} className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Badge variant={
@@ -209,13 +211,13 @@ export default function CompanyReports() {
                         <div className="w-32 bg-secondary rounded-full h-2">
                           <div 
                             className="bg-primary h-2 rounded-full transition-all duration-300"
-                            style={{ width: `${totalProjects > 0 ? (count / totalProjects) * 100 : 0}%` }}
+                            style={{ width: `${totalProjects > 0 ? (numCount / totalProjects) * 100 : 0}%` }}
                           ></div>
                         </div>
-                        <span className="text-sm font-medium w-8">{count}</span>
+                        <span className="text-sm font-medium w-8">{numCount}</span>
                       </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
               </CardContent>
             </Card>

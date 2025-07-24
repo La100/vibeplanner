@@ -46,7 +46,7 @@ interface TeamMemberWithUser {
   name: string;
   email: string;
   imageUrl?: string;
-  role: "admin" | "member" | "viewer" | "client";
+  role: "admin" | "member" | "customer";
 }
 
 interface TaskDetailSidebarProps {
@@ -92,9 +92,9 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
         taskId: task._id,
         [field]: value,
       });
-      toast.success("Zapisano zmiany");
+      toast.success("Changes saved");
     } catch (error) {
-      toast.error("Błąd podczas zapisywania");
+      toast.error("Error saving changes");
       console.error(error);
     } finally {
       setIsUpdating(null);
@@ -122,7 +122,6 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
         if (result.cost) updatePayload.cost = result.cost;
         if (result.assignedTo) updatePayload.assignedTo = result.assignedTo;
         if (result.tags) updatePayload.tags = result.tags;
-        if (result.estimatedHours) updatePayload.estimatedHours = result.estimatedHours;
 
         if (result.dateRange) {
             if (result.dateRange.from) {
@@ -158,9 +157,9 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
         startDate: range?.from?.getTime(),
         endDate: range?.to?.getTime(),
       });
-      toast.success("Zapisano zmiany daty");
+      toast.success("Date updated");
     } catch (error) {
-      toast.error("Błąd podczas zapisywania daty");
+      toast.error("Error updating date");
       console.error(error);
     } finally {
       setIsUpdating(null);
@@ -175,10 +174,10 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
   const handleDeleteTask = async () => {
     try {
       await deleteTask({ taskId: task._id });
-      toast.success("Zadanie zostało usunięte");
+      toast.success("Task deleted");
       onDelete();
     } catch {
-      toast.error("Błąd podczas usuwania zadania");
+      toast.error("Error deleting task");
     }
   };
 
@@ -189,17 +188,17 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
   return (
     <Card className="sticky top-24">
       <CardHeader>
-        <CardTitle className="text-lg font-semibold">Szczegóły zadania</CardTitle>
-        <p className="text-sm text-muted-foreground">Edytuj pola bezpośrednio</p>
+        <CardTitle className="text-lg font-semibold">Task Details</CardTitle>
+        <p className="text-sm text-muted-foreground">Edit fields directly</p>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="space-y-2">
-            <Label className="text-sm font-medium">Szybka edycja AI</Label>
+            <Label className="text-sm font-medium">Quick Edit with AI</Label>
             <div className="flex flex-col sm:flex-row gap-2">
                 <Input 
                     value={aiMessage}
                     onChange={(e) => setAiMessage(e.target.value)}
-                    placeholder="np. zmień priorytet na wysoki"
+                    placeholder="e.g., change priority to high"
                     disabled={isParsing}
                     className="flex-1"
                     onKeyDown={(e) => {
@@ -267,8 +266,8 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
         <div>
           <Label className="text-sm font-medium flex items-center"><User className="mr-2 h-4 w-4"/>Assigned to</Label>
            <Select
-            value={task.assignedTo || 'unassigned'}
-            onValueChange={(value) => handleUpdate('assignedTo', value === 'unassigned' ? null : value)}
+            value={task.assignedTo || 'none'}
+            onValueChange={(value) => handleUpdate('assignedTo', value === 'none' ? null : value)}
             disabled={isUpdating === 'assignedTo'}
           >
             <SelectTrigger className="mt-1">
@@ -282,12 +281,12 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
                       <span>{assignedMember.name}</span>
                     </>
                   ) : (
-                    <span>Unassigned</span>
+                    <span className="text-muted-foreground">No assignee</span>
                   )}
                 </div>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="unassigned">Unassigned</SelectItem>
+              <SelectItem value="none">No assignee</SelectItem>
               {teamMembers?.map((member: TeamMemberWithUser) => (
                 <SelectItem key={member.clerkUserId} value={member.clerkUserId!}>
                   <div className="flex items-center gap-2">

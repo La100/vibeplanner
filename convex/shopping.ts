@@ -1,6 +1,5 @@
 import { v } from "convex/values";
 import { query, mutation, internalQuery } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
 
 // ====== SHOPPING LIST SECTIONS ======
 
@@ -103,7 +102,7 @@ export const createShoppingListItem = mutation({
 
         const totalPrice = args.unitPrice ? args.quantity * args.unitPrice : undefined;
 
-        return await ctx.db.insert("shoppingListItems", {
+        const itemId = await ctx.db.insert("shoppingListItems", {
             name: args.name,
             notes: args.notes,
             completed: false,
@@ -125,6 +124,8 @@ export const createShoppingListItem = mutation({
             createdBy: identity.subject,
             assignedTo: args.assignedTo,
         });
+        
+        return itemId;
     },
 });
 
@@ -164,7 +165,7 @@ export const updateShoppingListItem = mutation({
              totalPrice = unitPrice ? quantity * unitPrice : undefined;
         }
 
-        await ctx.db.patch(itemId, {...updates, totalPrice });
+        await ctx.db.patch(itemId, {...updates, totalPrice, updatedAt: Date.now() });
     },
 });
 
@@ -196,6 +197,32 @@ export const getShoppingListForIndexing = internalQuery({
     return await ctx.db
       .query("shoppingListItems")
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+  },
+});
+
+// ====== HELPER FUNCTIONS FOR INCREMENTAL INDEXING ======
+
+export const getShoppingItemById = internalQuery({
+  args: { itemId: v.id("shoppingListItems") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.itemId);
+  },
+});
+
+export const getItemsChangedAfter = internalQuery({
+  args: { 
+    projectId: v.id("projects"), 
+    since: v.number() 
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("shoppingListItems")
+      .withIndex("by_project", q => q.eq("projectId", args.projectId))
+      .filter(q => q.or(
+        q.gt(q.field("_creationTime"), args.since),
+        q.gt(q.field("updatedAt"), args.since)
+      ))
       .collect();
   },
 }); 

@@ -1,5 +1,5 @@
-import CompanyDashboard from "@/components/CompanyDashboard";
+import CompanyProjects from "@/components/CompanyProjects";
 
-export default function DashboardPage() {
-  return <CompanyDashboard />;
+export default function CompanyPage() {
+  return <CompanyProjects />;
 }

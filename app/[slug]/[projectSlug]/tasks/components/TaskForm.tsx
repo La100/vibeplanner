@@ -138,7 +138,7 @@ export default function TaskForm({ projectId, teamId, teamMembers, currency, tas
                 description: result.description || "",
                 priority: result.priority as TaskFormValues["priority"],
                 status: result.status as TaskFormValues["status"] || "todo",
-                assignedTo: result.assignedTo || "UNASSIGNED",
+                assignedTo: result.assignedTo || undefined,
                 dateRange: startDate ? { from: startDate, to: endDate } : undefined,
                 cost: result.cost || undefined,
             });
@@ -288,14 +288,14 @@ export default function TaskForm({ projectId, teamId, teamMembers, currency, tas
                     render={({ field }) => (
                     <FormItem>
                         <FormLabel>Assign to</FormLabel>
-                        <Select onValueChange={(value) => field.onChange(value === "UNASSIGNED" ? undefined : value)} value={field.value || "UNASSIGNED"}>
+                        <Select onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} value={field.value || "none"}>
                         <FormControl>
                             <SelectTrigger>
                             <SelectValue placeholder="Select a team member" />
                             </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                            <SelectItem value="UNASSIGNED">Unassigned</SelectItem>
+                            <SelectItem value="none">No assignee</SelectItem>
                             {teamMembers?.map((member) => (
                                 <SelectItem key={member.clerkUserId} value={member.clerkUserId}>
                                     {member.name}

@@ -31,7 +31,9 @@ import {
   PenIcon,
   X,
   Undo2,
-  CalendarIcon
+  CalendarIcon,
+  DownloadIcon,
+  FileSpreadsheetIcon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -201,6 +203,15 @@ export default function ShoppingListView() {
   // Edit state
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<EditFormData>({});
+
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportOptions, setExportOptions] = useState({
+    format: 'csv' as 'csv' | 'pdf',
+    includeImages: false,
+    statusFilter: 'all' as 'all' | 'planned' | 'ordered' | 'completed',
+    includeNotes: true,
+    groupBySections: true
+  });
 
   if (items === undefined || sections === undefined) {
     // This will be handled by Suspense
@@ -436,9 +447,356 @@ export default function ShoppingListView() {
 
   const grandTotal = sectionTotals.reduce((sum, section) => sum + section.total, 0);
 
+
+  const handleExportCSV = () => {
+    const filteredItems = items.filter(item => {
+      if (exportOptions.statusFilter === 'all') return true;
+      return item.realizationStatus.toLowerCase() === exportOptions.statusFilter;
+    });
+
+    const csvHeaders = [
+      'Section',
+      'Product Name', 
+      'Supplier',
+      'Category',
+      'Catalog Number',
+      'Dimensions',
+      'Quantity',
+      'Unit Price',
+      'Total Price',
+      'Status',
+      'Priority',
+      'Assigned To',
+      'Buy Before',
+      ...(exportOptions.includeNotes ? ['Notes'] : [])
+    ];
+
+    const csvData = filteredItems.map(item => {
+      const sectionName = item.sectionId ? sectionMap.get(item.sectionId) || 'No Category' : 'No Category';
+      const assignedMember = item.assignedTo ? teamMembers?.find(m => m.clerkUserId === item.assignedTo)?.name : '';
+      
+      return [
+        sectionName,
+        item.name,
+        item.supplier || '',
+        item.category || '',
+        item.catalogNumber || '',
+        item.dimensions || '',
+        item.quantity,
+        item.unitPrice ? `${currencySymbol}${item.unitPrice.toFixed(2)}` : '',
+        item.totalPrice ? `${currencySymbol}${item.totalPrice.toFixed(2)}` : '',
+        statusLabels[item.realizationStatus],
+        item.priority || '',
+        assignedMember || '',
+        item.buyBefore ? format(new Date(item.buyBefore), 'yyyy-MM-dd') : '',
+        ...(exportOptions.includeNotes ? [item.notes || ''] : [])
+      ];
+    });
+
+    const csvContent = [csvHeaders, ...csvData]
+      .map(row => row.map(cell => `"${cell}"`).join(','))
+      .join('\n');
+
+    // Add BOM for UTF-8 to ensure Excel opens CSV with correct encoding
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `shopping-list-${project.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}-${format(new Date(), 'yyyy-MM-dd')}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+    
+    setIsExportModalOpen(false);
+    toast.success('CSV exported with UTF-8 encoding');
+  };
+
+  const handleExportPDF = async () => {
+    try {
+      // Dynamic import for client-side only
+      const jsPDF = (await import('jspdf')).default;
+
+      const doc = new jsPDF({
+        putOnlyUsedFonts: true,
+        format: 'a4'
+      });
+      
+      // Load Open Sans font for Polish characters
+      try {
+        // Open Sans Regular from Google Fonts - supports Polish characters
+        const fontUrl = 'https://fonts.gstatic.com/s/opensans/v40/memSYaGs126MiZpBA-UvWbX2vVnXBbObj2OVZyOOSr4dVJWUgsjZ0B4gaVc.ttf';
+        const fontResponse = await fetch(fontUrl);
+        const fontBuffer = await fontResponse.arrayBuffer();
+        const fontBase64 = btoa(String.fromCharCode(...new Uint8Array(fontBuffer)));
+        
+        // Add Open Sans to jsPDF
+        doc.addFileToVFS('OpenSans-Regular.ttf', fontBase64);
+        doc.addFont('OpenSans-Regular.ttf', 'OpenSans', 'normal');
+        doc.setFont('OpenSans', 'normal');
+        
+        console.log('Open Sans loaded - Polish characters supported!');
+      } catch (fontError) {
+        console.warn('Font loading failed, using helvetica:', fontError);
+        doc.setFont('helvetica', 'normal');
+      }
+      
+      // Header
+      doc.setFontSize(20);
+      doc.text(`Shopping List - ${project.name}`, 20, 20);
+      doc.setFontSize(12);
+      doc.text(`Generated on: ${new Date().toLocaleDateString('pl-PL')}`, 20, 30);
+      doc.text(`Total Budget: ${currencySymbol}${grandTotal.toFixed(2)}`, 20, 40);
+
+      let yPosition = 50;
+      let currentPageHeight = yPosition;
+
+      if (exportOptions.groupBySections) {
+        // Group by sections
+        Object.entries(itemsBySection)
+          .sort(([a], [b]) => {
+            if (a === 'No Category') return 1;
+            if (b === 'No Category') return -1;
+            return a.localeCompare(b);
+          })
+          .forEach(([sectionName, sectionItems]) => {
+          if (sectionItems.length === 0) return;
+          
+          const filteredSectionItems = sectionItems.filter(item => {
+            if (exportOptions.statusFilter === 'all') return true;
+            return item.realizationStatus.toLowerCase() === exportOptions.statusFilter;
+          });
+
+          if (filteredSectionItems.length === 0) return;
+
+          // Check if we need a new page
+          if (currentPageHeight > 250) {
+            doc.addPage();
+            yPosition = 20;
+            currentPageHeight = 20;
+          }
+
+          // Section header
+          doc.setFontSize(16);
+          doc.setFont('OpenSans', 'bold');
+          doc.text(sectionName, 20, yPosition);
+          yPosition += 10;
+          currentPageHeight += 10;
+
+          // Section table
+          const tableData = filteredSectionItems.map(item => [
+            item.name,
+            item.quantity.toString(),
+            item.unitPrice ? `${currencySymbol}${item.unitPrice.toFixed(2)}` : '-',
+            item.totalPrice ? `${currencySymbol}${item.totalPrice.toFixed(2)}` : '-',
+            statusLabels[item.realizationStatus],
+            item.supplier || '-'
+          ]);
+
+          (doc as unknown as { autoTable: (options: unknown) => void }).autoTable({
+            startY: yPosition,
+            head: [['Product', 'Qty', 'Unit Price', 'Total', 'Status', 'Supplier']],
+            body: tableData,
+            margin: { left: 20, right: 20 },
+            styles: { 
+              fontSize: 8,
+              cellPadding: 3,
+              halign: 'left'
+            },
+            headStyles: { 
+              fillColor: [66, 66, 66],
+              textColor: [255, 255, 255],
+              fontSize: 9,
+              fontStyle: 'bold'
+            },
+            columnStyles: {
+              1: { halign: 'center', cellWidth: 20 }, // Qty
+              2: { halign: 'right', cellWidth: 25 },  // Unit Price
+              3: { halign: 'right', cellWidth: 25 },  // Total
+              4: { halign: 'center', cellWidth: 25 }, // Status
+            },
+            didDrawPage: (data: { cursor: { y: number } }) => {
+              currentPageHeight = data.cursor.y;
+            }
+          });
+
+          yPosition = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
+          currentPageHeight = yPosition;
+          
+          // Section total
+          const sectionTotal = filteredSectionItems.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
+          doc.setFont('OpenSans', 'bold');
+          doc.setFontSize(11);
+          doc.text(`Section Total: ${currencySymbol}${sectionTotal.toFixed(2)}`, 140, yPosition);
+          doc.setFont('OpenSans', 'normal');
+          
+          yPosition += 15;
+          currentPageHeight += 15;
+        });
+
+        // Add Grand Total at the end
+        if (currentPageHeight > 270) {
+          doc.addPage();
+          yPosition = 30;
+        } else {
+          yPosition += 10;
+        }
+        
+        // Grand Total section
+        doc.setDrawColor(0, 0, 0);
+        doc.line(20, yPosition, 190, yPosition); // Horizontal line
+        yPosition += 10;
+        
+        doc.setFontSize(16);
+        doc.setFont('OpenSans', 'bold');
+        doc.text(`GRAND TOTAL: ${currencySymbol}${grandTotal.toFixed(2)}`, 20, yPosition);
+        doc.setFont('OpenSans', 'normal');
+      } else {
+        // Single table for all items
+        const filteredItems = items.filter(item => {
+          if (exportOptions.statusFilter === 'all') return true;
+          return item.realizationStatus.toLowerCase() === exportOptions.statusFilter;
+        });
+
+        const tableData = filteredItems.map(item => {
+          const sectionName = item.sectionId ? sectionMap.get(item.sectionId) || 'No Category' : 'No Category';
+          return [
+            sectionName,
+            item.name,
+            item.quantity.toString(),
+            item.unitPrice ? `${currencySymbol}${item.unitPrice.toFixed(2)}` : '',
+            item.totalPrice ? `${currencySymbol}${item.totalPrice.toFixed(2)}` : '',
+            statusLabels[item.realizationStatus]
+          ];
+        });
+
+        (doc as unknown as { autoTable: (options: unknown) => void }).autoTable({
+          startY: yPosition,
+          head: [['Section', 'Product', 'Qty', 'Unit Price', 'Total', 'Status']],
+          body: tableData,
+          margin: { left: 20 },
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: [66, 66, 66] }
+        });
+      }
+
+      doc.save(`shopping-list-${project.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+      
+      setIsExportModalOpen(false);
+      toast.success('PDF exported with Polish characters!');
+    } catch (error) {
+      console.error('PDF export error:', error);
+      toast.error('Failed to export PDF');
+    }
+  };
+
   return (
     <TooltipProvider>
       <div className="space-y-6 max-w-7xl mx-auto p-6">
+        {/* Export Modal */}
+        {isExportModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-96 max-w-[90vw]">
+              <h3 className="text-lg font-semibold mb-4">Export Shopping List</h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium">Format:</label>
+                  <div className="flex gap-2 mt-1">
+                    <Button
+                      variant={exportOptions.format === 'csv' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setExportOptions({...exportOptions, format: 'csv'})}
+                    >
+                      <FileSpreadsheetIcon className="h-4 w-4 mr-1" />
+                      CSV
+                    </Button>
+                    <Button
+                      variant={exportOptions.format === 'pdf' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setExportOptions({...exportOptions, format: 'pdf'})}
+                    >
+                      <DownloadIcon className="h-4 w-4 mr-1" />
+                      PDF
+                    </Button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Filter by Status:</label>
+                  <Select 
+                    value={exportOptions.statusFilter} 
+                    onValueChange={(value) => setExportOptions({...exportOptions, statusFilter: value as 'all' | 'planned' | 'ordered' | 'completed'})}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Items</SelectItem>
+                      <SelectItem value="planned">Planned Only</SelectItem>
+                      <SelectItem value="ordered">Ordered Only</SelectItem>
+                      <SelectItem value="completed">Completed Only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions.includeNotes}
+                      onChange={(e) => setExportOptions({...exportOptions, includeNotes: e.target.checked})}
+                    />
+                    <span className="text-sm">Include Notes</span>
+                  </label>
+                  
+                  {exportOptions.format === 'pdf' && (
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={exportOptions.groupBySections}
+                        onChange={(e) => setExportOptions({...exportOptions, groupBySections: e.target.checked})}
+                      />
+                      <span className="text-sm">Group by Sections</span>
+                    </label>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-2 mt-6">
+                <Button
+                  onClick={exportOptions.format === 'csv' ? handleExportCSV : handleExportPDF}
+                  disabled={isPending}
+                >
+                  {isPending ? 'Exporting...' : `Export ${exportOptions.format.toUpperCase()}`}
+                </Button>
+                <Button variant="outline" onClick={() => setIsExportModalOpen(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Header with Export Button */}
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold">Shopping List</h1>
+            <p className="text-gray-600">Manage project purchases and materials</p>
+          </div>
+          <Button
+            onClick={() => setIsExportModalOpen(true)}
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            <DownloadIcon className="h-4 w-4" />
+            Export
+          </Button>
+        </div>
+
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
@@ -967,24 +1325,20 @@ export default function ShoppingListView() {
                             </div>
 
                             <div className="flex items-center gap-4">
-                              {item.assignedTo ? (
-                                (() => {
-                                  const member = teamMembers?.find((m: TeamMember) => m.clerkUserId === item.assignedTo);
-                                  return member ? (
-                                    <div className="flex items-center gap-2">
-                                      <Avatar className="h-6 w-6">
-                                        <AvatarImage src={member.imageUrl} />
-                                        <AvatarFallback>{member.name?.[0]}</AvatarFallback>
-                                      </Avatar>
-                                      <span className="font-semibold">{member.name}</span>
-                                    </div>
-                                  ) : (
-                                    <span className="text-gray-500">Unknown User</span>
-                                  );
-                                })()
-                              ) : (
-                                <span className="text-gray-500">Unassigned</span>
-                              )}
+                              {item.assignedTo && (() => {
+                                const member = teamMembers?.find((m: TeamMember) => m.clerkUserId === item.assignedTo);
+                                return member ? (
+                                  <div className="flex items-center gap-2">
+                                    <Avatar className="h-6 w-6">
+                                      <AvatarImage src={member.imageUrl} />
+                                      <AvatarFallback>{member.name?.[0]}</AvatarFallback>
+                                    </Avatar>
+                                    <span className="font-semibold">{member.name}</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-500">Unknown User</span>
+                                );
+                              })()}
 
                               <Select
                                 value={item.realizationStatus}

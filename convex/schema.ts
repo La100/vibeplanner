@@ -6,14 +6,36 @@ import { v } from "convex/values";
 // app will continue to work.
 // The schema provides more precise TypeScript types.
 export default defineSchema({
-  // Teams (mapowane na Clerk Organizations)
+  // Teams (mapped to Clerk Organizations)
   teams: defineTable({
     name: v.string(),
     description: v.optional(v.string()),
-    clerkOrgId: v.string(), // ID organizacji z Clerk
-    slug: v.string(), // Nowe pole na unikalny slug
+    clerkOrgId: v.string(), // Organization ID from Clerk
+    slug: v.string(), // New field for unique slug
     imageUrl: v.optional(v.string()), // Added imageUrl for the team logo
-    createdBy: v.optional(v.string()), // Clerk user ID - teraz opcjonalne
+    createdBy: v.optional(v.string()), // Clerk user ID - now optional
+    currency: v.optional(v.union(
+      v.literal("USD"), // US Dollar
+      v.literal("EUR"), // Euro
+      v.literal("PLN"), // Polish Zloty
+      v.literal("GBP"), // British Pound
+      v.literal("CAD"), // Canadian Dollar
+      v.literal("AUD"), // Australian Dollar
+      v.literal("JPY"), // Japanese Yen
+      v.literal("CHF"), // Swiss Franc
+      v.literal("SEK"), // Swedish Krona
+      v.literal("NOK"), // Norwegian Krone
+      v.literal("DKK"), // Danish Krone
+      v.literal("CZK"), // Czech Koruna
+      v.literal("HUF"), // Hungarian Forint
+      v.literal("CNY"), // Chinese Yuan
+      v.literal("INR"), // Indian Rupee
+      v.literal("BRL"), // Brazilian Real
+      v.literal("MXN"), // Mexican Peso
+      v.literal("KRW"), // South Korean Won
+      v.literal("SGD"), // Singapore Dollar
+      v.literal("HKD"), // Hong Kong Dollar
+    )),
     settings: v.optional(v.object({
       isPublic: v.boolean(),
       allowGuestAccess: v.boolean(),
@@ -23,19 +45,49 @@ export default defineSchema({
       in_progress: v.object({ name: v.string(), color: v.string() }),
       review: v.object({ name: v.string(), color: v.string() }),
       done: v.object({ name: v.string(), color: v.string() }),
+    })),
+    // Stripe subscription fields
+    stripeCustomerId: v.optional(v.string()), // Stripe customer ID
+    subscriptionStatus: v.optional(v.union(
+      v.literal("active"),
+      v.literal("past_due"),
+      v.literal("canceled"),
+      v.literal("incomplete"),
+      v.literal("incomplete_expired"),
+      v.literal("trialing"),
+      v.literal("unpaid"),
+      v.null()
+    )),
+    subscriptionId: v.optional(v.string()), // Stripe subscription ID
+    subscriptionPlan: v.optional(v.union(
+      v.literal("free"),
+      v.literal("basic"),
+      v.literal("pro"),
+      v.literal("enterprise")
+    )),
+    subscriptionPriceId: v.optional(v.string()), // Stripe price ID
+    currentPeriodStart: v.optional(v.number()), // Unix timestamp
+    currentPeriodEnd: v.optional(v.number()), // Unix timestamp
+    trialEnd: v.optional(v.number()), // Unix timestamp
+    cancelAtPeriodEnd: v.optional(v.boolean()),
+    subscriptionLimits: v.optional(v.object({
+      maxProjects: v.number(),
+      maxTeamMembers: v.number(),
+      maxStorageGB: v.number(),
+      hasAdvancedFeatures: v.boolean(),
     }))
   })
     .index("by_clerk_org", ["clerkOrgId"])
     .index("by_slug", ["slug"])
-    .index("by_createdBy", ["createdBy"]), // Dodany indeks
+    .index("by_createdBy", ["createdBy"]), // Added index
 
-  // Projekty architektoniczne
+  // Architectural projects
   projects: defineTable({
     name: v.string(),
     description: v.optional(v.string()),
     teamId: v.id("teams"),
     slug: v.string(),
-    projectId: v.number(), // Numeryczne ID projektu dla użytkowników
+    projectId: v.number(), // Numeric project ID for users
     status: v.union(
       v.literal("planning"),
       v.literal("active"),
@@ -46,12 +98,29 @@ export default defineSchema({
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
     budget: v.optional(v.number()),
-    client: v.optional(v.string()),
+    customer: v.optional(v.string()),
     location: v.optional(v.string()),
     currency: v.optional(v.union(
-      v.literal("USD"),
-      v.literal("EUR"),
-      v.literal("PLN")
+      v.literal("USD"), // US Dollar
+      v.literal("EUR"), // Euro
+      v.literal("PLN"), // Polish Zloty
+      v.literal("GBP"), // British Pound
+      v.literal("CAD"), // Canadian Dollar
+      v.literal("AUD"), // Australian Dollar
+      v.literal("JPY"), // Japanese Yen
+      v.literal("CHF"), // Swiss Franc
+      v.literal("SEK"), // Swedish Krona
+      v.literal("NOK"), // Norwegian Krone
+      v.literal("DKK"), // Danish Krone
+      v.literal("CZK"), // Czech Koruna
+      v.literal("HUF"), // Hungarian Forint
+      v.literal("CNY"), // Chinese Yuan
+      v.literal("INR"), // Indian Rupee
+      v.literal("BRL"), // Brazilian Real
+      v.literal("MXN"), // Mexican Peso
+      v.literal("KRW"), // South Korean Won
+      v.literal("SGD"), // Singapore Dollar
+      v.literal("HKD"), // Hong Kong Dollar
     )),
     createdBy: v.string(), // Clerk user ID
     assignedTo: v.array(v.string()), // Array of Clerk user IDs
@@ -76,6 +145,8 @@ export default defineSchema({
         v.literal("indexing"),
         v.literal("done")
     )),
+    aiLastIndexedAt: v.optional(v.number()),
+    aiIndexedItemsCount: v.optional(v.number()),
   })
     .index("by_team", ["teamId"])
     .index("by_team_and_slug", ["teamId", "slug"])
@@ -83,7 +154,7 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_created_by", ["createdBy"]),
 
-  // Zadania w projektach
+  // Tasks in projects
   tasks: defineTable({
     title: v.string(),
     description: v.optional(v.string()),
@@ -108,10 +179,9 @@ export default defineSchema({
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
     dueDate: v.optional(v.number()),
-    estimatedHours: v.optional(v.number()),
-    actualHours: v.optional(v.number()),
     tags: v.array(v.string()),
     cost: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
   })
     .index("by_project", ["projectId"])
     .index("by_team", ["teamId"])
@@ -120,26 +190,26 @@ export default defineSchema({
     .index("by_start_date", ["startDate"])
     .index("by_end_date", ["endDate"]),
 
-  // Foldery dla organizacji plików
+  // Folders for file organization
   folders: defineTable({
     name: v.string(),
     teamId: v.id("teams"),
     projectId: v.optional(v.id("projects")),
-    parentFolderId: v.optional(v.id("folders")), // Dla zagnieżdżonych folderów
+    parentFolderId: v.optional(v.id("folders")), // For nested folders
     createdBy: v.string(), // Clerk user ID
   })
     .index("by_team", ["teamId"])
     .index("by_project", ["projectId"])
     .index("by_parent", ["parentFolderId"]),
 
-  // Pliki i dokumenty
+  // Files and documents
   files: defineTable({
     name: v.string(),
     description: v.optional(v.string()),
     teamId: v.id("teams"),
     projectId: v.optional(v.id("projects")),
     taskId: v.optional(v.id("tasks")),
-    folderId: v.optional(v.id("folders")), // W którym folderze znajduje się plik
+    folderId: v.optional(v.id("folders")), // Which folder contains the file
     fileType: v.union(
       v.literal("image"),
       v.literal("video"),
@@ -154,6 +224,13 @@ export default defineSchema({
     uploadedBy: v.string(), // Clerk user ID
     version: v.number(),
     isLatest: v.boolean(),
+    extractedText: v.optional(v.string()), // Text extracted from file
+    textExtractionStatus: v.optional(v.union(
+      v.literal("pending"),
+      v.literal("processing"), 
+      v.literal("completed"),
+      v.literal("failed")
+    )),
   })
     .index("by_team", ["teamId"])
     .index("by_project", ["projectId"])
@@ -161,7 +238,7 @@ export default defineSchema({
     .index("by_folder", ["folderId"])
     .index("by_uploaded_by", ["uploadedBy"]),
 
-  // Komentarze
+  // Comments
   comments: defineTable({
     content: v.string(),
     teamId: v.id("teams"),
@@ -179,20 +256,20 @@ export default defineSchema({
     .index("by_author", ["authorId"])
     .index("by_parent", ["parentCommentId"]),
 
-  // Kanały chatu (dla organizacji i projektów)
+  // Chat channels (for organizations and projects)
   chatChannels: defineTable({
     name: v.string(),
     description: v.optional(v.string()),
     type: v.union(
-      v.literal("team"),      // Kanał organizacji  
-      v.literal("project")    // Kanał projektu
+      v.literal("team"),      // Organization channel  
+      v.literal("project")    // Project channel
     ),
     teamId: v.id("teams"),
-    projectId: v.optional(v.id("projects")), // null dla kanałów organizacji
+    projectId: v.optional(v.id("projects")), // null for organization channels
     createdBy: v.string(),    // Clerk user ID
-    isPrivate: v.boolean(),   // czy kanał jest prywatny
-    allowedUsers: v.optional(v.array(v.string())), // tylko dla prywatnych
-    isDefault: v.boolean(),   // czy to domyślny kanał (np. "General")
+    isPrivate: v.boolean(),   // whether the channel is private
+    allowedUsers: v.optional(v.array(v.string())), // only for private channels
+    isDefault: v.boolean(),   // whether this is the default channel (e.g. "General")
   })
     .index("by_team", ["teamId"])
     .index("by_project", ["projectId"])
@@ -200,20 +277,20 @@ export default defineSchema({
     .index("by_type_and_project", ["type", "projectId"])
     .index("by_created_by", ["createdBy"]),
 
-  // Wiadomości w kanałach
+  // Messages in channels
   chatMessages: defineTable({
     content: v.string(),
     channelId: v.id("chatChannels"),
     authorId: v.string(),    // Clerk user ID
-    teamId: v.id("teams"),   // dla szybszego dostępu i uprawnień
-    projectId: v.optional(v.id("projects")), // dla kanałów projektu
-    replyToId: v.optional(v.id("chatMessages")), // odpowiedzi na wiadomości
+    teamId: v.id("teams"),   // for faster access and permissions
+    projectId: v.optional(v.id("projects")), // for project channels
+    replyToId: v.optional(v.id("chatMessages")), // replies to messages
     isEdited: v.boolean(),
     editedAt: v.optional(v.number()),
     messageType: v.union(
       v.literal("text"),
       v.literal("file"),
-      v.literal("system")    // wiadomości systemowe np. "User joined"
+      v.literal("system")    // system messages e.g. "User joined"
     ),
     fileUrl: v.optional(v.string()),
     fileName: v.optional(v.string()),
@@ -225,7 +302,7 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_reply_to", ["replyToId"]),
 
-  // Członkostwo w kanałach
+  // Channel membership
   chatChannelMembers: defineTable({
     channelId: v.id("chatChannels"),
     userId: v.string(),      // Clerk user ID
@@ -234,13 +311,13 @@ export default defineSchema({
       v.literal("admin"),
       v.literal("member")
     ),
-    lastReadAt: v.optional(v.number()), // dla oznaczania nieprzeczytanych
+    lastReadAt: v.optional(v.number()), // for marking unread messages
   })
     .index("by_channel", ["channelId"])
     .index("by_user", ["userId"])
     .index("by_channel_and_user", ["channelId", "userId"]),
 
-  // Członkowie zespołów (cache dla Clerk data)
+  // Team members (only admin/member - internal team)
   teamMembers: defineTable({
     teamId: v.id("teams"),
     clerkUserId: v.string(),
@@ -248,11 +325,10 @@ export default defineSchema({
     role: v.union(
       v.literal("admin"),
       v.literal("member"),
-      v.literal("viewer"),
-      v.literal("client")
+      v.literal("customer") // ✅ temporarily restored for compatibility
     ),
     permissions: v.array(v.string()),
-    projectIds: v.optional(v.array(v.id("projects"))), // Lista projektów dla klientów
+    projectIds: v.optional(v.array(v.id("projects"))), // ✅ temporarily restored for compatibility
     joinedAt: v.number(),
     isActive: v.boolean(),
   })
@@ -260,7 +336,7 @@ export default defineSchema({
     .index("by_user", ["clerkUserId"])
     .index("by_team", ["teamId"]),
 
-  // Zaproszenia do zespołów (synchronizowane z Clerk)
+  // Team invitations (synchronized with Clerk)
   invitations: defineTable({
     clerkInvitationId: v.string(),
     teamId: v.id("teams"),
@@ -272,8 +348,8 @@ export default defineSchema({
     .index("by_clerk_invitation_id", ["clerkInvitationId"])
     .index("by_team", ["teamId"]),
 
-  // Tymczasowe zaproszenia klientów (do konkretnych projektów)
-  pendingClientInvitations: defineTable({
+  // Temporary customer invitations (to specific projects)
+  pendingCustomerInvitations: defineTable({
     email: v.string(),
     projectId: v.id("projects"),
     clerkOrgId: v.string(),
@@ -289,18 +365,19 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_org", ["clerkOrgId"]),
 
-  // Klienci z dostępem do konkretnych projektów
-  clients: defineTable({
+  // Customers - 1 customer = 1 project (99% of cases)
+  // For multi-project access: add separate record per project
+  customers: defineTable({
     email: v.string(),
-    clerkUserId: v.optional(v.string()), // Gdy się zarejestruje
+    clerkUserId: v.optional(v.string()), // After registration/invitation
     clerkOrgId: v.string(),
-    projectId: v.id("projects"),
+    projectId: v.id("projects"),         // ✅ 1-to-1 relationship  
     teamId: v.id("teams"),
     invitedBy: v.string(),
     status: v.union(
-      v.literal("invited"),
-      v.literal("active"),
-      v.literal("inactive")
+      v.literal("invited"),              // invited, waiting for acceptance
+      v.literal("active"),               // active access to project
+      v.literal("inactive")              // access suspended
     ),
     invitedAt: v.number(),
     joinedAt: v.optional(v.number()),
@@ -312,7 +389,7 @@ export default defineSchema({
     .index("by_org_and_user", ["clerkOrgId", "clerkUserId"])
     .index("by_status", ["status"]),
 
-  // Użytkownicy
+  // Users
   users: defineTable({
     clerkUserId: v.string(),
     email: v.string(),
@@ -328,7 +405,7 @@ export default defineSchema({
     text: v.string(),
   }).vectorIndex("by_embedding", {
     vectorField: "embedding",
-    dimensions: 256,
+    dimensions: 1536,
     filterFields: ["projectId"],
   }),
     
@@ -375,25 +452,26 @@ export default defineSchema({
     teamId: v.id("teams"),
     createdBy: v.string(), // Clerk user ID
     assignedTo: v.optional(v.string()), // Clerk user ID
+    updatedAt: v.optional(v.number()),
   })
   .index("by_project", ["projectId"])
   .index("by_section", ["sectionId"])
   .index("by_status", ["realizationStatus"]),
 
-  // Dziennik aktywności (Changelog)
+  // Activity log (Changelog)
   activityLog: defineTable({
     teamId: v.id("teams"),
     projectId: v.id("projects"),
     userId: v.string(), // Clerk User ID
-    actionType: v.string(), // np. "task.create", "file.upload", "comment.add"
-    details: v.any(), // np. { taskTitle: "...", fromStatus: "...", toStatus: "..." }
-    entityId: v.string(), // ID powiązanego obiektu (np. taskId)
+    actionType: v.string(), // e.g. "task.create", "file.upload", "comment.add"
+    details: v.any(), // e.g. { taskTitle: "...", fromStatus: "...", toStatus: "..." }
+    entityId: v.string(), // ID of related object (e.g. taskId)
   })
     .index("by_project", ["projectId"])
     .index("by_team", ["teamId"])
     .index("by_user", ["userId"]),
 
-  // Ankiety
+  // Surveys
   surveys: defineTable({
     title: v.string(),
     description: v.optional(v.string()),
@@ -405,49 +483,51 @@ export default defineSchema({
       v.literal("active"),
       v.literal("closed")
     ),
-    isRequired: v.boolean(), // czy ankieta jest obowiązkowa
-    allowMultipleResponses: v.boolean(), // czy można wypełnić wiele razy
+    isRequired: v.boolean(), // whether the survey is mandatory
+    allowMultipleResponses: v.boolean(), // whether it can be filled multiple times
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
     targetAudience: v.union(
-      v.literal("all_clients"), // wszyscy klienci projektu
-      v.literal("specific_clients"), // konkretni klienci
-      v.literal("team_members") // członkowie zespołu
+      v.literal("all_customers"), // all project customers
+      v.literal("specific_customers"), // specific customers
+      v.literal("team_members") // team members
     ),
-    targetClientIds: v.optional(v.array(v.string())), // konkretni klienci (Clerk user IDs)
+    targetCustomerIds: v.optional(v.array(v.string())), // specific customers (Clerk user IDs)
+    updatedAt: v.optional(v.number()),
   })
     .index("by_project", ["projectId"])
     .index("by_team", ["teamId"])
     .index("by_status", ["status"])
     .index("by_created_by", ["createdBy"]),
 
-  // Pytania w ankietach
+  // Survey questions
   surveyQuestions: defineTable({
     surveyId: v.id("surveys"),
     questionText: v.string(),
     questionType: v.union(
-      v.literal("text_short"), // krótki tekst
-      v.literal("text_long"), // długi tekst
-      v.literal("multiple_choice"), // wielokrotny wybór
-      v.literal("single_choice"), // jeden wybór
-      v.literal("rating"), // skala oceny
-      v.literal("yes_no"), // tak/nie
-      v.literal("number") // liczba
+      v.literal("text_short"), // short text
+      v.literal("text_long"), // long text
+      v.literal("multiple_choice"), // multiple choice
+      v.literal("single_choice"), // single choice
+      v.literal("rating"), // rating scale
+      v.literal("yes_no"), // yes/no
+      v.literal("number"), // number
+      v.literal("file") // file upload
     ),
-    options: v.optional(v.array(v.string())), // opcje dla multiple/single choice
+    options: v.optional(v.array(v.string())), // options for multiple/single choice
     isRequired: v.boolean(),
-    order: v.number(), // kolejność pytania
+    order: v.number(), // question order
     ratingScale: v.optional(v.object({
       min: v.number(),
       max: v.number(),
       minLabel: v.optional(v.string()),
       maxLabel: v.optional(v.string())
-    })), // dla rating type
+    })), // for rating type
   })
     .index("by_survey", ["surveyId"])
     .index("by_order", ["surveyId", "order"]),
 
-  // Odpowiedzi na ankiety
+  // Survey responses
   surveyResponses: defineTable({
     surveyId: v.id("surveys"),
     respondentId: v.string(), // Clerk user ID
@@ -458,7 +538,7 @@ export default defineSchema({
     metadata: v.optional(v.object({
       ipAddress: v.optional(v.string()),
       userAgent: v.optional(v.string()),
-      timeSpent: v.optional(v.number()) // czas w sekundach
+      timeSpent: v.optional(v.number()) // time in seconds
     })),
   })
     .index("by_survey", ["surveyId"])
@@ -466,7 +546,7 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_survey_and_respondent", ["surveyId", "respondentId"]),
 
-  // Odpowiedzi na konkretne pytania
+  // Answers to specific questions
   surveyAnswers: defineTable({
     responseId: v.id("surveyResponses"),
     questionId: v.id("surveyQuestions"),
@@ -476,15 +556,53 @@ export default defineSchema({
       v.literal("choice"),
       v.literal("rating"),
       v.literal("number"),
-      v.literal("boolean")
+      v.literal("boolean"),
+      v.literal("file")
     ),
     textAnswer: v.optional(v.string()),
-    choiceAnswers: v.optional(v.array(v.string())), // dla multiple choice
+    choiceAnswers: v.optional(v.array(v.string())), // for multiple choice
     ratingAnswer: v.optional(v.number()),
     numberAnswer: v.optional(v.number()),
     booleanAnswer: v.optional(v.boolean()),
+    fileAnswer: v.optional(v.object({
+      fileId: v.id("files"),
+      fileName: v.string(),
+      fileSize: v.number(),
+      fileType: v.string()
+    })),
   })
     .index("by_response", ["responseId"])
     .index("by_question", ["questionId"])
     .index("by_survey", ["surveyId"]),
+
+  // AI Chat Threads
+  aiChatThreads: defineTable({
+    threadId: v.string(), // unique thread identifier
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    userClerkId: v.string(),
+    title: v.optional(v.string()),
+    isActive: v.boolean(),
+  })
+    .index("by_thread_id", ["threadId"])
+    .index("by_project", ["projectId"])
+    .index("by_user", ["userClerkId"])
+    .index("by_project_and_user", ["projectId", "userClerkId"]),
+
+  // AI Chat Messages
+  aiChatMessages: defineTable({
+    threadId: v.string(),
+    role: v.union(
+      v.literal("system"),
+      v.literal("user"),
+      v.literal("assistant")
+    ),
+    content: v.string(),
+    order: v.number(), // message order in thread
+    projectId: v.id("projects"),
+    userClerkId: v.string(),
+  })
+    .index("by_thread", ["threadId"])
+    .index("by_thread_and_order", ["threadId", "order"])
+    .index("by_project", ["projectId"]),
 });

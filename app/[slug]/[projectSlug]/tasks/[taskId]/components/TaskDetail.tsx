@@ -99,9 +99,9 @@ export default function TaskDetail() {
             fileSize: file.size,
         });
 
-        toast.success("Plik został dodany");
+        toast.success("File uploaded successfully");
     } catch (error) {
-        toast.error("Błąd podczas przesyłania pliku");
+        toast.error("Error uploading file");
         console.error(error);
     }
   };
@@ -115,9 +115,9 @@ export default function TaskDetail() {
         content: newComment.trim(),
       });
       setNewComment('');
-      toast.success("Komentarz został dodany");
+      toast.success("Comment added successfully");
     } catch {
-      toast.error("Błąd podczas dodawania komentarza");
+      toast.error("Error adding comment");
     }
   };
 
@@ -137,11 +137,11 @@ export default function TaskDetail() {
         taskId: task._id,
         title: titleValue.trim(),
       });
-      toast.success("Tytuł został zaktualizowany");
+      toast.success("Title updated successfully");
       setIsEditingTitle(false);
       setTitleValue('');
     } catch {
-      toast.error("Błąd podczas aktualizacji tytułu");
+      toast.error("Error updating title");
     }
   };
 
@@ -164,7 +164,7 @@ export default function TaskDetail() {
                 className="text-muted-foreground hover:text-foreground"
               >
                 <ArrowLeft className="h-4 w-4 mr-1" />
-                Powrót do zadań
+                Back to tasks
               </Button>
               <div className="h-6 w-px bg-gray-300" />
               <div className="flex items-center space-x-2 text-sm text-muted-foreground">
@@ -210,13 +210,13 @@ export default function TaskDetail() {
                   className="text-3xl font-bold bg-transparent border-none p-0 focus-visible:ring-0 focus-visible:ring-offset-0"
                   autoFocus
                 />
-                <p className="text-xs text-muted-foreground mt-1">Naciśnij Enter aby zapisać, Escape aby anulować</p>
+                <p className="text-xs text-muted-foreground mt-1">Press Enter to save, Escape to cancel</p>
               </div>
             ) : (
               <h1 
                 className="text-3xl font-bold text-gray-900 mb-2 cursor-pointer hover:bg-gray-50 rounded p-2 -m-2 transition-colors"
                 onClick={startEditingTitle}
-                title="Kliknij aby edytować tytuł"
+                title="Click to edit title"
               >
                 {task.title}
               </h1>
@@ -226,13 +226,13 @@ export default function TaskDetail() {
               <TaskEditor 
                 taskId={params.taskId} 
                 initialContent={task.content || task.description || ""} 
-                placeholder="Opisz szczegóły tego zadania..."
+                placeholder="Describe the details of this task..."
               />
             </div>
 
             {/* Attachments Section */}
             <div>
-                <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center"><Paperclip className="mr-2 h-6 w-6"/>Załączniki</h2>
+                <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center"><Paperclip className="mr-2 h-6 w-6"/>Attachments</h2>
                 <div className="bg-background rounded-lg border p-4 space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                         {files?.map((file: { _id: Id<"files">, url: string | null, name: string }) => (
@@ -251,7 +251,7 @@ export default function TaskDetail() {
                      <Button asChild variant="outline" className="w-full cursor-pointer">
                         <label>
                             <Upload className="mr-2 h-4 w-4" />
-                            Dodaj plik
+                            Add file
                             <input type="file" className="hidden" onChange={handleFileUpload} />
                         </label>
                     </Button>
@@ -260,7 +260,7 @@ export default function TaskDetail() {
 
             {/* Comments Section */}
             <div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-4">Komentarze</h2>
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">Comments</h2>
               <div className="space-y-6">
                 {/* Add comment form */}
                 <div className="flex items-start space-x-4">
@@ -272,10 +272,10 @@ export default function TaskDetail() {
                     <Textarea
                       value={newComment}
                       onChange={(e) => setNewComment(e.target.value)}
-                      placeholder="Dodaj komentarz..."
+                      placeholder="Add a comment..."
                       className="mb-2 bg-background"
                     />
-                    <Button onClick={handleAddComment} disabled={!newComment.trim()}>Dodaj komentarz</Button>
+                    <Button onClick={handleAddComment} disabled={!newComment.trim()}>Add comment</Button>
                   </div>
                 </div>
 

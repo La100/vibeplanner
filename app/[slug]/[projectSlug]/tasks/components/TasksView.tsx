@@ -44,9 +44,9 @@ const formatDateTime = (timestamp: number | undefined): string => {
     const date = new Date(timestamp);
     const hasTime = date.getHours() !== 0 || date.getMinutes() !== 0;
     if (hasTime) {
-      return format(date, "dd.MM.yyyy, HH:mm");
+      return format(date, "MM/dd/yyyy, HH:mm");
     }
-    return format(date, "dd.MM.yyyy");
+    return format(date, "MM/dd/yyyy");
 };
 
 type TaskStatusKey = "todo" | "in_progress" | "review" | "done";
@@ -65,7 +65,6 @@ type KanbanTask = {
   content: string | undefined;
   priority: TaskPriority;
   endDate: number | undefined;
-  estimatedHours: number | undefined;
   cost: number | undefined;
   status: TaskStatusLiterals;
   assignedTo: string | null | undefined;
@@ -241,7 +240,6 @@ export default function TasksView() {
     content: task.content,
     priority: task.priority as TaskPriority,
     endDate: task.endDate,
-    estimatedHours: task.estimatedHours,
     cost: task.cost,
     status: task.status,
     assignedTo: task.assignedTo,
@@ -342,7 +340,7 @@ export default function TasksView() {
              <p className="text-muted-foreground">Manage your project's tasks</p>
            </div>
            <div className="flex items-center gap-2">
-             <Button onClick={() => setIsTaskFormOpen(true)} disabled={!hasAccess || (typeof hasAccess === 'object' && hasAccess.role === 'viewer')}>
+             <Button onClick={() => setIsTaskFormOpen(true)} disabled={!hasAccess || (typeof hasAccess === 'object' && hasAccess.role === 'customer')}>
                 Add Task
             </Button>
              <div className="flex items-center rounded-md border bg-background">
@@ -498,13 +496,15 @@ export default function TasksView() {
                       {task.priority && <Badge variant="outline">{task.priority}</Badge>}
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-6 w-6">
-                          <AvatarImage src={task.assignedToImageUrl} />
-                          <AvatarFallback>{task.assignedToName?.charAt(0)}</AvatarFallback>
-                        </Avatar>
-                        <span>{task.assignedToName || "Unassigned"}</span>
-                      </div>
+                      {task.assignedToName && (
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-6 w-6">
+                            <AvatarImage src={task.assignedToImageUrl} />
+                            <AvatarFallback>{task.assignedToName?.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                          <span>{task.assignedToName}</span>
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       {formatDateTime(task.endDate)}

@@ -80,7 +80,6 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
         priority: newTask.priority,
         startDate: newTask.startDate ? new Date(newTask.startDate).getTime() : undefined,
         endDate: newTask.endDate ? new Date(newTask.endDate).getTime() : undefined,
-        estimatedHours: newTask.estimatedHours ? parseFloat(newTask.estimatedHours) : undefined,
         tags: newTask.tags.split(",").map(tag => tag.trim()).filter(tag => tag),
       });
 
@@ -232,12 +231,12 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                   )}
                   
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {project.client && (
+                    {project.customer && (
                       <div className="flex items-center gap-2">
                         <User className="h-4 w-4 text-gray-400" />
                         <div>
                           <p className="text-xs text-gray-500">Klient</p>
-                          <p className="font-medium">{project.client}</p>
+                          <p className="font-medium">{project.customer}</p>
                         </div>
                       </div>
                     )}
@@ -476,12 +475,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                                   ) : null}
                                 </span>
                               )}
-                              {task.estimatedHours && (
-                                <span className="flex items-center gap-1">
-                                  <Clock className="h-3 w-3" />
-                                  {task.estimatedHours}h
-                                </span>
-                              )}
+
                             </div>
                           </div>
                           

@@ -1,6 +1,6 @@
 import { R2 } from "@convex-dev/r2";
 import { api, components } from "./_generated/api";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 
 export const r2 = new R2(components.r2);
@@ -34,6 +34,7 @@ export const generateUploadUrlWithCustomKey = mutation({
   returns: v.object({
     url: v.string(),
     key: v.string(),
+    publicUrl: v.string(),
   }),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -69,10 +70,16 @@ export const generateUploadUrlWithCustomKey = mutation({
     const customKey = `${path}/${uuid}-${baseName}${fileExtension ? '.' + fileExtension : ''}`;
 
     const uploadData = await r2.generateUploadUrl(customKey);
+    const publicUrl = process.env.R2_PUBLIC_URL ? `${process.env.R2_PUBLIC_URL}/${customKey}` : "";
+
+    if (!publicUrl) {
+      console.warn("R2_PUBLIC_URL environment variable is not set. File analysis will not work.");
+    }
     
     return {
       url: uploadData.url,
       key: customKey,
+      publicUrl: publicUrl,
     };
   },
 });
@@ -592,4 +599,46 @@ export const getFilesForTask = query({
             })
         );
     }
+});
+
+// ====== TEXT EXTRACTION SUPPORT ======
+
+// Internal mutation to update file with extracted text
+export const updateFileWithExtractedText = internalMutation({
+  args: {
+    fileId: v.id("files"),
+    extractedText: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.fileId, {
+      extractedText: args.extractedText,
+      textExtractionStatus: "completed",
+    });
+  },
+});
+
+// Update file text extraction status
+export const updateTextExtractionStatus = internalMutation({
+  args: {
+    fileId: v.id("files"),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("processing"), 
+      v.literal("completed"),
+      v.literal("failed")
+    ),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.fileId, {
+      textExtractionStatus: args.status,
+    });
+  },
+});
+
+// Get file by ID (for text extraction)
+export const getFileById = query({
+  args: { fileId: v.id("files") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.fileId);
+  },
 }); 

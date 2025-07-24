@@ -21,13 +21,31 @@ const hasProjectAccess = async (ctx: any, projectId: Id<"projects">, requireWrit
 
     if (!membership) return false;
     
+    if (membership.role === 'admin') {
+        // Admin has full access to all projects
+        return true;
+    }
+    
+    if (membership.role === 'member') {
+        // Member may have limited access to specific projects
+        if (membership.projectIds && membership.projectIds.length > 0) {
+            return membership.projectIds.includes(projectId);
+        }
+        // Member without projectIds has access to all projects (backward compatibility)
+        return true;
+    }
+    
+    if (membership.role === 'customer') {
+        if (requireWriteAccess) return false; // Customers never have write access
+        return membership.projectIds?.includes(projectId) ?? false;
+    }
+    
     if (membership.role === 'client') {
         if (requireWriteAccess) return false; // Clients never have write access
         return membership.projectIds?.includes(projectId) ?? false;
     }
 
-    const validRoles = requireWriteAccess ? ["admin", "member"] : ["admin", "member", "viewer"];
-    return validRoles.includes(membership.role);
+    return false;
 };
 
 // Utility function to check task read/write access
@@ -92,7 +110,7 @@ export const listProjectTasks = query({
 
     return await Promise.all(
       tasks.map(async (task) => {
-        let assignedToName: string | undefined = "Unassigned";
+        let assignedToName: string | undefined;
         let assignedToImageUrl: string | undefined;
         if (task.assignedTo) {
           const user = await ctx.db.query("users").withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.assignedTo!)).unique();
@@ -201,7 +219,6 @@ export const createTask = mutation({
     cost: v.optional(v.number()),
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
-    estimatedHours: v.optional(v.number()),
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -216,6 +233,7 @@ export const createTask = mutation({
       details: { title: args.title },
       entityId: taskId,
     });
+    
     return taskId;
   },
 });
@@ -233,7 +251,6 @@ export const updateTask = mutation({
     endDate: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
     cost: v.optional(v.number()),
-    estimatedHours: v.optional(v.number()),
     content: v.optional(v.string()),
   },
   async handler(ctx, args) {
@@ -243,7 +260,8 @@ export const updateTask = mutation({
     const task = await ctx.db.get(args.taskId);
     if (!task) throw new Error("Task not found");
     
-    const { taskId, ...updatePayload } = args;
+    const { taskId, ...updates } = args;
+    const updatePayload = { ...updates, updatedAt: Date.now() };
 
     await ctx.db.patch(taskId, updatePayload as Partial<Doc<"tasks">>);
 
@@ -269,7 +287,7 @@ export const updateTaskStatus = mutation({
     if (!task) throw new Error("Task not found");
     const originalStatus = task.status;
     if (originalStatus === args.status) return;
-    await ctx.db.patch(args.taskId, { status: args.status });
+    await ctx.db.patch(args.taskId, { status: args.status, updatedAt: Date.now() });
     await ctx.runMutation(internal.activityLog.logActivity, {
       teamId: task.teamId,
       projectId: task.projectId,
@@ -294,6 +312,7 @@ export const deleteTask = mutation({
       details: { title: task.title },
       entityId: args.taskId,
     });
+    
     await ctx.db.delete(args.taskId);
   },
 });
@@ -325,7 +344,7 @@ export const updateTaskContent = mutation({
         if (!hasAccess) throw new Error("Permission denied.");
         const task = await ctx.db.get(args.taskId);
         if (!task) throw new Error("Task not found");
-        await ctx.db.patch(args.taskId, { content: args.content });
+        await ctx.db.patch(args.taskId, { content: args.content, updatedAt: Date.now() });
         await ctx.runMutation(internal.activityLog.logActivity, {
           teamId: task.teamId,
           projectId: task.projectId,
@@ -352,6 +371,14 @@ export const generateTaskDetailsFromPrompt = action({
         taskId: v.optional(v.id("tasks")),
     },
     handler: async (ctx, args): Promise<any> => {
+        // 🔒 CHECK SUBSCRIPTION: AI features require Pro+ subscription
+        const subscriptionCheck = await ctx.runQuery(internal.stripe.checkAIFeatureAccess, { 
+            projectId: args.projectId 
+        });
+        
+        if (!subscriptionCheck.allowed) {
+            throw new Error(subscriptionCheck.message || "🚫 AI features require Pro or Enterprise subscription. Please upgrade your plan to use AI task generation.");
+        }
 
         const teamMembers: any[] = await ctx.runQuery(internal.teams.getTeamMembersForIndexing, { projectId: args.projectId });
         const memberList = teamMembers.map((m: any) => ({ name: m.name, id: m.clerkUserId }));
@@ -372,7 +399,7 @@ The user is editing an existing task. Here is the current state of the task:
 - Current Priority: ${task.priority || 'N/A'}
 - Current Assignee: ${task.assignedToName || 'N/A'}
 - Current Tags: ${task.tags?.join(', ') || 'N/A'}
-- Current Estimated Hours: ${task.estimatedHours || 'N/A'}
+- Current Cost: ${task.cost || 'N/A'}
 
 Your goal is to intelligently modify this task based on the user's prompt. For example, if the user says 'add X to the description', you must append 'X' to the current description. If the user asks to add a tag, append it to the existing array of tags. Do not just replace fields unless the user's intent is clearly to replace.
 `;
@@ -394,7 +421,6 @@ The available properties are:
 - cost: number
 - assignedTo: string (must be one of the user IDs from the provided list)
 - tags: string[] (array of strings)
-- estimatedHours: number
 
 The title is a short, concise summary. The description contains all other details, notes, and context.
 
@@ -423,5 +449,31 @@ Prompt: "${args.prompt}"
             console.error("Error parsing task from AI:", error);
             throw new Error("Failed to generate task details from prompt.");
         }
+    },
+});
+
+// ====== HELPER FUNCTIONS FOR INCREMENTAL INDEXING ======
+
+export const getTaskById = internalQuery({
+    args: { taskId: v.id("tasks") },
+    handler: async (ctx, args) => {
+        return await ctx.db.get(args.taskId);
+    },
+});
+
+export const getTasksChangedAfter = internalQuery({
+    args: { 
+        projectId: v.id("projects"), 
+        since: v.number() 
+    },
+    handler: async (ctx, args) => {
+        return await ctx.db
+            .query("tasks")
+            .withIndex("by_project", q => q.eq("projectId", args.projectId))
+            .filter(q => q.or(
+                q.gt(q.field("_creationTime"), args.since),
+                q.gt(q.field("updatedAt"), args.since)
+            ))
+            .collect();
     },
 });

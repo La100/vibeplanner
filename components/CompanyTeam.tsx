@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useOrganization } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
 
-import { Users, Mail, Search,  Crown, Trash2 } from "lucide-react";
+import { Users, Mail, Search, Crown, Trash2, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,8 +22,9 @@ import { useMutation } from "convex/react";
 import { toast } from "sonner";
 import { Id } from "@/convex/_generated/dataModel";
 import { OrganizationProfile } from "@clerk/nextjs";
+import ProjectMemberMatrix from "./ProjectMemberMatrix";
 
-type TeamMemberRole = "admin" | "member" | "client";
+type TeamMemberRole = "admin" | "member" | "customer";
 
 // Define TeamMember type based on the structure returned by getTeamMembers
 type TeamMember = {
@@ -69,7 +70,7 @@ export default function CompanyTeam() {
   const changeTeamMemberRole = useMutation(api.teams.changeTeamMemberRole);
   const revokeInvitation = useMutation(api.teams.revokeInvitation);
 
-  const handleRoleChange = async (clerkUserId: string, teamId: Id<"teams">, role: "admin" | "member" | "client") => {
+  const handleRoleChange = async (clerkUserId: string, teamId: Id<"teams">, role: "admin" | "member" | "customer") => {
     try {
       await changeTeamMemberRole({ clerkUserId, teamId, role });
       toast.success("Role updated successfully");
@@ -101,6 +102,15 @@ export default function CompanyTeam() {
     const roleMatch = roleFilter === 'all' || member.role === roleFilter;
     return (nameMatch || emailMatch) && roleMatch;
   });
+
+  // Separate members and customers
+  const teamMembersOnly = filteredMembers.filter((member: TeamMember) => 
+    member.role === 'admin' || member.role === 'member'
+  );
+  
+  const customersOnly = filteredMembers.filter((member: TeamMember) => 
+    member.role === 'customer'
+  );
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -143,7 +153,7 @@ export default function CompanyTeam() {
               <SelectItem value="all">All Roles</SelectItem>
               <SelectItem value="admin">Admin</SelectItem>
               <SelectItem value="member">Member</SelectItem>
-              <SelectItem value="client">Client</SelectItem>
+              <SelectItem value="customer">Customer</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -151,26 +161,31 @@ export default function CompanyTeam() {
 
       {/* Content */}
       <div className="flex-1 p-6">
-        <Tabs defaultValue="members" className="w-full">
+        <Tabs defaultValue="matrix" className="w-full">
           <TabsList>
-            <TabsTrigger value="members">Members</TabsTrigger>
+            <TabsTrigger value="matrix">Project Access</TabsTrigger>
+            <TabsTrigger value="team">Team Members</TabsTrigger>
+            <TabsTrigger value="customers">Customers</TabsTrigger>
             <TabsTrigger value="invitations">Pending Invitations</TabsTrigger>
-            <TabsTrigger value="settings">Team Settings</TabsTrigger>
             <TabsTrigger value="clerk">Clerk Management (Temp)</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="members" className="mt-6">
+          <TabsContent value="matrix" className="mt-6">
+            <ProjectMemberMatrix teamId={team._id} />
+          </TabsContent>
+
+          <TabsContent value="team" className="mt-6">
             <div className="space-y-6">
               {/* Team Stats */}
               <div className="grid gap-4 md:grid-cols-2">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Total Members</CardTitle>
+                    <CardTitle className="text-sm font-medium">Team Members</CardTitle>
                     <Users className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{organization.membersCount || 0}</div>
-                    <p className="text-xs text-muted-foreground">Active team members</p>
+                    <div className="text-2xl font-bold">{teamMembersOnly.length}</div>
+                    <p className="text-xs text-muted-foreground">Internal team members</p>
                   </CardContent>
                 </Card>
                 <Card>
@@ -179,7 +194,7 @@ export default function CompanyTeam() {
                     <Crown className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">1</div>
+                    <div className="text-2xl font-bold">{teamMembersOnly.filter(m => m.role === 'admin').length}</div>
                     <p className="text-xs text-muted-foreground">Admin users</p>
                   </CardContent>
                 </Card>
@@ -187,12 +202,12 @@ export default function CompanyTeam() {
 
               {/* Members List */}
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Team Members</h3>
+                <h3 className="text-lg font-semibold">Internal Team Members</h3>
                 
                 <Card>
                   <CardContent className="p-0">
                     <div className="space-y-4">
-                      {filteredMembers.map((member: TeamMember) => (
+                      {teamMembersOnly.map((member: TeamMember) => (
                         <div key={member.clerkUserId} className="flex items-center justify-between p-4 border-b last:border-b-0">
                           <div className="flex items-center gap-4">
                             <Avatar>
@@ -215,11 +230,94 @@ export default function CompanyTeam() {
                             <SelectContent>
                               <SelectItem value="admin">Admin</SelectItem>
                               <SelectItem value="member">Member</SelectItem>
-                              <SelectItem value="client">Client</SelectItem>
+                              <SelectItem value="customer">Customer</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
                       ))}
+                      {teamMembersOnly.length === 0 && (
+                        <div className="text-center py-8 text-muted-foreground">
+                          No team members found
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="customers" className="mt-6">
+            <div className="space-y-6">
+              {/* Customer Stats */}
+              <div className="grid gap-4 md:grid-cols-2">
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Total Customers</CardTitle>
+                    <Building2 className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{customersOnly.length}</div>
+                    <p className="text-xs text-muted-foreground">Client accounts</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Active Projects</CardTitle>
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">-</div>
+                    <p className="text-xs text-muted-foreground">With customer access</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Customers List */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold">Customer Accounts</h3>
+                
+                <Card>
+                  <CardContent className="p-0">
+                    <div className="space-y-4">
+                      {customersOnly.map((customer: TeamMember) => (
+                        <div key={customer.clerkUserId} className="flex items-center justify-between p-4 border-b last:border-b-0">
+                          <div className="flex items-center gap-4">
+                            <Avatar>
+                              {customer.imageUrl && <AvatarImage src={customer.imageUrl} />}
+                              <AvatarFallback>{customer.name ? customer.name[0].toUpperCase() : 'C'}</AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="font-semibold">{customer.name}</p>
+                              <p className="text-sm text-muted-foreground">{customer.email}</p>
+                              <p className="text-xs text-muted-foreground">Customer</p>
+                            </div>
+                          </div>
+                          <Select 
+                            value={customer.role} 
+                            onValueChange={(newRole) => handleRoleChange(customer.clerkUserId, customer.teamId, newRole as TeamMemberRole)}
+                            disabled={currentUserMember?.role !== 'admin'}
+                          >
+                            <SelectTrigger className="w-32">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="admin">Admin</SelectItem>
+                              <SelectItem value="member">Member</SelectItem>
+                              <SelectItem value="customer">Customer</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                      {customersOnly.length === 0 && (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <Building2 className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                          <h3 className="text-lg font-semibold mb-2">No customers yet</h3>
+                          <p className="text-muted-foreground">
+                            Invite customers to give them access to specific projects.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -267,51 +365,7 @@ export default function CompanyTeam() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="settings" className="mt-6">
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Team Settings</CardTitle>
-                  <CardDescription>
-                    Configure team-wide settings and permissions
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid gap-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-medium">Team Name</h4>
-                        <p className="text-sm text-muted-foreground">
-                          {organization.name}
-                        </p>
-                      </div>
-                      <Button variant="outline" size="sm">Edit</Button>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-medium">Default Project Permissions</h4>
-                        <p className="text-sm text-muted-foreground">
-                          Set default permissions for new team members
-                        </p>
-                      </div>
-                      <Button variant="outline" size="sm">Configure</Button>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-medium">Team Slug</h4>
-                        <p className="text-sm text-muted-foreground">
-                          /{params.slug}
-                        </p>
-                      </div>
-                      <Button variant="outline" size="sm">Change</Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
+
 
           <TabsContent value="clerk" className="mt-6">
             <OrganizationProfile />

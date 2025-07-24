@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internal, api } from "./_generated/api";
-import { internalMutation, query, mutation } from "./_generated/server";
+import { internalMutation, internalQuery, query, mutation } from "./_generated/server";
 import { Id, Doc } from "./_generated/dataModel";
 
 // Utility function to generate a slug from a string
@@ -46,23 +46,39 @@ export const listProjectsByClerkOrg = query({
       )
       .unique();
 
-    let projects;
+    let projects: any[] = [];
     
-    // Admin i member widzą wszystkie projekty zespołu
-    if (membership && membership.isActive && (membership.role === "admin" || membership.role === "member")) {
-      projects = await ctx.db
-        .query("projects")
-        .withIndex("by_team", (q) => q.eq("teamId", team._id))
-        .collect();
-    } else if (membership && membership.isActive && membership.role === "client" && membership.projectIds) {
-      // Client z określonymi projectIds w teamMembers
-      const projectPromises = membership.projectIds.map(id => ctx.db.get(id));
-      const projectResults = await Promise.all(projectPromises);
-      projects = projectResults.filter(p => p !== null);
+    if (membership && membership.isActive) {
+      if (membership.role === "admin") {
+        // Admin sees all team projects
+        projects = await ctx.db
+          .query("projects")
+          .withIndex("by_team", (q) => q.eq("teamId", team._id))
+          .collect();
+      } else if (membership.role === "member") {
+        // Member may have limited access
+        if (membership.projectIds && membership.projectIds.length > 0) {
+          // Member with limited access - only assigned projects
+          const projectPromises = membership.projectIds.map(id => ctx.db.get(id));
+          const projectResults = await Promise.all(projectPromises);
+          projects = projectResults.filter(p => p !== null);
+        } else {
+          // Member without restrictions - all team projects
+          projects = await ctx.db
+            .query("projects")
+            .withIndex("by_team", (q) => q.eq("teamId", team._id))
+            .collect();
+        }
+      } else if (membership.role === "customer" && membership.projectIds) {
+        // Customer with specific projectIds in teamMembers
+        const projectPromises = membership.projectIds.map(id => ctx.db.get(id));
+        const projectResults = await Promise.all(projectPromises);
+        projects = projectResults.filter(p => p !== null);
+      }
     } else {
-      // Sprawdź czy użytkownik jest klientem z dostępem do konkretnych projektów (legacy)
-      const clientAccess = await ctx.db
-        .query("clients")
+      // Check if user is a customer with access to specific projects (legacy)
+      const customerAccess = await ctx.db
+        .query("customers")
         .withIndex("by_clerk_user", q => q.eq("clerkUserId", identity.subject))
         .filter(q => q.and(
           q.eq(q.field("teamId"), team._id),
@@ -70,8 +86,8 @@ export const listProjectsByClerkOrg = query({
         ))
         .collect();
 
-      if (clientAccess.length > 0) {
-        const projectIds = clientAccess.map(c => c.projectId);
+      if (customerAccess.length > 0) {
+        const projectIds = customerAccess.map(c => c.projectId);
         const projectPromises = projectIds.map(id => ctx.db.get(id));
         const projectResults = await Promise.all(projectPromises);
         projects = projectResults.filter(p => p !== null);
@@ -107,7 +123,7 @@ export const createProjectInOrg = mutation({
     description: v.optional(v.string()),
     clerkOrgId: v.string(),
     teamId: v.id("teams"),
-    client: v.optional(v.string()),
+    customer: v.optional(v.string()),
     location: v.optional(v.string()),
     budget: v.optional(v.number()),
     startDate: v.optional(v.number()),
@@ -152,14 +168,14 @@ export const createProjectInOrg = mutation({
 
     const nextProjectId = await generateNextProjectId(ctx);
 
-    // Sprawdź czy twórca jest już członkiem zespołu
+    // Check if creator is already a team member
     let creatorMembership = await ctx.db
       .query("teamMembers")
       .withIndex("by_team_and_user", (q) => q.eq("teamId", team._id).eq("clerkUserId", identity.subject))
       .unique();
 
     if (!creatorMembership) {
-      // Jeśli nie jest członkiem, dodaj jako admina
+      // If not a member, add as admin
       await ctx.db.insert("teamMembers", {
         teamId: team._id,
         clerkUserId: identity.subject,
@@ -170,7 +186,7 @@ export const createProjectInOrg = mutation({
         permissions: [],
       });
     } else if (creatorMembership.role !== "admin") {
-      // Jeśli już jest członkiem ale nie jest adminem, podwyższ do admina
+      // If already a member but not admin, promote to admin
       await ctx.db.patch(creatorMembership._id, { role: "admin" });
     }
 
@@ -181,9 +197,10 @@ export const createProjectInOrg = mutation({
       slug: slug,
       projectId: nextProjectId,
       status: "planning",
-      client: args.client,
+      customer: args.customer,
       location: args.location,
       budget: args.budget,
+      currency: team.currency || "PLN", // Inherit currency from team, default PLN
       startDate: args.startDate,
       endDate: args.endDate,
       createdBy: identity.subject,
@@ -252,14 +269,16 @@ export const updateProject = mutation({
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
     budget: v.optional(v.number()),
-    client: v.optional(v.string()),
+    customer: v.optional(v.string()),
     location: v.optional(v.string()),
     currency: v.optional(v.union(
-      v.literal("USD"),
-      v.literal("EUR"),
-      v.literal("PLN")
+      v.literal("USD"), v.literal("EUR"), v.literal("PLN"), v.literal("GBP"),
+      v.literal("CAD"), v.literal("AUD"), v.literal("JPY"), v.literal("CHF"),
+      v.literal("SEK"), v.literal("NOK"), v.literal("DKK"), v.literal("CZK"),
+      v.literal("HUF"), v.literal("CNY"), v.literal("INR"), v.literal("BRL"),
+      v.literal("MXN"), v.literal("KRW"), v.literal("SGD"), v.literal("HKD")
     )),
-    taskStatusSettings: v.optional(v.any()), // Pozwalamy na dowolny obiekt dla uproszczenia
+    taskStatusSettings: v.optional(v.any()), // Allow any object for simplification
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -272,7 +291,7 @@ export const updateProject = mutation({
       throw new Error("Project not found");
     }
 
-    // Sprawdzenie uprawnień (przykład)
+    // Permission check (example)
     // const member = await ctx.db.query("teamMembers").withIndex("by_team_and_user", q => q.eq("teamId", existingProject.teamId).eq("clerkUserId", identity.subject)).first();
     // if (!member || (member.role !== 'admin' && member.role !== 'member')) {
     //   throw new Error("You don't have permission to update this project.");
@@ -359,24 +378,36 @@ export const getProjectsForTeam = query({
 
     let projects: Doc<"projects">[] = [];
 
-    if (
-      membership.role === "client" &&
-      membership.projectIds &&
-      membership.projectIds.length > 0
-    ) {
-      const clientProjects = await Promise.all(
-        membership.projectIds.map((id) => ctx.db.get(id))
-      );
-      projects = clientProjects.filter((p): p is Doc<"projects"> => p !== null);
-    } else if (
-      membership.role === "admin" ||
-      membership.role === "member" ||
-      membership.role === "viewer"
-    ) {
+    if (membership.role === "admin") {
+      // Admin sees all team projects
       projects = await ctx.db
         .query("projects")
         .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
         .collect();
+    } else if (membership.role === "member") {
+      // Member may have limited access
+      if (membership.projectIds && membership.projectIds.length > 0) {
+        // Member with limited access - only assigned projects
+        const memberProjects = await Promise.all(
+          membership.projectIds.map((id) => ctx.db.get(id))
+        );
+        projects = memberProjects.filter((p): p is Doc<"projects"> => p !== null);
+      } else {
+        // Member without restrictions - all team projects
+        projects = await ctx.db
+          .query("projects")
+          .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+          .collect();
+      }
+    } else if (
+      membership.role === "customer" &&
+      membership.projectIds &&
+      membership.projectIds.length > 0
+    ) {
+      const customerProjects = await Promise.all(
+        membership.projectIds.map((id) => ctx.db.get(id))
+      );
+      projects = customerProjects.filter((p): p is Doc<"projects"> => p !== null);
     }
 
     projects.sort((a, b) => a.name.localeCompare(b.name));
@@ -397,7 +428,7 @@ export const checkUserProjectAccess = query({
     const project = await ctx.db.get(args.projectId);
     if (!project) return false;
 
-    // Sprawdź członkostwo w zespole
+    // Check team membership
     const teamMember = await ctx.db
       .query("teamMembers")
       .withIndex("by_team_and_user", q => 
@@ -410,17 +441,27 @@ export const checkUserProjectAccess = query({
       return false;
     }
 
-    // Admin, member, i viewer mają dostęp do wszystkich projektów w zespole
-    if (["admin", "member", "viewer"].includes(teamMember.role)) {
+    // Admin has access to all projects in the team
+    if (teamMember.role === "admin") {
       return teamMember;
     }
 
-    // Klienci mają dostęp tylko do przypisanych projektów
-    if (teamMember.role === "client") {
+    // Member may have limited access to projects
+    if (teamMember.role === "member") {
+      // If member has assigned projectIds, check if they have access to this project
+      if (teamMember.projectIds && teamMember.projectIds.length > 0) {
+        return teamMember.projectIds.includes(args.projectId) ? teamMember : false;
+      }
+      // If no projectIds = access to all (backward compatibility)
+      return teamMember;
+    }
+
+    // Customers have access only to assigned projects
+    if (teamMember.role === "customer") {
       return teamMember.projectIds?.includes(args.projectId) ? teamMember : false;
     }
     
-    // W innych przypadkach, brak dostępu
+    // In other cases, no access
     return false;
   }
 });
@@ -450,7 +491,7 @@ export const updateProjectSidebarPermissions = mutation({
       throw new Error("Project not found");
     }
 
-    // Sprawdź uprawnienia - tylko admin i member mogą zmieniać uprawnienia
+    // Check permissions - only admin and member can change permissions
     const teamMember = await ctx.db
       .query("teamMembers")
       .withIndex("by_team_and_user", q => 
@@ -458,11 +499,26 @@ export const updateProjectSidebarPermissions = mutation({
       )
       .unique();
 
-    if (!teamMember || (teamMember.role !== "admin" && teamMember.role !== "member")) {
+    if (!teamMember) {
+      throw new Error("User is not a team member");
+    }
+
+    // Admin always has access
+    if (teamMember.role === "admin") {
+      // OK - admin can modify permissions
+    } else if (teamMember.role === "member") {
+      // Check if member has access to this project
+      if (teamMember.projectIds && teamMember.projectIds.length > 0) {
+        if (!teamMember.projectIds.includes(args.projectId)) {
+          throw new Error("Insufficient permissions to update sidebar permissions");
+        }
+      }
+      // Member without restrictions can modify permissions
+    } else {
       throw new Error("Insufficient permissions to update sidebar permissions");
     }
 
-    // Aktualizuj uprawnienia sidebar
+    // Update sidebar permissions
     await ctx.db.patch(args.projectId, {
       sidebarPermissions: args.sidebarPermissions,
     });
@@ -480,7 +536,7 @@ export const getProjectSidebarPermissions = query({
     const project = await ctx.db.get(args.projectId);
     if (!project) return null;
 
-    // Sprawdź rolę użytkownika
+    // Check user role
     const teamMember = await ctx.db
       .query("teamMembers")
       .withIndex("by_team_and_user", q => 
@@ -488,9 +544,9 @@ export const getProjectSidebarPermissions = query({
       )
       .unique();
 
-    // Sprawdź czy użytkownik jest klientem projektu
-    const clientAccess = await ctx.db
-      .query("clients")
+    // Check if user is a project customer
+    const customerAccess = await ctx.db
+      .query("customers")
       .withIndex("by_clerk_user", q => q.eq("clerkUserId", identity.subject))
       .filter(q => q.and(
         q.eq(q.field("projectId"), args.projectId),
@@ -498,7 +554,7 @@ export const getProjectSidebarPermissions = query({
       ))
       .unique();
 
-    // Domyślne uprawnienia
+    // Default permissions
     const defaultPermissions = {
       overview: { visible: true },
       tasks: { visible: true },
@@ -510,17 +566,35 @@ export const getProjectSidebarPermissions = query({
       settings: { visible: true },
     };
 
-    // Jeśli użytkownik jest admin lub member, ma pełne uprawnienia
-    if (teamMember && (teamMember.role === "admin" || teamMember.role === "member")) {
+    // Check if user has access to the project
+    if (teamMember && teamMember.role === "admin") {
+      // Admin always has full permissions
       return {
         permissions: defaultPermissions,
         userRole: teamMember.role,
-        isClient: false,
+        isCustomer: false,
       };
     }
 
-    // Jeśli użytkownik jest klientem, zastosuj ograniczenia
-    if (teamMember?.role === "client" || clientAccess) {
+    if (teamMember && teamMember.role === "member") {
+      // Check if member has access to this project
+      let hasAccess = true;
+      if (teamMember.projectIds && teamMember.projectIds.length > 0) {
+        hasAccess = teamMember.projectIds.includes(args.projectId);
+      }
+      
+      if (hasAccess) {
+        return {
+          permissions: defaultPermissions,
+          userRole: teamMember.role,
+          isCustomer: false,
+        };
+      }
+      // If no access, treat as customer
+    }
+
+    // If user is a customer, apply restrictions
+    if (teamMember?.role === "customer" || customerAccess) {
       const sidebarPermissions = project.sidebarPermissions || {};
       
       return {
@@ -532,14 +606,14 @@ export const getProjectSidebarPermissions = query({
           gantt: sidebarPermissions.gantt || defaultPermissions.gantt,
           files: sidebarPermissions.files || defaultPermissions.files,
           shopping_list: sidebarPermissions.shopping_list || defaultPermissions.shopping_list,
-          settings: sidebarPermissions.settings || { visible: false }, // Domyślnie clients nie widzą ustawień
+          settings: sidebarPermissions.settings || { visible: false }, // By default customers don't see settings
         },
-        userRole: teamMember?.role || "client",
-        isClient: true,
+        userRole: teamMember?.role || "customer",
+        isCustomer: true,
       };
     }
 
-    // Jeśli użytkownik nie ma dostępu
+    // If user has no access
     return null;
   },
 });
@@ -613,59 +687,63 @@ export const deleteProject = mutation({
       )
     ).then(results => results.flat());
 
-    // Delete all client records associated with this project
-    const projectClients = await ctx.db
-      .query("clients")
+    // Delete all customer records associated with this project
+    const projectCustomers = await ctx.db
+      .query("customers")
       .filter(q => q.eq(q.field("projectId"), args.projectId))
       .collect();
 
-    // Handle team members with role "client" - remove project or delete member entirely
-    const clientTeamMembers = await ctx.db
+    // Handle team members with role "customer" - remove project or delete member entirely
+    const customerTeamMembers = await ctx.db
       .query("teamMembers")
       .withIndex("by_team", q => q.eq("teamId", project.teamId))
-      .filter(q => q.eq(q.field("role"), "client"))
+      .filter(q => q.eq(q.field("role"), "customer"))
       .collect();
 
-    const memberOperationPromises = clientTeamMembers.map(async (member) => {
+    const memberOperationPromises = customerTeamMembers.map(async (member) => {
       const currentProjectIds = member.projectIds || [];
       
       if (currentProjectIds.includes(args.projectId) || currentProjectIds.length === 0) {
         const updatedProjectIds = currentProjectIds.filter(id => id !== args.projectId);
         
         if (updatedProjectIds.length === 0) {
-          // Jeśli to był jedyny projekt klienta lub nie miał projektów, usuń członka całkowicie
+          // If this was the customer's only project or they had no projects, remove member completely
           await ctx.db.delete(member._id);
-          console.log(`Deleted client team member ${member.clerkUserId} - no more projects`);
+          console.log(`Deleted customer team member ${member.clerkUserId} - no more projects`);
         } else {
-          // Jeśli ma więcej projektów, tylko usuń ten projekt z listy
+          // If they have more projects, just remove this project from the list
           await ctx.db.patch(member._id, { projectIds: updatedProjectIds });
-          console.log(`Updated client team member ${member.clerkUserId} - removed project from list`);
+          console.log(`Updated customer team member ${member.clerkUserId} - removed project from list`);
         }
       } else {
-        // Sprawdź czy klient ma dostęp do tego projektu przez tabelę clients
-        const clientRecord = await ctx.db
-          .query("clients")
+        // Check if customer has access to this project through customers table
+        const customerRecord = await ctx.db
+          .query("customers")
           .withIndex("by_clerk_user", q => q.eq("clerkUserId", member.clerkUserId))
           .filter(q => q.eq(q.field("projectId"), args.projectId))
           .first();
         
-        if (clientRecord) {
-          // Klient był powiązany z tym projektem - sprawdź czy ma inne projekty
-          const otherClientRecords = await ctx.db
-            .query("clients")
+        if (customerRecord) {
+          // Customer was linked to this project - check if they have other projects
+          const otherCustomerRecords = await ctx.db
+            .query("customers")
             .withIndex("by_clerk_user", q => q.eq("clerkUserId", member.clerkUserId))
             .filter(q => q.neq(q.field("projectId"), args.projectId))
             .collect();
           
-          if (otherClientRecords.length === 0) {
-            // Nie ma innych projektów - usuń członka
+          if (otherCustomerRecords.length === 0) {
+            // No other projects - remove member
             await ctx.db.delete(member._id);
-            console.log(`Deleted client team member ${member.clerkUserId} - was only connected to deleted project`);
+            console.log(`Deleted customer team member ${member.clerkUserId} - was only connected to deleted project`);
           }
         }
       }
     });
     await Promise.all(memberOperationPromises);
+
+    // Delete all customer records for this project
+    const customerDeletionPromises = projectCustomers.map(customer => ctx.db.delete(customer._id));
+    await Promise.all(customerDeletionPromises);
 
     // Delete all folders related to the project
     const projectFolders = await ctx.db
@@ -745,5 +823,22 @@ export const updateProjectIndexingStatus = internalMutation({
         await ctx.db.patch(args.projectId, {
             aiIndexingStatus: args.status,
         });
+    },
+});
+
+
+export const updateProjectIndexingMetadata = internalMutation({
+    args: {
+        projectId: v.id("projects"),
+        lastIndexedAt: v.number(),
+        indexedItemsCount: v.number(),
+    },
+    returns: v.null(),
+    handler: async (ctx, args) => {
+        await ctx.db.patch(args.projectId, {
+            aiLastIndexedAt: args.lastIndexedAt,
+            aiIndexedItemsCount: args.indexedItemsCount,
+        });
+        return null;
     },
 }); 

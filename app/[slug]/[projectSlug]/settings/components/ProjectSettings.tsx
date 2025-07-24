@@ -33,7 +33,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 const settingsFormSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
-  currency: z.enum(["USD", "EUR", "PLN"]).optional(),
+  currency: z.enum([
+    "USD", "EUR", "PLN", "GBP", "CAD", "AUD", "JPY", "CHF", "SEK", "NOK", 
+    "DKK", "CZK", "HUF", "CNY", "INR", "BRL", "MXN", "KRW", "SGD", "HKD"
+  ]).optional(),
 });
 
 const deleteFormSchema = z.object({
@@ -104,8 +107,8 @@ function ProjectSettingsContent() {
     resolver: zodResolver(settingsFormSchema),
     values: project ? { 
       name: project.name,
-      currency: project.currency || "USD",
-    } : { name: "", currency: "USD" },
+      currency: project.currency || "PLN",
+    } : { name: "", currency: "PLN" },
   });
 
   const deleteForm = useForm<z.infer<typeof deleteFormSchema>>({
@@ -306,6 +309,23 @@ function GeneralTab({
                       <SelectItem value="USD">USD ($)</SelectItem>
                       <SelectItem value="EUR">EUR (€)</SelectItem>
                       <SelectItem value="PLN">PLN (zł)</SelectItem>
+                      <SelectItem value="GBP">GBP (£)</SelectItem>
+                      <SelectItem value="CAD">CAD (C$)</SelectItem>
+                      <SelectItem value="AUD">AUD (A$)</SelectItem>
+                      <SelectItem value="JPY">JPY (¥)</SelectItem>
+                      <SelectItem value="CHF">CHF</SelectItem>
+                      <SelectItem value="SEK">SEK</SelectItem>
+                      <SelectItem value="NOK">NOK</SelectItem>
+                      <SelectItem value="DKK">DKK</SelectItem>
+                      <SelectItem value="CZK">CZK</SelectItem>
+                      <SelectItem value="HUF">HUF</SelectItem>
+                      <SelectItem value="CNY">CNY (¥)</SelectItem>
+                      <SelectItem value="INR">INR (₹)</SelectItem>
+                      <SelectItem value="BRL">BRL (R$)</SelectItem>
+                      <SelectItem value="MXN">MXN ($)</SelectItem>
+                      <SelectItem value="KRW">KRW (₩)</SelectItem>
+                      <SelectItem value="SGD">SGD (S$)</SelectItem>
+                      <SelectItem value="HKD">HKD (HK$)</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />

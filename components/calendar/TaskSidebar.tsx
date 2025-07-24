@@ -1,0 +1,311 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter, useParams } from "next/navigation";
+import { format } from "date-fns";
+import { X, Edit3, Calendar, Clock, Flag, CheckCircle2, Circle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
+import { CalendarEvent } from "./utils";
+import { Doc } from "@/convex/_generated/dataModel";
+
+interface TaskSidebarProps {
+  event: CalendarEvent | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onStatusChange?: (event: CalendarEvent, newStatus: string) => void;
+}
+
+const priorityColors = {
+  urgent: 'bg-red-100 text-red-800 border-red-300',
+  high: 'bg-orange-100 text-orange-800 border-orange-300',
+  medium: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+  low: 'bg-green-100 text-green-800 border-green-300'
+};
+
+const statusColors = {
+  planned: 'bg-gray-100 text-gray-800 border-gray-300',
+  confirmed: 'bg-blue-100 text-blue-800 border-blue-300',
+  in_progress: 'bg-purple-100 text-purple-800 border-purple-300',
+  completed: 'bg-green-100 text-green-800 border-green-300',
+  cancelled: 'bg-red-100 text-red-800 border-red-300'
+};
+
+export function TaskSidebar({ 
+  event, 
+  isOpen, 
+  onClose, 
+  onStatusChange 
+}: TaskSidebarProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const router = useRouter();
+  const params = useParams<{ slug: string, projectSlug: string }>();
+
+  if (!isOpen || !event) return null;
+
+  const isTask = event.sourceType === 'task';
+  const isShopping = event.sourceType === 'shopping';
+  const currencySymbol = (event.project as { currency?: string })?.currency === "EUR" ? "€" : (event.project as { currency?: string })?.currency === "PLN" ? "zł" : "$";
+
+  const handleStatusToggle = () => {
+    if (isTask) {
+      const taskData = event.sourceData as Doc<"tasks">;
+      const currentStatus = taskData.status;
+      const newStatus = currentStatus === 'done' ? 'todo' : 'done';
+      onStatusChange?.(event, newStatus);
+    } else if (isShopping) {
+      const shoppingData = event.sourceData as Doc<"shoppingListItems">;
+      const currentStatus = shoppingData.realizationStatus;
+      const newStatus = currentStatus === 'COMPLETED' ? 'PLANNED' : 'COMPLETED';
+      onStatusChange?.(event, newStatus);
+    }
+  };
+
+  return (
+    <>
+      {/* Overlay */}
+      <div 
+        className={cn(
+          "fixed inset-0 bg-black/20 transition-opacity z-40",
+          isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        )}
+        onClick={onClose}
+      />
+      
+      {/* Sidebar */}
+      <div className={cn(
+        "fixed right-0 top-0 h-full w-80 bg-white shadow-xl transform transition-transform duration-300 ease-in-out z-50",
+        isOpen ? "translate-x-0" : "translate-x-full"
+      )}>
+        <div className="flex flex-col h-full">
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b">
+            <h2 className="text-lg font-semibold">
+              {isTask ? 'Task Details' : 'Shopping Item'}
+            </h2>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClose}
+              className="h-8 w-8 p-0"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Content */}
+          <ScrollArea className="flex-1 p-4">
+            <div className="space-y-6">
+              {/* Title and Status */}
+              <div>
+                <div className="flex items-start justify-between mb-2">
+                  <h3 className="text-xl font-semibold text-gray-900 flex-1" onClick={() => setIsEditing(true)}>
+                    {event.title}
+                  </h3>
+                  {isEditing && (
+                    <textarea
+                      value={event.title}
+                      onChange={() => { /* Handle change */ }}
+                      onBlur={() => setIsEditing(false)}
+                      className="w-full text-xl font-semibold text-gray-900 bg-transparent border-b-2 border-blue-500 focus:outline-none"
+                    />
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleStatusToggle}
+                    className="ml-2 p-1"
+                  >
+                    {event.status === 'completed' ? (
+                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                    ) : (
+                      <Circle className="h-5 w-5 text-gray-400" />
+                    )}
+                  </Button>
+                </div>
+                
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge 
+                    variant="outline" 
+                    className={cn("text-xs", priorityColors[event.priority])}
+                  >
+                    <Flag className="h-3 w-3 mr-1" />
+                    {event.priority}
+                  </Badge>
+                  
+                  <Badge 
+                    variant="outline" 
+                    className={cn("text-xs", statusColors[event.status])}
+                  >
+                    {event.status === 'in_progress' ? 'In Progress' : event.status}
+                  </Badge>
+                  
+                  <Badge variant="outline" className="text-xs">
+                    {event.type}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Description */}
+              {event.description && (
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-2">Description</h4>
+                  <p className="text-sm text-gray-600 leading-relaxed">
+                    {event.description}
+                  </p>
+                </div>
+              )}
+
+              <Separator />
+
+              {/* Time Info */}
+              <div>
+                <h4 className="font-medium text-gray-900 mb-3">Schedule</h4>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Calendar className="h-4 w-4 text-gray-500" />
+                    <span className="text-gray-600">
+                      {format(event.startTime, 'EEEE, MMMM d, yyyy')}
+                    </span>
+                  </div>
+                  
+                  {!event.isAllDay && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Clock className="h-4 w-4 text-gray-500" />
+                      <span className="text-gray-600">
+                        {format(event.startTime, 'h:mm a')} - {format(event.endTime, 'h:mm a')}
+                      </span>
+                    </div>
+                  )}
+                  
+                  {event.isAllDay && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Clock className="h-4 w-4 text-gray-500" />
+                      <span className="text-gray-600">All day</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Assignment */}
+              {event.assignedToName && event.assignedTo && (
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-3">Assigned to</h4>
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={event.assignedToImageUrl} />
+                      <AvatarFallback className="text-sm">
+                        {event.assignedToName.charAt(0)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">
+                        {event.assignedToName}
+                      </p>
+                      <p className="text-xs text-gray-500">Assignee</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Project */}
+              {event.project && (
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-2">Project</h4>
+                  <p className="text-sm text-gray-600">{event.project.name}</p>
+                </div>
+              )}
+
+              {/* Task-specific fields */}
+              {isTask && (
+                <div className="space-y-4">
+                  <Separator />
+                  
+                  {(event.sourceData as Doc<"tasks">).tags && (event.sourceData as Doc<"tasks">).tags.length > 0 && (
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-2">Tags</h4>
+                      <div className="flex flex-wrap gap-1">
+                        {(event.sourceData as Doc<"tasks">).tags.map((tag: string, index: number) => (
+                          <Badge key={index} variant="secondary" className="text-xs">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {(event.sourceData as Doc<"tasks">).cost && (
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-2">Cost</h4>
+                      <p className="text-sm text-gray-600">{(event.sourceData as Doc<"tasks">).cost} {currencySymbol}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Shopping-specific fields */}
+              {isShopping && (
+                <div className="space-y-4">
+                  <Separator />
+                  
+                  {(event.sourceData as Doc<"shoppingListItems">).quantity && (
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-2">Quantity</h4>
+                      <p className="text-sm text-gray-600">{(event.sourceData as Doc<"shoppingListItems">).quantity}</p>
+                    </div>
+                  )}
+                  
+                  {(event.sourceData as Doc<"shoppingListItems">).supplier && (
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-2">Supplier</h4>
+                      <p className="text-sm text-gray-600">{(event.sourceData as Doc<"shoppingListItems">).supplier}</p>
+                    </div>
+                  )}
+                  
+                  {(event.sourceData as Doc<"shoppingListItems">).unitPrice && (
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-2">Unit Price</h4>
+                      <p className="text-sm text-gray-600">{(event.sourceData as Doc<"shoppingListItems">).unitPrice} {currencySymbol}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <Separator />
+
+              {/* Metadata */}
+              <div className="text-xs text-gray-500 space-y-1">
+                <p>Created: {format(new Date(event.sourceData._creationTime), 'MMM d, yyyy h:mm a')}</p>
+                {(event.sourceData as Doc<"tasks"> | Doc<"shoppingListItems">).updatedAt && (
+                  <p>Updated: {format(new Date((event.sourceData as Doc<"tasks"> | Doc<"shoppingListItems">).updatedAt!), 'MMM d, yyyy h:mm a')}</p>
+                )}
+              </div>
+            </div>
+          </ScrollArea>
+
+          {/* Footer Actions */}
+          <div className="p-4 border-t bg-gray-50">
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  if (event?.sourceType === 'task' && params.slug && params.projectSlug && event?.sourceData?._id) {
+                    router.push(`/${params.slug}/${params.projectSlug}/tasks/${event.sourceData._id}`);
+                  }
+                }}
+              >
+                <Edit3 className="h-4 w-4 mr-2" />
+                Edit
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}

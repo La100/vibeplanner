@@ -96,7 +96,7 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
         description: newProject.description,
         clerkOrgId: organization.id,
         teamId: team._id,
-        client: newProject.client,
+        customer: newProject.client,
         location: newProject.location,
         budget: newProject.budget ? parseInt(newProject.budget) : undefined,
         startDate: newProject.startDate ? new Date(newProject.startDate).getTime() : undefined,
@@ -125,22 +125,22 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">{organization.name}</h2>
-          <p className="text-muted-foreground">Zarządzaj projektami architektonicznymi</p>
+          <p className="text-muted-foreground">Manage architectural projects</p>
         </div>
         
         <div className="flex items-center gap-3">
           <Badge variant="secondary" className="flex items-center gap-1">
             <Users className="h-3 w-3" />
-            {organization.membersCount || 0} członków
+            {organization.membersCount || 0} members
           </Badge>
           <Badge variant="secondary" className="flex items-center gap-1">
             <FolderOpen className="h-3 w-3" />
-            {projects?.length || 0} projektów
+            {projects?.length || 0} projects
           </Badge>
           {team === null && (
             <Badge variant="outline" className="flex items-center gap-1">
               <div className="h-2 w-2 bg-yellow-500 rounded-full animate-pulse" />
-              Synchronizuję...
+              Syncing...
             </Badge>
           )}
         </div>
@@ -149,29 +149,29 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
       {/* Actions */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-xl font-semibold">Projekty</h3>
-          <p className="text-muted-foreground">Lista aktualnych projektów architektonicznych</p>
+          <h3 className="text-xl font-semibold">Projects</h3>
+          <p className="text-muted-foreground">List of current architectural projects</p>
         </div>
         
         <Dialog open={showNewProjectForm} onOpenChange={setShowNewProjectForm}>
           <DialogTrigger asChild>
             <Button disabled={!team?._id}>
               <Plus className="mr-2 h-4 w-4" />
-              Nowy projekt
+              New Project
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Nowy projekt</DialogTitle>
+              <DialogTitle>New Project</DialogTitle>
               <DialogDescription>
-                Utwórz nowy projekt architektoniczny dla zespołu {organization.name}
+                Create a new architectural project for team {organization.name}
               </DialogDescription>
             </DialogHeader>
             
             <form onSubmit={handleCreateProject} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="name">Nazwa projektu *</Label>
+                  <Label htmlFor="name">Project Name *</Label>
                   <Input
                     id="name"
                     value={newProject.name}
@@ -183,7 +183,7 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
                 
 
                 <div className="space-y-2">
-                  <Label htmlFor="client">Klient</Label>
+                  <Label htmlFor="client">Client</Label>
                   <Input
                     id="client"
                     value={newProject.client}
@@ -192,7 +192,7 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="location">Lokalizacja</Label>
+                  <Label htmlFor="location">Location</Label>
                   <Input
                     id="location"
                     value={newProject.location}
@@ -201,7 +201,7 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="budget">Budżet (PLN)</Label>
+                  <Label htmlFor="budget">Budget (USD)</Label>
                   <Input
                     id="budget"
                     type="number"
@@ -211,7 +211,7 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="startDate">Data rozpoczęcia</Label>
+                  <Label htmlFor="startDate">Start Date</Label>
                   <Input
                     id="startDate"
                     type="date"
@@ -222,7 +222,7 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Opis</Label>
+                <Label htmlFor="description">Description</Label>
                 <Textarea
                   id="description"
                   value={newProject.description}
@@ -237,10 +237,10 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
                   variant="outline"
                   onClick={() => setShowNewProjectForm(false)}
                 >
-                  Anuluj
+                  Cancel
                 </Button>
                 <Button type="submit">
-                  Utwórz projekt
+                  Create Project
                 </Button>
               </div>
             </form>
@@ -262,13 +262,13 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
            <Card className="col-span-full">
             <CardContent className="flex flex-col items-center justify-center py-8">
               <FolderOpen className="h-16 w-16 text-muted-foreground mb-4" />
-              <CardTitle className="mb-2">Brak projektów</CardTitle>
+              <CardTitle className="mb-2">No Projects</CardTitle>
               <CardDescription className="text-center mb-4">
-                Utwórz pierwszy projekt, aby rozpocząć pracę.
+                Create your first project to get started.
               </CardDescription>
               <Button onClick={() => setShowNewProjectForm(true)} disabled={!team?._id}>
                 <Plus className="mr-2 h-4 w-4" />
-                Nowy projekt
+                New Project
               </Button>
             </CardContent>
           </Card>
@@ -287,9 +287,9 @@ function MultiOrgDashboard({ organizations }: { organizations: { id: string; nam
 
   return (
     <div className="space-y-6">
-      <h2 className="text-3xl font-bold tracking-tight">Wybierz organizację</h2>
+      <h2 className="text-3xl font-bold tracking-tight">Select Organization</h2>
       <p className="text-muted-foreground">
-        Jesteś członkiem wielu organizacji. Wybierz jedną, aby kontynuować.
+        You are a member of multiple organizations. Select one to continue.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {organizations.map(org => (
@@ -300,10 +300,10 @@ function MultiOrgDashboard({ organizations }: { organizations: { id: string; nam
           >
             <CardHeader>
               <CardTitle>{org.name}</CardTitle>
-              <CardDescription>Rola: {org.role}</CardDescription>
+              <CardDescription>Role: {org.role}</CardDescription>
             </CardHeader>
             <CardContent className="flex items-center justify-between text-muted-foreground">
-              <span>Przejdź do organizacji</span>
+              <span>Go to organization</span>
               <ArrowRight className="h-4 w-4" />
             </CardContent>
           </Card>
@@ -319,18 +319,18 @@ function NoOrgDashboard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Witaj w VibePlanner!</CardTitle>
+        <CardTitle>Welcome to VibePlanner!</CardTitle>
         <CardDescription>
-          Wygląda na to, że nie należysz do żadnej organizacji.
+          It looks like you don't belong to any organization.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <p className="mb-4">
-          Aby rozpocząć, utwórz nową organizację dla swojego zespołu.
+          To get started, create a new organization for your team.
         </p>
         <Button onClick={() => createOrganization ? createOrganization({name: "My Organization"}) : null}>
           <Plus className="mr-2 h-4 w-4" />
-          Utwórz organizację
+          Create Organization
         </Button>
       </CardContent>
     </Card>

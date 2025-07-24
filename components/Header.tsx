@@ -21,7 +21,7 @@ export function Header() {
         <div className="flex flex-col">
           <h1 className="text-xl font-bold">VibePlanner</h1>
           <Badge variant="secondary" className="w-fit">
-            Architektoniczny Project Manager
+            Architectural Project Manager
           </Badge>
         </div>
       </Link>
@@ -37,10 +37,10 @@ export function Header() {
         <SignedOut>
           <div className="flex gap-2">
             <SignInButton mode="modal">
-              <Button variant="default">Zaloguj się</Button>
+              <Button variant="default">Log In</Button>
             </SignInButton>
             <SignUpButton mode="modal">
-              <Button variant="outline">Zarejestruj się</Button>
+              <Button variant="outline">Sign Up</Button>
             </SignUpButton>
           </div>
         </SignedOut>

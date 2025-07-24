@@ -102,7 +102,7 @@ export function ChatLayout({ teamId, projectId, type }: ChatLayoutProps) {
     <div className="flex h-full">
       {/* Desktop Sidebar */}
       {!isChatSidebarCollapsed && (
-        <div className="w-80 border-r">
+        <div className="w-64 border-r">
           <ChannelSidebar
             channels={channels || []}
             selectedChannelId={selectedChannelId}

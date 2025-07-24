@@ -1,484 +1,214 @@
 "use client";
 
-import { useState } from "react";
-import { useOrganization } from "@clerk/nextjs";
+import { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
+import { OrganizationProfile } from "@clerk/nextjs";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { toast } from "sonner";
 
-import { Settings, Users, Save, Trash2, AlertTriangle, CreditCard } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Save } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function CompanySettings() {
-  const { organization, isLoaded } = useOrganization();
+  const params = useParams<{ slug: string }>();
   
-  const [companySettings, setCompanySettings] = useState({
-    name: organization?.name || "",
-    description: "",
-    website: "",
-    industry: "architecture",
-    size: "small",
-    timezone: "Europe/Warsaw",
-    currency: "USD",
+  // Loading actual data from backend
+  const teamData = useQuery(api.teams.getTeamSettings, 
+    params.slug ? { teamSlug: params.slug } : "skip"
+  );
+  
+  const updateTeamSettings = useMutation(api.teams.updateTeamSettings);
+  
+  // Local state for team settings
+  const [teamSettings, setTeamSettings] = useState<{
+    currency: "USD" | "EUR" | "PLN" | "GBP" | "CAD" | "AUD" | "JPY" | "CHF" | "SEK" | "NOK" | "DKK" | "CZK" | "HUF" | "CNY" | "INR" | "BRL" | "MXN" | "KRW" | "SGD" | "HKD";
+    isPublic: boolean;
+    allowGuestAccess: boolean;
+  }>({
+    currency: "PLN",
+    isPublic: false,
+    allowGuestAccess: false,
   });
 
-  const [notificationSettings, setNotificationSettings] = useState({
-    emailNotifications: true,
-    projectUpdates: true,
-    taskDeadlines: true,
-    teamInvitations: true,
-    weeklyReports: false,
-    monthlyReports: true,
-    taskAssignments: true,
-    projectComments: false,
-  });
+  // Synchronize data from backend
+  useEffect(() => {
+    if (teamData) {
+      setTeamSettings({
+        currency: (teamData.currency as "USD" | "EUR" | "PLN" | "GBP" | "CAD" | "AUD" | "JPY" | "CHF" | "SEK" | "NOK" | "DKK" | "CZK" | "HUF" | "CNY" | "INR" | "BRL" | "MXN" | "KRW" | "SGD" | "HKD") || "PLN",
+        isPublic: teamData.settings.isPublic,
+        allowGuestAccess: teamData.settings.allowGuestAccess,
+      });
+    }
+  }, [teamData]);
 
-  const [privacySettings, setPrivacySettings] = useState({
-    publicProfile: false,
-    allowDiscovery: false,
-    shareAnalytics: true,
-  });
-
-  if (!isLoaded || !organization) {
+  if (!teamData) {
     return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
   }
 
-  const handleSaveCompanySettings = () => {
-    // TODO: Implement save functionality with Convex
-    console.log("Saving company settings:", companySettings);
-  };
-
-  const handleSaveNotificationSettings = () => {
-    // TODO: Implement save functionality
-    console.log("Saving notification settings:", notificationSettings);
-  };
-
-  const handleSavePrivacySettings = () => {
-    // TODO: Implement save functionality
-    console.log("Saving privacy settings:", privacySettings);
+  const handleSaveTeamSettings = async () => {
+    try {
+      await updateTeamSettings({
+        teamId: teamData.teamId,
+        currency: teamSettings.currency,
+        settings: {
+          isPublic: teamSettings.isPublic,
+          allowGuestAccess: teamSettings.allowGuestAccess,
+        },
+      });
+      toast.success("Team settings updated successfully");
+    } catch (error) {
+      toast.error("Failed to update team settings");
+      console.error(error);
+    }
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      {/* Header */}
-      <div className="flex flex-col gap-4 p-6 border-b">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Company Settings</h1>
-            <p className="text-muted-foreground mt-1">
-              Manage your organization settings and preferences
-            </p>
-          </div>
-        </div>
+    <div className="space-y-6 p-6">
+      <div>
+        <h1 className="text-2xl font-bold">Company Settings</h1>
+        <p className="text-muted-foreground">Manage your organization and team settings.</p>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 p-6">
-        <Tabs defaultValue="general" className="w-full">
-          <TabsList>
-            <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="notifications">Notifications</TabsTrigger>
-            <TabsTrigger value="privacy">Privacy</TabsTrigger>
-            <TabsTrigger value="billing">Billing</TabsTrigger>
-            <TabsTrigger value="danger">Danger Zone</TabsTrigger>
-          </TabsList>
+      <Tabs defaultValue="organization" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="organization">Organization</TabsTrigger>
+          <TabsTrigger value="team">Team Settings</TabsTrigger>
+        </TabsList>
 
-          <TabsContent value="general" className="mt-6">
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Company Information</CardTitle>
-                  <CardDescription>
-                    Update your company details and basic information
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="companyName">Company Name</Label>
-                      <Input
-                        id="companyName"
-                        value={companySettings.name}
-                        onChange={(e) => setCompanySettings({ ...companySettings, name: e.target.value })}
-                      />
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="website">Website</Label>
-                      <Input
-                        id="website"
-                        type="url"
-                        placeholder="https://example.com"
-                        value={companySettings.website}
-                        onChange={(e) => setCompanySettings({ ...companySettings, website: e.target.value })}
-                      />
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="industry">Industry</Label>
-                      <Select 
-                        value={companySettings.industry} 
-                        onValueChange={(value) => setCompanySettings({ ...companySettings, industry: value })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="architecture">Architecture</SelectItem>
-                          <SelectItem value="construction">Construction</SelectItem>
-                          <SelectItem value="engineering">Engineering</SelectItem>
-                          <SelectItem value="technology">Technology</SelectItem>
-                          <SelectItem value="finance">Finance</SelectItem>
-                          <SelectItem value="healthcare">Healthcare</SelectItem>
-                          <SelectItem value="education">Education</SelectItem>
-                          <SelectItem value="retail">Retail</SelectItem>
-                          <SelectItem value="other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="companySize">Company Size</Label>
-                      <Select 
-                        value={companySettings.size} 
-                        onValueChange={(value) => setCompanySettings({ ...companySettings, size: value })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="small">1-10 employees</SelectItem>
-                          <SelectItem value="medium">11-50 employees</SelectItem>
-                          <SelectItem value="large">51-200 employees</SelectItem>
-                          <SelectItem value="enterprise">200+ employees</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="description">Description</Label>
-                    <Textarea
-                      id="description"
-                      placeholder="Tell us about your company..."
-                      value={companySettings.description}
-                      onChange={(e) => setCompanySettings({ ...companySettings, description: e.target.value })}
-                      rows={3}
-                    />
-                  </div>
-                  
-                  <Separator />
-                  
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="timezone">Timezone</Label>
-                      <Select 
-                        value={companySettings.timezone} 
-                        onValueChange={(value) => setCompanySettings({ ...companySettings, timezone: value })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="UTC">UTC</SelectItem>
-                          <SelectItem value="Europe/Warsaw">Warsaw (CET)</SelectItem>
-                          <SelectItem value="Europe/London">London (GMT)</SelectItem>
-                          <SelectItem value="Europe/Paris">Paris (CET)</SelectItem>
-                          <SelectItem value="America/New_York">Eastern Time</SelectItem>
-                          <SelectItem value="America/Chicago">Central Time</SelectItem>
-                          <SelectItem value="America/Denver">Mountain Time</SelectItem>
-                          <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="currency">Currency</Label>
-                      <Select 
-                        value={companySettings.currency} 
-                        onValueChange={(value) => setCompanySettings({ ...companySettings, currency: value })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="USD">USD ($)</SelectItem>
-                          <SelectItem value="EUR">EUR (€)</SelectItem>
-                          <SelectItem value="PLN">PLN (zł)</SelectItem>
-                          <SelectItem value="GBP">GBP (£)</SelectItem>
-                          <SelectItem value="CAD">CAD (C$)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  
-                  <div className="flex justify-end">
-                    <Button onClick={handleSaveCompanySettings}>
-                      <Save className="mr-2 h-4 w-4" />
-                      Save Changes
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
+        <TabsContent value="organization" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Organization Management</CardTitle>
+              <CardDescription>
+                Manage organization details, members, and billing through Clerk.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <OrganizationProfile 
+                routing="hash"
+                appearance={{
+                  elements: {
+                    rootBox: "w-full",
+                    card: "shadow-none border-none",
+                  }
+                }}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-          <TabsContent value="notifications" className="mt-6">
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Email Notifications</CardTitle>
-                  <CardDescription>
-                    Configure when you want to receive email notifications
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium">Email Notifications</div>
-                        <div className="text-sm text-muted-foreground">Receive email notifications for important updates</div>
-                      </div>
-                      <Switch
-                        checked={notificationSettings.emailNotifications}
-                        onCheckedChange={(checked) => setNotificationSettings({ ...notificationSettings, emailNotifications: checked })}
-                      />
-                    </div>
-                    
-                    <Separator />
-                    
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium">Project Updates</div>
-                        <div className="text-sm text-muted-foreground">Get notified when projects are updated</div>
-                      </div>
-                      <Switch
-                        checked={notificationSettings.projectUpdates}
-                        onCheckedChange={(checked) => setNotificationSettings({ ...notificationSettings, projectUpdates: checked })}
-                        disabled={!notificationSettings.emailNotifications}
-                      />
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium">Task Deadlines</div>
-                        <div className="text-sm text-muted-foreground">Alerts for upcoming task deadlines</div>
-                      </div>
-                      <Switch
-                        checked={notificationSettings.taskDeadlines}
-                        onCheckedChange={(checked) => setNotificationSettings({ ...notificationSettings, taskDeadlines: checked })}
-                        disabled={!notificationSettings.emailNotifications}
-                      />
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium">Task Assignments</div>
-                        <div className="text-sm text-muted-foreground">When tasks are assigned to you</div>
-                      </div>
-                      <Switch
-                        checked={notificationSettings.taskAssignments}
-                        onCheckedChange={(checked) => setNotificationSettings({ ...notificationSettings, taskAssignments: checked })}
-                        disabled={!notificationSettings.emailNotifications}
-                      />
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium">Team Invitations</div>
-                        <div className="text-sm text-muted-foreground">When someone joins or leaves the team</div>
-                      </div>
-                      <Switch
-                        checked={notificationSettings.teamInvitations}
-                        onCheckedChange={(checked) => setNotificationSettings({ ...notificationSettings, teamInvitations: checked })}
-                        disabled={!notificationSettings.emailNotifications}
-                      />
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium">Project Comments</div>
-                        <div className="text-sm text-muted-foreground">When someone comments on projects</div>
-                      </div>
-                      <Switch
-                        checked={notificationSettings.projectComments}
-                        onCheckedChange={(checked) => setNotificationSettings({ ...notificationSettings, projectComments: checked })}
-                        disabled={!notificationSettings.emailNotifications}
-                      />
-                    </div>
-                    
-                    <Separator />
-                    
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium">Weekly Reports</div>
-                        <div className="text-sm text-muted-foreground">Weekly summary of project progress</div>
-                      </div>
-                      <Switch
-                        checked={notificationSettings.weeklyReports}
-                        onCheckedChange={(checked) => setNotificationSettings({ ...notificationSettings, weeklyReports: checked })}
-                        disabled={!notificationSettings.emailNotifications}
-                      />
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium">Monthly Reports</div>
-                        <div className="text-sm text-muted-foreground">Monthly analytics and insights</div>
-                      </div>
-                      <Switch
-                        checked={notificationSettings.monthlyReports}
-                        onCheckedChange={(checked) => setNotificationSettings({ ...notificationSettings, monthlyReports: checked })}
-                        disabled={!notificationSettings.emailNotifications}
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="flex justify-end">
-                    <Button onClick={handleSaveNotificationSettings}>
-                      <Save className="mr-2 h-4 w-4" />
-                      Save Preferences
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
+        <TabsContent value="team" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Project Settings</CardTitle>
+              <CardDescription>Configure defaults for new projects and team visibility.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="currency">Default Currency</Label>
+                <Select 
+                  value={teamSettings.currency} 
+                  onValueChange={(value) => setTeamSettings({ ...teamSettings, currency: value as "USD" | "EUR" | "PLN" | "GBP" | "CAD" | "AUD" | "JPY" | "CHF" | "SEK" | "NOK" | "DKK" | "CZK" | "HUF" | "CNY" | "INR" | "BRL" | "MXN" | "KRW" | "SGD" | "HKD" })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select currency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="USD">USD ($)</SelectItem>
+                    <SelectItem value="EUR">EUR (€)</SelectItem>
+                    <SelectItem value="PLN">PLN (zł)</SelectItem>
+                    <SelectItem value="GBP">GBP (£)</SelectItem>
+                    <SelectItem value="CAD">CAD (C$)</SelectItem>
+                    <SelectItem value="AUD">AUD (A$)</SelectItem>
+                    <SelectItem value="JPY">JPY (¥)</SelectItem>
+                    <SelectItem value="CHF">CHF</SelectItem>
+                    <SelectItem value="SEK">SEK</SelectItem>
+                    <SelectItem value="NOK">NOK</SelectItem>
+                    <SelectItem value="DKK">DKK</SelectItem>
+                    <SelectItem value="CZK">CZK</SelectItem>
+                    <SelectItem value="HUF">HUF</SelectItem>
+                    <SelectItem value="CNY">CNY (¥)</SelectItem>
+                    <SelectItem value="INR">INR (₹)</SelectItem>
+                    <SelectItem value="BRL">BRL (R$)</SelectItem>
+                    <SelectItem value="MXN">MXN ($)</SelectItem>
+                    <SelectItem value="KRW">KRW (₩)</SelectItem>
+                    <SelectItem value="SGD">SGD (S$)</SelectItem>
+                    <SelectItem value="HKD">HKD (HK$)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground">Default currency for new projects</p>
+              </div>
+            </CardContent>
+          </Card>
 
-          <TabsContent value="privacy" className="mt-6">
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Privacy Settings</CardTitle>
-                  <CardDescription>
-                    Control your company's privacy and visibility settings
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium">Public Profile</div>
-                        <div className="text-sm text-muted-foreground">Make your company profile visible to everyone</div>
-                      </div>
-                      <Switch
-                        checked={privacySettings.publicProfile}
-                        onCheckedChange={(checked) => setPrivacySettings({ ...privacySettings, publicProfile: checked })}
-                      />
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium">Allow Discovery</div>
-                        <div className="text-sm text-muted-foreground">Let others find your company in search results</div>
-                      </div>
-                      <Switch
-                        checked={privacySettings.allowDiscovery}
-                        onCheckedChange={(checked) => setPrivacySettings({ ...privacySettings, allowDiscovery: checked })}
-                      />
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium">Share Analytics</div>
-                        <div className="text-sm text-muted-foreground">Help improve our service by sharing anonymous usage data</div>
-                      </div>
-                      <Switch
-                        checked={privacySettings.shareAnalytics}
-                        onCheckedChange={(checked) => setPrivacySettings({ ...privacySettings, shareAnalytics: checked })}
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="flex justify-end">
-                    <Button onClick={handleSavePrivacySettings}>
-                      <Save className="mr-2 h-4 w-4" />
-                      Save Settings
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
+          <Card>
+            <CardHeader>
+              <CardTitle>Team Visibility</CardTitle>
+              <CardDescription>Control who can see and access your team.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Public Team</Label>
+                  <p className="text-sm text-muted-foreground">Make this team discoverable by others</p>
+                </div>
+                <Switch 
+                  checked={teamSettings.isPublic}
+                  onCheckedChange={(checked) => setTeamSettings({ ...teamSettings, isPublic: checked })}
+                />
+              </div>
 
-          <TabsContent value="billing" className="mt-6">
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Billing & Subscription</CardTitle>
-                  <CardDescription>
-                    Manage your subscription and billing information
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center py-8">
-                    <CreditCard className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold mb-2">Billing integration coming soon</h3>
-                    <p className="text-muted-foreground mb-4">
-                      Subscription management will be available in the next update.
-                    </p>
-                    <Button variant="outline" disabled>
-                      <Settings className="mr-2 h-4 w-4" />
-                      Configure Billing
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Allow Guest Access</Label>
+                  <p className="text-sm text-muted-foreground">Allow non-members to view public content</p>
+                </div>
+                <Switch 
+                  checked={teamSettings.allowGuestAccess}
+                  onCheckedChange={(checked) => setTeamSettings({ ...teamSettings, allowGuestAccess: checked })}
+                />
+              </div>
+            </CardContent>
+          </Card>
 
-          <TabsContent value="danger" className="mt-6">
-            <div className="space-y-6">
-              <Card className="border-destructive">
-                <CardHeader>
-                  <CardTitle className="text-destructive">Danger Zone</CardTitle>
-                  <CardDescription>
-                    Irreversible and destructive actions for your organization
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="p-4 border border-destructive/50 rounded-lg">
-                    <div className="flex items-start gap-4">
-                      <AlertTriangle className="h-5 w-5 text-destructive mt-0.5" />
-                      <div className="flex-1">
-                        <h4 className="font-medium">Delete Organization</h4>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          This will permanently delete your organization, all projects, tasks, and data. This action cannot be undone.
-                        </p>
-                        <Button variant="destructive" className="mt-3">
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Delete Organization
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="p-4 border border-destructive/50 rounded-lg">
-                    <div className="flex items-start gap-4">
-                      <AlertTriangle className="h-5 w-5 text-destructive mt-0.5" />
-                      <div className="flex-1">
-                        <h4 className="font-medium">Transfer Ownership</h4>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          Transfer ownership of this organization to another team member. You will lose admin access.
-                        </p>
-                        <Button variant="outline" className="mt-3">
-                          <Users className="mr-2 h-4 w-4" />
-                          Transfer Ownership
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-        </Tabs>
-      </div>
+          <Button onClick={handleSaveTeamSettings} className="w-full">
+            <Save className="mr-2 h-4 w-4" />
+            Save Team Settings
+          </Button>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Role Permissions Overview</CardTitle>
+              <CardDescription>Current role permissions in your team.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                <div className="border-l-4 border-blue-500 pl-4">
+                  <h4 className="font-medium text-blue-700">Admin</h4>
+                  <p className="text-sm text-muted-foreground">Full access to all team settings, projects, and members</p>
+                </div>
+                <div className="border-l-4 border-green-500 pl-4">
+                  <h4 className="font-medium text-green-700">Member</h4>
+                  <p className="text-sm text-muted-foreground">Can create and manage projects, view team content</p>
+                </div>
+                <div className="border-l-4 border-orange-500 pl-4">
+                  <h4 className="font-medium text-orange-700">Customer</h4>
+                  <p className="text-sm text-muted-foreground">Limited access based on project-specific permissions</p>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground mt-4">
+                Detailed customer permissions are configured per-project in project settings.
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

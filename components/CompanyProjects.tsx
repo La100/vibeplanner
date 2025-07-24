@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
+
 export default function CompanyProjects() {
   const router = useRouter();
   const params = useParams<{ slug: string }>();
@@ -37,6 +38,12 @@ export default function CompanyProjects() {
   );
   
   const createProject = useMutation(api.projects.createProjectInOrg);
+  const checkLimits = useQuery(api.stripe.checkTeamLimits, 
+    team?._id ? { 
+      teamId: team._id, 
+      action: "create_project" 
+    } : "skip"
+  );
   
   const [newProject, setNewProject] = useState({
     name: "",
@@ -52,13 +59,23 @@ export default function CompanyProjects() {
     e.preventDefault();
     if (!newProject.name || !organization?.id || !team?._id) return;
 
+    // Check subscription limits first
+    if (checkLimits && !checkLimits.allowed) {
+      if (checkLimits.reason === "project_limit_reached") {
+        alert(`You've reached the maximum number of projects (${checkLimits.limit}) for your current plan. Please upgrade to continue.`);
+      } else {
+        alert(checkLimits.message || "Unable to create project due to subscription limits.");
+      }
+      return;
+    }
+
     try {
       const { slug: newProjectSlug } = await createProject({
         name: newProject.name,
         description: newProject.description || undefined,
         clerkOrgId: organization.id,
         teamId: team._id,
-        client: newProject.client || undefined,
+        customer: newProject.client || undefined,
         location: newProject.location || undefined,
         budget: newProject.budget ? parseFloat(newProject.budget) : undefined,
         startDate: newProject.startDate ? new Date(newProject.startDate).getTime() : undefined,

@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalQuery } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 
 // ====== SURVEY MANAGEMENT ======
@@ -14,11 +14,11 @@ export const createSurvey = mutation({
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
     targetAudience: v.union(
-      v.literal("all_clients"),
-      v.literal("specific_clients"),
+      v.literal("all_customers"),
+      v.literal("specific_customers"),
       v.literal("team_members")
     ),
-    targetClientIds: v.optional(v.array(v.string())),
+    targetCustomerIds: v.optional(v.array(v.string())),
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -49,13 +49,13 @@ export const createSurvey = mutation({
       teamId: project.teamId,
       projectId: args.projectId,
       createdBy: identity.subject,
-      status: "draft",
+      status: "active",
       isRequired: args.isRequired,
       allowMultipleResponses: args.allowMultipleResponses,
       startDate: args.startDate,
       endDate: args.endDate,
       targetAudience: args.targetAudience,
-      targetClientIds: args.targetClientIds,
+      targetCustomerIds: args.targetCustomerIds,
     });
 
     return surveyId;
@@ -92,18 +92,35 @@ export const getSurveysByProject = query({
       .withIndex("by_project", q => q.eq("projectId", args.projectId))
       .collect();
 
-    // For clients, only show surveys they're targeted for
-    if (teamMember.role === "client") {
+    // For customers, only show surveys they're targeted for
+    if (teamMember.role === "customer") {
       return surveys.filter(survey => {
-        if (survey.targetAudience === "all_clients") return true;
-        if (survey.targetAudience === "specific_clients") {
-          return survey.targetClientIds?.includes(identity.subject);
+        if (survey.targetAudience === "all_customers") return true;
+        if (survey.targetAudience === "specific_customers") {
+          return survey.targetCustomerIds?.includes(identity.subject);
         }
         return false;
       });
     }
 
     return surveys;
+  },
+});
+
+export const getSurveysChangedAfter = internalQuery({
+  args: { 
+    projectId: v.id("projects"), 
+    since: v.number() 
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("surveys")
+      .withIndex("by_project", q => q.eq("projectId", args.projectId))
+      .filter(q => q.or(
+        q.gt(q.field("_creationTime"), args.since),
+        q.gt(q.field("updatedAt"), args.since)
+      ))
+      .collect();
   },
 });
 
@@ -132,11 +149,11 @@ export const getSurvey = query({
       return null;
     }
 
-    // For clients, check if they're targeted
-    if (teamMember.role === "client") {
-      const isTargeted = survey.targetAudience === "all_clients" ||
-        (survey.targetAudience === "specific_clients" && 
-         survey.targetClientIds?.includes(identity.subject));
+    // For customers, check if they're targeted
+    if (teamMember.role === "customer") {
+      const isTargeted = survey.targetAudience === "all_customers" ||
+        (survey.targetAudience === "specific_customers" && 
+         survey.targetCustomerIds?.includes(identity.subject));
       
       if (!isTargeted) {
         return null;
@@ -162,21 +179,16 @@ export const updateSurvey = mutation({
     surveyId: v.id("surveys"),
     title: v.optional(v.string()),
     description: v.optional(v.string()),
-    status: v.optional(v.union(
-      v.literal("draft"),
-      v.literal("active"),
-      v.literal("closed")
-    )),
     isRequired: v.optional(v.boolean()),
     allowMultipleResponses: v.optional(v.boolean()),
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
     targetAudience: v.optional(v.union(
-      v.literal("all_clients"),
-      v.literal("specific_clients"),
+      v.literal("all_customers"),
+      v.literal("specific_customers"),
       v.literal("team_members")
     )),
-    targetClientIds: v.optional(v.array(v.string())),
+    targetCustomerIds: v.optional(v.array(v.string())),
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -202,7 +214,7 @@ export const updateSurvey = mutation({
     }
 
     const { surveyId, ...updates } = args;
-    await ctx.db.patch(surveyId, updates);
+    await ctx.db.patch(surveyId, { ...updates, updatedAt: Date.now() });
 
     return { success: true };
   },
@@ -272,16 +284,10 @@ export const addQuestion = mutation({
       v.literal("single_choice"),
       v.literal("rating"),
       v.literal("yes_no"),
-      v.literal("number")
+      v.literal("number"),
+      v.literal("file")
     ),
-    options: v.optional(v.array(v.string())),
     isRequired: v.boolean(),
-    ratingScale: v.optional(v.object({
-      min: v.number(),
-      max: v.number(),
-      minLabel: v.optional(v.string()),
-      maxLabel: v.optional(v.string())
-    })),
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -318,10 +324,8 @@ export const addQuestion = mutation({
       surveyId: args.surveyId,
       questionText: args.questionText,
       questionType: args.questionType,
-      options: args.options,
       isRequired: args.isRequired,
       order: maxOrder + 1,
-      ratingScale: args.ratingScale,
     });
 
     return questionId;
@@ -339,16 +343,10 @@ export const updateQuestion = mutation({
       v.literal("single_choice"),
       v.literal("rating"),
       v.literal("yes_no"),
-      v.literal("number")
+      v.literal("number"),
+      v.literal("file")
     )),
-    options: v.optional(v.array(v.string())),
     isRequired: v.optional(v.boolean()),
-    ratingScale: v.optional(v.object({
-      min: v.number(),
-      max: v.number(),
-      minLabel: v.optional(v.string()),
-      maxLabel: v.optional(v.string())
-    })),
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -455,10 +453,6 @@ export const startSurveyResponse = mutation({
       throw new Error("No access to this survey");
     }
 
-    // Check if survey is active
-    if (survey.status !== "active") {
-      throw new Error("Survey is not active");
-    }
 
     // Check if already responded and multiple responses not allowed
     if (!survey.allowMultipleResponses) {
@@ -508,13 +502,20 @@ export const saveAnswer = mutation({
       v.literal("choice"),
       v.literal("rating"),
       v.literal("number"),
-      v.literal("boolean")
+      v.literal("boolean"),
+      v.literal("file")
     ),
     textAnswer: v.optional(v.string()),
     choiceAnswers: v.optional(v.array(v.string())),
     ratingAnswer: v.optional(v.number()),
     numberAnswer: v.optional(v.number()),
     booleanAnswer: v.optional(v.boolean()),
+    fileAnswer: v.optional(v.object({
+      fileId: v.id("files"),
+      fileName: v.string(),
+      fileSize: v.number(),
+      fileType: v.string()
+    })),
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -604,7 +605,7 @@ export const getSurveyResponses = query({
       return [];
     }
 
-    // Check permissions - only admin and members can view responses
+    // Check permissions
     const teamMember = await ctx.db
       .query("teamMembers")
       .withIndex("by_team_and_user", q => 
@@ -612,7 +613,7 @@ export const getSurveyResponses = query({
       )
       .unique();
 
-    if (!teamMember || (teamMember.role !== "admin" && teamMember.role !== "member")) {
+    if (!teamMember) {
       return [];
     }
 
@@ -622,8 +623,13 @@ export const getSurveyResponses = query({
       .filter(q => q.eq(q.field("isComplete"), true))
       .collect();
 
+    // If user is customer, only show their own responses
+    const filteredResponses = (teamMember.role === "admin" || teamMember.role === "member") 
+      ? responses 
+      : responses.filter(r => r.respondentId === identity.subject);
+
     const responsesWithAnswers = await Promise.all(
-      responses.map(async (response) => {
+      filteredResponses.map(async (response) => {
         const answers = await ctx.db
           .query("surveyAnswers")
           .withIndex("by_response", q => q.eq("responseId", response._id))
@@ -637,6 +643,24 @@ export const getSurveyResponses = query({
     );
 
     return responsesWithAnswers;
+  },
+});
+
+export const getUserSurveyResponses = query({
+  args: { projectId: v.id("projects") },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return [];
+    }
+
+    const responses = await ctx.db
+      .query("surveyResponses")
+      .withIndex("by_project", q => q.eq("projectId", args.projectId))
+      .filter(q => q.eq(q.field("respondentId"), identity.subject))
+      .collect();
+
+    return responses;
   },
 });
 
@@ -669,5 +693,220 @@ export const getUserSurveyResponse = query({
       ...response,
       answers,
     };
+  },
+});
+
+// ====== INTERNAL FUNCTIONS FOR AI INDEXING ======
+
+export const getSurveysForIndexing = internalQuery({
+  args: { projectId: v.id("projects") },
+  returns: v.array(v.object({
+    _id: v.id("surveys"),
+    _creationTime: v.number(),
+    title: v.string(),
+    description: v.optional(v.string()),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("active"),
+      v.literal("closed")
+    ),
+    targetAudience: v.union(
+      v.literal("all_customers"),
+      v.literal("specific_customers"),
+      v.literal("team_members")
+    ),
+    isRequired: v.boolean(),
+    allowMultipleResponses: v.boolean(),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+  })),
+  handler: async (ctx, args) => {
+    const surveys = await ctx.db
+      .query("surveys")
+      .withIndex("by_project", q => q.eq("projectId", args.projectId))
+      .collect();
+
+    return surveys.map(survey => ({
+      _id: survey._id,
+      _creationTime: survey._creationTime,
+      title: survey.title,
+      description: survey.description,
+      status: survey.status,
+      targetAudience: survey.targetAudience,
+      isRequired: survey.isRequired,
+      allowMultipleResponses: survey.allowMultipleResponses,
+      startDate: survey.startDate,
+      endDate: survey.endDate,
+    }));
+  },
+});
+
+// ====== ADDITIONAL FUNCTIONS FOR SEEDING ======
+
+export const createSurveyQuestion = mutation({
+  args: {
+    surveyId: v.id("surveys"),
+    questionText: v.string(),
+    questionType: v.union(
+      v.literal("text_short"),
+      v.literal("text_long"),
+      v.literal("multiple_choice"),
+      v.literal("single_choice"),
+      v.literal("rating"),
+      v.literal("yes_no"),
+      v.literal("number"),
+      v.literal("file")
+    ),
+    isRequired: v.boolean(),
+    order: v.number(),
+    options: v.optional(v.array(v.string())),
+    ratingScale: v.optional(v.object({
+      min: v.number(),
+      max: v.number(),
+      minLabel: v.optional(v.string()),
+      maxLabel: v.optional(v.string())
+    })),
+  },
+  async handler(ctx, args) {
+    const questionId = await ctx.db.insert("surveyQuestions", {
+      surveyId: args.surveyId,
+      questionText: args.questionText,
+      questionType: args.questionType,
+      isRequired: args.isRequired,
+      order: args.order,
+      options: args.options,
+      ratingScale: args.ratingScale,
+    });
+
+    return questionId;
+  },
+});
+
+export const createSurveyResponse = mutation({
+  args: {
+    surveyId: v.id("surveys"),
+    projectId: v.id("projects"),
+    isComplete: v.boolean(),
+    submittedAt: v.optional(v.number()),
+  },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const project = await ctx.db.get(args.projectId);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    const responseId = await ctx.db.insert("surveyResponses", {
+      surveyId: args.surveyId,
+      respondentId: identity.subject,
+      teamId: project.teamId,
+      projectId: args.projectId,
+      isComplete: args.isComplete,
+      submittedAt: args.submittedAt,
+    });
+
+    return responseId;
+  },
+});
+
+export const createSurveyAnswer = mutation({
+  args: {
+    responseId: v.id("surveyResponses"),
+    questionId: v.id("surveyQuestions"),
+    surveyId: v.id("surveys"),
+    answerType: v.union(
+      v.literal("text"),
+      v.literal("choice"),
+      v.literal("rating"),
+      v.literal("number"),
+      v.literal("boolean"),
+      v.literal("file")
+    ),
+    textAnswer: v.optional(v.string()),
+    choiceAnswers: v.optional(v.array(v.string())),
+    ratingAnswer: v.optional(v.number()),
+    numberAnswer: v.optional(v.number()),
+    booleanAnswer: v.optional(v.boolean()),
+    fileAnswer: v.optional(v.object({
+      fileId: v.id("files"),
+      fileName: v.string(),
+      fileSize: v.number(),
+      fileType: v.string()
+    })),
+  },
+  async handler(ctx, args) {
+    const answerId = await ctx.db.insert("surveyAnswers", {
+      responseId: args.responseId,
+      questionId: args.questionId,
+      surveyId: args.surveyId,
+      answerType: args.answerType,
+      textAnswer: args.textAnswer,
+      choiceAnswers: args.choiceAnswers,
+      ratingAnswer: args.ratingAnswer,
+      numberAnswer: args.numberAnswer,
+      booleanAnswer: args.booleanAnswer,
+      fileAnswer: args.fileAnswer,
+    });
+
+    return answerId;
+  },
+});
+
+export const getSurveyResponsesForIndexing = internalQuery({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const surveys = await ctx.db
+      .query("surveys")
+      .withIndex("by_project", q => q.eq("projectId", args.projectId))
+      .collect();
+
+    const responses = [];
+    
+    for (const survey of surveys) {
+      const surveyResponses = await ctx.db
+        .query("surveyResponses")
+        .withIndex("by_survey", q => q.eq("surveyId", survey._id))
+        .filter(q => q.eq(q.field("isComplete"), true))
+        .collect();
+
+      for (const response of surveyResponses) {
+        const answers = await ctx.db
+          .query("surveyAnswers")
+          .withIndex("by_response", q => q.eq("responseId", response._id))
+          .collect();
+
+        const answersWithQuestions = [];
+        for (const answer of answers) {
+          const question = await ctx.db.get(answer.questionId);
+          if (question) {
+            answersWithQuestions.push({
+              ...answer,
+              questionText: question.questionText,
+            });
+          }
+        }
+
+        responses.push({
+          ...response,
+          surveyTitle: survey.title,
+          answers: answersWithQuestions,
+        });
+      }
+    }
+
+    return responses;
+  },
+});
+
+// ====== HELPER FUNCTIONS FOR INCREMENTAL INDEXING ======
+
+export const getSurveyById = internalQuery({
+  args: { surveyId: v.id("surveys") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.surveyId);
   },
 });

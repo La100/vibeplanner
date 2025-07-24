@@ -5,20 +5,20 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import { 
-  ArrowLeft, 
-  Plus, 
   Users, 
-  FolderOpen, 
+  FolderOpen,
+  ArrowLeft,
   Settings,
-  Calendar,
-  MapPin,
-  DollarSign,
-  Clock,
   Building2,
-  AlertCircle,
-  CheckCircle2,
+  Plus,
+  Play,
+  Clock,
   Pause,
-  Play
+  CheckCircle2,
+  AlertCircle,
+  MapPin,
+  Calendar,
+  DollarSign
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -99,7 +99,7 @@ export default function TeamManager({ team, onBack, onProjectClick }: TeamManage
         description: newProject.description || undefined,
         clerkOrgId: team.clerkOrgId,
         teamId: team._id,
-        client: newProject.client || undefined,
+        customer: newProject.client || undefined,
         location: newProject.location || undefined,
         budget: newProject.budget ? parseFloat(newProject.budget) : undefined,
         startDate: newProject.startDate ? new Date(newProject.startDate).getTime() : undefined,
@@ -129,7 +129,7 @@ export default function TeamManager({ team, onBack, onProjectClick }: TeamManage
           <div className="flex items-center gap-4">
             <Button variant="ghost" onClick={onBack}>
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Powrót
+              Back
             </Button>
             <div>
               <h1 className="text-2xl font-bold">{team.name}</h1>
@@ -143,11 +143,11 @@ export default function TeamManager({ team, onBack, onProjectClick }: TeamManage
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
               <Badge variant="secondary" className="flex items-center gap-1">
                 <Users className="h-3 w-3" />
-                {team.memberCount} członków
+                {team.memberCount} members
               </Badge>
               <Badge variant="secondary" className="flex items-center gap-1">
                 <FolderOpen className="h-3 w-3" />
-                {team.projectCount} projektów
+                {team.projectCount} projects
               </Badge>
             </div>
             <Button variant="ghost" size="icon">
@@ -163,15 +163,15 @@ export default function TeamManager({ team, onBack, onProjectClick }: TeamManage
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="projects" className="flex items-center gap-2">
               <FolderOpen className="h-4 w-4" />
-              Projekty
+              Projects
             </TabsTrigger>
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
-              Przegląd
+              Overview
             </TabsTrigger>
             <TabsTrigger value="members" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
-              Członkowie
+              Members
             </TabsTrigger>
           </TabsList>
 
@@ -237,27 +237,27 @@ function ProjectsTab({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Projekty zespołu</h2>
-          <p className="text-muted-foreground">Zarządzaj projektami architektonicznymi</p>
+          <h2 className="text-2xl font-bold tracking-tight">Team Projects</h2>
+          <p className="text-muted-foreground">Manage architectural projects</p>
         </div>
         
         <Button onClick={() => setShowNewProjectForm(true)}>
           <Plus className="mr-2 h-4 w-4" />
-          Nowy projekt
+          New Project
         </Button>
       </div>
 
       {showNewProjectForm && (
         <Card>
           <CardHeader>
-            <CardTitle>Nowy projekt</CardTitle>
-            <CardDescription>Utwórz nowy projekt architektoniczny dla zespołu</CardDescription>
+            <CardTitle>New Project</CardTitle>
+            <CardDescription>Create a new architectural project for the team</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleCreateProject} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="name">Nazwa projektu *</Label>
+                  <Label htmlFor="name">Project Name *</Label>
                   <Input
                     id="name"
                     value={newProject.name}
@@ -267,7 +267,7 @@ function ProjectsTab({
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="client">Klient</Label>
+                  <Label htmlFor="client">Client</Label>
                   <Input
                     id="client"
                     value={newProject.client}
@@ -276,7 +276,7 @@ function ProjectsTab({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="location">Lokalizacja</Label>
+                  <Label htmlFor="location">Location</Label>
                   <Input
                     id="location"
                     value={newProject.location}
@@ -285,7 +285,7 @@ function ProjectsTab({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="budget">Budżet (PLN)</Label>
+                  <Label htmlFor="budget">Budget (USD)</Label>
                   <Input
                     id="budget"
                     type="number"
@@ -295,7 +295,7 @@ function ProjectsTab({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="startDate">Data rozpoczęcia</Label>
+                  <Label htmlFor="startDate">Start Date</Label>
                   <Input
                     id="startDate"
                     type="date"
@@ -306,7 +306,7 @@ function ProjectsTab({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Opis</Label>
+                <Label htmlFor="description">Description</Label>
                 <Textarea
                   id="description"
                   value={newProject.description}
@@ -321,10 +321,10 @@ function ProjectsTab({
                   variant="outline"
                   onClick={() => setShowNewProjectForm(false)}
                 >
-                  Anuluj
+                  Cancel
                 </Button>
                 <Button type="submit">
-                  Utwórz projekt
+                  Create Project
                 </Button>
               </div>
             </form>
@@ -345,13 +345,13 @@ function ProjectsTab({
           <Card className="col-span-full">
             <CardContent className="flex flex-col items-center justify-center py-8">
               <FolderOpen className="h-16 w-16 text-muted-foreground mb-4" />
-              <CardTitle className="mb-2">Brak projektów w tym zespole</CardTitle>
+              <CardTitle className="mb-2">No projects in this team</CardTitle>
               <CardDescription className="text-center mb-4">
-                Utwórz pierwszy projekt, aby rozpocząć pracę.
+                Create your first project to get started.
               </CardDescription>
               <Button onClick={() => setShowNewProjectForm(true)}>
                 <Plus className="mr-2 h-4 w-4" />
-                Nowy projekt
+                New Project
               </Button>
             </CardContent>
           </Card>
@@ -421,8 +421,8 @@ function ProjectCard({ project, onClick }: { project: Project; onClick: () => vo
         {/* Progress */}
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Postęp</span>
-            <span className="font-medium">{project.completedTasks}/{project.taskCount} zadań</span>
+            <span className="text-muted-foreground">Progress</span>
+            <span className="font-medium">{project.completedTasks}/{project.taskCount} tasks</span>
           </div>
           <div className="w-full bg-secondary rounded-full h-2">
             <div 
@@ -435,12 +435,12 @@ function ProjectCard({ project, onClick }: { project: Project; onClick: () => vo
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <div className="flex items-center gap-1">
             <Calendar className="h-3 w-3" />
-            <span>Kliknij, aby otworzyć</span>
+            <span>Click to open</span>
           </div>
           {project.budget && (
             <div className="flex items-center gap-1">
               <DollarSign className="h-3 w-3" />
-              <span>{project.budget.toLocaleString("pl-PL")} PLN</span>
+              <span>{project.budget.toLocaleString("en-US")} USD</span>
             </div>
           )}
         </div>
@@ -456,7 +456,7 @@ function OverviewTab({ team, projects }: { team: Team; projects: Project[] }) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Przegląd zespołu</h2>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">Team Overview</h2>
       </div>
 
       {/* Stats */}
@@ -464,7 +464,7 @@ function OverviewTab({ team, projects }: { team: Team; projects: Project[] }) {
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Członkowie</p>
+              <p className="text-sm font-medium text-gray-600">Members</p>
               <p className="text-2xl font-bold text-gray-900">{team.memberCount}</p>
             </div>
             <Users className="h-8 w-8 text-blue-600" />
@@ -474,7 +474,7 @@ function OverviewTab({ team, projects }: { team: Team; projects: Project[] }) {
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Wszystkie projekty</p>
+              <p className="text-sm font-medium text-gray-600">All Projects</p>
               <p className="text-2xl font-bold text-gray-900">{projects.length}</p>
             </div>
             <FolderOpen className="h-8 w-8 text-green-600" />
@@ -484,7 +484,7 @@ function OverviewTab({ team, projects }: { team: Team; projects: Project[] }) {
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Aktywne projekty</p>
+              <p className="text-sm font-medium text-gray-600">Active Projects</p>
               <p className="text-2xl font-bold text-gray-900">{activeProjects}</p>
             </div>
             <Play className="h-8 w-8 text-blue-600" />
@@ -494,7 +494,7 @@ function OverviewTab({ team, projects }: { team: Team; projects: Project[] }) {
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Ukończone</p>
+              <p className="text-sm font-medium text-gray-600">Completed</p>
               <p className="text-2xl font-bold text-gray-900">{completedProjects}</p>
             </div>
             <CheckCircle2 className="h-8 w-8 text-green-600" />
@@ -504,14 +504,14 @@ function OverviewTab({ team, projects }: { team: Team; projects: Project[] }) {
 
       {/* Recent Projects */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Ostatnie projekty</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Projects</h3>
         {projects.length > 0 ? (
           <div className="space-y-3">
             {projects.slice(0, 5).map((project) => (
               <div key={project._id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <div>
                   <h4 className="font-medium text-gray-900">{project.name}</h4>
-                  <p className="text-sm text-gray-600">{project.client || "Brak klienta"}</p>
+                  <p className="text-sm text-gray-600">{project.client || "No client"}</p>
                 </div>
                 <div className="text-right">
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -526,7 +526,7 @@ function OverviewTab({ team, projects }: { team: Team; projects: Project[] }) {
             ))}
           </div>
         ) : (
-          <p className="text-gray-500">Brak projektów w tym zespole</p>
+          <p className="text-gray-500">No projects in this team</p>
         )}
       </div>
     </div>
@@ -541,18 +541,18 @@ function MembersTab() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">Członkowie zespołu</h2>
-          <p className="text-gray-600 mt-1">Zarządzaj dostępem i rolami</p>
+          <h2 className="text-xl font-semibold text-gray-900">Team Members</h2>
+          <p className="text-gray-600 mt-1">Manage access and roles</p>
         </div>
         
         <button className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
           <Plus className="h-4 w-4" />
-          Zaproś członka
+          Invite Member
         </button>
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <p className="text-gray-500">Zarządzanie członkami będzie dostępne wkrótce...</p>
+        <p className="text-gray-500">Member management will be available soon...</p>
       </div>
     </div>
   );

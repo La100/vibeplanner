@@ -8,6 +8,14 @@ import { query } from "./_generated/server";
  */
 export const getByClerkId = query({
   args: { clerkUserId: v.string() },
+  returns: v.union(v.object({
+    _id: v.id("users"),
+    _creationTime: v.number(),
+    clerkUserId: v.string(),
+    email: v.string(),
+    name: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+  }), v.null()),
   async handler(ctx, args) {
     const user = await ctx.db
       .query("users")

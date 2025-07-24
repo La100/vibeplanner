@@ -25,14 +25,14 @@ const formSchema = z.object({
   }),
 });
 
-interface InviteClientFormProps {
+interface InviteCustomerFormProps {
   projectId: Id<"projects">;
 }
 
-export function InviteClientForm({ projectId }: InviteClientFormProps) {
+export function InviteCustomerForm({ projectId }: InviteCustomerFormProps) {
   const { organization } = useOrganization();
   const project = useQuery(api.projects.getProject, { projectId });
-  const inviteClient = useMutation(api.teams.inviteClientToProject);
+  const inviteCustomer = useMutation(api.teams.inviteCustomerToProject);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -56,12 +56,12 @@ export function InviteClientForm({ projectId }: InviteClientFormProps) {
 
       if (existingMember) {
         // Użytkownik już jest w organizacji - po prostu dodaj do projektu
-        await inviteClient({
+        await inviteCustomer({
           email: values.email,
           projectId: projectId,
         });
 
-        toast.success("Client Added to Project", {
+        toast.success("Customer Added to Project", {
           description: `${values.email} has been given access to this project.`,
         });
       } else {
@@ -71,12 +71,12 @@ export function InviteClientForm({ projectId }: InviteClientFormProps) {
           role: "org:customer",
         });
 
-        await inviteClient({
+        await inviteCustomer({
           email: values.email,
           projectId: projectId,
         });
 
-        toast.success("Client Invited", {
+        toast.success("Customer Invited", {
           description: `${values.email} has been invited to the organization as a customer and will have access to this project once they join.`,
         });
       }
@@ -102,16 +102,16 @@ export function InviteClientForm({ projectId }: InviteClientFormProps) {
           name="email"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Client Email</FormLabel>
+              <FormLabel>Customer Email</FormLabel>
               <FormControl>
-                <Input placeholder="client@example.com" {...field} />
+                <Input placeholder="customer@example.com" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
         <p className="text-sm text-muted-foreground">
-          The client will be invited to join the organization as a customer and will have access only to the project "{project.name}".
+          The customer will be invited to join the organization and will have access only to the project "{project.name}".
         </p>
         <Button type="submit" disabled={form.formState.isSubmitting}>
           {form.formState.isSubmitting ? "Sending..." : "Send Organization Invitation"}

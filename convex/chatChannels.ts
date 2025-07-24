@@ -57,11 +57,29 @@ const hasProjectAccess = async (ctx: any, projectId: Id<"projects">): Promise<st
     return false;
   }
   
+  if (membership.role === 'admin') {
+    // Admin has access to all projects
+    return 'admin';
+  }
+  
+  if (membership.role === 'member') {
+    // Member may have limited access to specific projects
+    if (membership.projectIds && membership.projectIds.length > 0) {
+      return membership.projectIds.includes(projectId) ? 'member' : false;
+    }
+    // Member without projectIds has access to all projects (backward compatibility)
+    return 'member';
+  }
+  
+  if (membership.role === 'customer') {
+    return membership.projectIds?.includes(projectId) ? 'customer' : false;
+  }
+  
   if (membership.role === 'client') {
     return membership.projectIds?.includes(projectId) ? 'client' : false;
   }
 
-  return membership.role;
+  return false;
 };
 
 // ====== QUERIES ======
@@ -375,11 +393,11 @@ export const createProjectChannel = mutation({
 
       // Filter members who have access to this project
       const projectMembers = teamMembers.filter(member => {
-        if (member.role === 'client') {
-          // Clients only have access to specific projects
+        if (member.role === 'customer') {
+          // Customers only have access to specific projects
           return member.projectIds?.includes(args.projectId);
         }
-        // Admin, member, viewer have access to all projects
+        // Admin, member have access to all projects
         return true;
       });
 
@@ -541,8 +559,8 @@ export const createDefaultProjectChannel = internalMutation({
 
     // Filter members who have access to this project
     const projectMembers = teamMembers.filter(member => {
-      if (member.role === 'client') {
-        // Clients only have access to specific projects
+      if (member.role === 'customer') {
+        // Customers only have access to specific projects
         return member.projectIds?.includes(args.projectId);
       }
       // Admin, member, viewer have access to all projects
@@ -687,10 +705,10 @@ export const addUserToChannel = mutation({
         throw new Error("User is not a member of this team");
       }
       
-      // If user is client, check if they have access to this specific project
-      if (targetUserAccess.role === 'client') {
+      // If user is customer, check if they have access to this specific project
+      if (targetUserAccess.role === 'customer') {
         if (!targetUserAccess.projectIds?.includes(channel.projectId)) {
-          throw new Error("Client doesn't have access to this project");
+          throw new Error("Customer doesn't have access to this project");
         }
       }
     }
@@ -896,10 +914,10 @@ export const getAvailableUsersForChannel = query({
 
       // Filter to include only users with access to this project
       availableUsers = teamMembers.filter(member => {
-        if (member.role === 'client') {
+        if (member.role === 'customer') {
           return member.projectIds?.includes(channel.projectId!);
         }
-        return true; // admin, member, viewer have access to all projects
+        return true; // admin, member have access to all projects
       });
     } else {
       return [];

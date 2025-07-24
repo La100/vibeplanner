@@ -14,21 +14,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, ArrowLeft, Save } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { Plus, Trash2, ArrowLeft, Save, FileText, HelpCircle, GripVertical } from "lucide-react";
 import { toast } from "sonner";
 
 interface Question {
   id: string;
   questionText: string;
-  questionType: "text_short" | "text_long" | "multiple_choice" | "single_choice" | "rating" | "yes_no" | "number";
-  options?: string[];
+  questionType: "text_long" | "yes_no";
   isRequired: boolean;
-  ratingScale?: {
-    min: number;
-    max: number;
-    minLabel?: string;
-    maxLabel?: string;
-  };
 }
 
 interface SurveyFormProps {
@@ -40,9 +34,6 @@ export function SurveyForm({ projectSlug }: SurveyFormProps) {
   const { project, team } = useProject();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [isRequired, setIsRequired] = useState(false);
-  const [allowMultipleResponses, setAllowMultipleResponses] = useState(false);
-  const [targetAudience, setTargetAudience] = useState<"all_clients" | "specific_clients" | "team_members">("all_clients");
   const [questions, setQuestions] = useState<Question[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -53,7 +44,7 @@ export function SurveyForm({ projectSlug }: SurveyFormProps) {
     const newQuestion: Question = {
       id: Date.now().toString(),
       questionText: "",
-      questionType: "text_short",
+      questionType: "text_long",
       isRequired: true,
     };
     setQuestions([...questions, newQuestion]);
@@ -69,31 +60,6 @@ export function SurveyForm({ projectSlug }: SurveyFormProps) {
     setQuestions(questions.filter(q => q.id !== id));
   };
 
-  const addOption = (questionId: string) => {
-    const question = questions.find(q => q.id === questionId);
-    if (question) {
-      const newOptions = [...(question.options || []), ""];
-      updateQuestion(questionId, { options: newOptions });
-    }
-  };
-
-  const updateOption = (questionId: string, optionIndex: number, value: string) => {
-    const question = questions.find(q => q.id === questionId);
-    if (question && question.options) {
-      const newOptions = [...question.options];
-      newOptions[optionIndex] = value;
-      updateQuestion(questionId, { options: newOptions });
-    }
-  };
-
-  const removeOption = (questionId: string, optionIndex: number) => {
-    const question = questions.find(q => q.id === questionId);
-    if (question && question.options) {
-      const newOptions = question.options.filter((_, index) => index !== optionIndex);
-      updateQuestion(questionId, { options: newOptions });
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
@@ -105,9 +71,9 @@ export function SurveyForm({ projectSlug }: SurveyFormProps) {
         title: title.trim(),
         description: description.trim() || undefined,
         projectId: project._id as Id<"projects">,
-        isRequired,
-        allowMultipleResponses,
-        targetAudience,
+        isRequired: false,
+        allowMultipleResponses: false,
+        targetAudience: "all_customers",
       });
 
       // Add questions
@@ -117,268 +83,278 @@ export function SurveyForm({ projectSlug }: SurveyFormProps) {
             surveyId,
             questionText: question.questionText.trim(),
             questionType: question.questionType,
-            options: question.options?.filter(opt => opt.trim()) || undefined,
             isRequired: question.isRequired,
-            ratingScale: question.ratingScale,
           });
         }
       }
 
-      toast.success("Ankieta została utworzona!");
+      toast.success("Survey has been created!");
       router.push(`/${team?.slug}/${projectSlug}/surveys`);
     } catch (error) {
-      toast.error("Błąd podczas tworzenia ankiety");
+      toast.error("Error creating survey");
       console.error(error);
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const getQuestionTypeIcon = (type: string) => {
+    switch (type) {
+      case "text_long":
+        return <FileText className="h-4 w-4" />;
+      case "yes_no":
+        return <HelpCircle className="h-4 w-4" />;
+      default:
+        return <FileText className="h-4 w-4" />;
+    }
+  };
+
+  const getQuestionTypeLabel = (type: string) => {
+    switch (type) {
+      case "text_long":
+        return "Text";
+      case "yes_no":
+        return "Yes/No";
+      default:
+        return "Text";
+    }
+  };
+
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
-      <div className="flex items-center gap-4 mb-6">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => router.back()}
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Wróć
-        </Button>
-        <div>
-          <h1 className="text-3xl font-bold">Nowa ankieta</h1>
-          <p className="text-gray-600">Utwórz ankietę dla projektu {project.name}</p>
-        </div>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Podstawowe informacje</CardTitle>
-            <CardDescription>
-              Podaj podstawowe informacje o ankiecie
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="title">Tytuł ankiety *</Label>
-              <Input
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Wprowadź tytuł ankiety"
-                required
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="description">Opis (opcjonalny)</Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Wprowadź opis ankiety"
-                rows={3}
-              />
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="isRequired"
-                checked={isRequired}
-                onCheckedChange={setIsRequired}
-              />
-              <Label htmlFor="isRequired">Ankieta obowiązkowa</Label>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="allowMultiple"
-                checked={allowMultipleResponses}
-                onCheckedChange={setAllowMultipleResponses}
-              />
-              <Label htmlFor="allowMultiple">Zezwalaj na wielokrotne odpowiedzi</Label>
-            </div>
-
-            <div>
-              <Label htmlFor="targetAudience">Grupa docelowa</Label>
-              <Select value={targetAudience} onValueChange={(value: "all_clients" | "specific_clients" | "team_members") => setTargetAudience(value)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all_clients">Wszyscy klienci</SelectItem>
-                  <SelectItem value="specific_clients">Wybrani klienci</SelectItem>
-                  <SelectItem value="team_members">Członkowie zespołu</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Pytania</CardTitle>
-                <CardDescription>
-                  Dodaj pytania do swojej ankiety
-                </CardDescription>
-              </div>
-              <Button type="button" onClick={addNewQuestion}>
-                <Plus className="h-4 w-4 mr-2" />
-                Dodaj pytanie
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {questions.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <p>Nie masz jeszcze żadnych pytań.</p>
-                <p>Kliknij "Dodaj pytanie" aby zacząć.</p>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {questions.map((question, index) => (
-                  <div key={question.id} className="border rounded-lg p-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <Badge variant="outline">Pytanie {index + 1}</Badge>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeQuestion(question.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-
-                    <div>
-                      <Label>Treść pytania *</Label>
-                      <Input
-                        value={question.questionText}
-                        onChange={(e) => updateQuestion(question.id, { questionText: e.target.value })}
-                        placeholder="Wprowadź treść pytania"
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <Label>Typ pytania</Label>
-                      <Select
-                        value={question.questionType}
-                        onValueChange={(value: "text_short" | "text_long" | "multiple_choice" | "single_choice" | "rating" | "yes_no" | "number") => updateQuestion(question.id, { questionType: value })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="text_short">Krótki tekst</SelectItem>
-                          <SelectItem value="text_long">Długi tekst</SelectItem>
-                          <SelectItem value="multiple_choice">Wielokrotny wybór</SelectItem>
-                          <SelectItem value="single_choice">Jeden wybór</SelectItem>
-                          <SelectItem value="rating">Ocena</SelectItem>
-                          <SelectItem value="yes_no">Tak/Nie</SelectItem>
-                          <SelectItem value="number">Liczba</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {(question.questionType === "multiple_choice" || question.questionType === "single_choice") && (
-                      <div>
-                        <Label>Opcje odpowiedzi</Label>
-                        <div className="space-y-2">
-                          {question.options?.map((option, optionIndex) => (
-                            <div key={optionIndex} className="flex items-center gap-2">
-                              <Input
-                                value={option}
-                                onChange={(e) => updateOption(question.id, optionIndex, e.target.value)}
-                                placeholder={`Opcja ${optionIndex + 1}`}
-                              />
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => removeOption(question.id, optionIndex)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ))}
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => addOption(question.id)}
-                          >
-                            <Plus className="h-4 w-4 mr-2" />
-                            Dodaj opcję
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-
-                    {question.questionType === "rating" && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label>Skala od</Label>
-                          <Input
-                            type="number"
-                            value={question.ratingScale?.min || 1}
-                            onChange={(e) => updateQuestion(question.id, {
-                              ratingScale: {
-                                ...question.ratingScale,
-                                min: parseInt(e.target.value) || 1,
-                                max: question.ratingScale?.max || 5,
-                              }
-                            })}
-                          />
-                        </div>
-                        <div>
-                          <Label>Skala do</Label>
-                          <Input
-                            type="number"
-                            value={question.ratingScale?.max || 5}
-                            onChange={(e) => updateQuestion(question.id, {
-                              ratingScale: {
-                                ...question.ratingScale,
-                                min: question.ratingScale?.min || 1,
-                                max: parseInt(e.target.value) || 5,
-                              }
-                            })}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        checked={question.isRequired}
-                        onCheckedChange={(checked) => updateQuestion(question.id, { isRequired: checked })}
-                      />
-                      <Label>Pytanie obowiązkowe</Label>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <div className="flex justify-end gap-4">
+    <div className="min-h-screen bg-gray-50/50">
+      <div className="container mx-auto p-6 max-w-5xl">
+        {/* Header */}
+        <div className="flex items-center gap-4 mb-8">
           <Button
-            type="button"
             variant="outline"
+            size="sm"
             onClick={() => router.back()}
+            className="shrink-0 bg-black text-white border-black hover:bg-neutral-900 hover:text-white"
           >
-            Anuluj
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back
           </Button>
-          <Button type="submit" disabled={isSubmitting || !title.trim()}>
-            <Save className="h-4 w-4 mr-2" />
-            {isSubmitting ? "Tworzenie..." : "Utwórz ankietę"}
-          </Button>
+          <div className="flex-1">
+            <h1 className="text-3xl font-bold tracking-tight">New Survey</h1>
+            <p className="text-muted-foreground mt-1">
+              Create a survey for project <span className="font-medium text-foreground">{project.name}</span>
+            </p>
+          </div>
         </div>
-      </form>
+
+        <form onSubmit={handleSubmit} className="space-y-8">
+          {/* Basic Information */}
+          <Card className="shadow-sm border-0 bg-white">
+            <CardHeader className="pb-6">
+              <div className="flex items-center gap-3">
+                <FileText className="h-5 w-5 text-black" />
+                <div>
+                  <CardTitle className="text-xl">Basic Information</CardTitle>
+                  <CardDescription className="text-sm mt-1">
+                    Provide basic information about the survey
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-3">
+                <Label htmlFor="title" className="text-sm font-semibold">
+                  Survey Title *
+                </Label>
+                <Input
+                  id="title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Enter survey title"
+                  required
+                  className="h-11 text-base"
+                />
+              </div>
+
+              <div className="space-y-3">
+                <Label htmlFor="description" className="text-sm font-semibold">
+                  Description (optional)
+                </Label>
+                <Textarea
+                  id="description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Enter survey description"
+                  rows={4}
+                  className="resize-none text-base"
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Questions Section */}
+          <Card className="shadow-sm border-0 bg-white">
+            <CardHeader className="pb-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <HelpCircle className="h-5 w-5 text-black" />
+                  <div>
+                    <CardTitle className="text-xl">Questions</CardTitle>
+                    <CardDescription className="text-sm mt-1">
+                      Add questions to your survey
+                    </CardDescription>
+                  </div>
+                </div>
+                <Button 
+                  type="button" 
+                  onClick={addNewQuestion}
+                  className="bg-black text-white hover:bg-neutral-900 shadow-sm"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Question
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {questions.length === 0 ? (
+                <div className="text-center py-16 px-4">
+                  <div className="p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center border border-gray-200">
+                    <HelpCircle className="h-8 w-8 text-gray-400" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    You don't have any questions yet
+                  </h3>
+                  <p className="text-gray-500 mb-6">
+                    Click "Add Question" to start creating your survey
+                  </p>
+                  <Button 
+                    type="button" 
+                    onClick={addNewQuestion}
+                    variant="outline"
+                    className="border-black text-black hover:bg-neutral-100"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add First Question
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {questions.map((question, index) => (
+                    <Card key={question.id} className="border border-gray-200 shadow-sm bg-gray-50/50">
+                      <CardContent className="p-6">
+                        <div className="space-y-5">
+                          {/* Question Header */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-2">
+                                <GripVertical className="h-4 w-4 text-gray-400" />
+                                <Badge variant="secondary" className="border border-black text-black bg-transparent">
+                                  Question {index + 1}
+                                </Badge>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm text-gray-600">
+                                {getQuestionTypeIcon(question.questionType)}
+                                <span>{getQuestionTypeLabel(question.questionType)}</span>
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeQuestion(question.id)}
+                              className="text-black hover:text-white hover:bg-black"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+
+                          <Separator className="bg-gray-200" />
+
+                          {/* Question Content */}
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div className="space-y-3">
+                              <Label className="text-sm font-semibold">
+                                Question Content *
+                              </Label>
+                              <Textarea
+                                value={question.questionText}
+                                onChange={(e) => updateQuestion(question.id, { questionText: e.target.value })}
+                                placeholder="Enter question content"
+                                required
+                                rows={3}
+                                className="resize-none text-base"
+                              />
+                            </div>
+
+                            <div className="space-y-3">
+                              <Label className="text-sm font-semibold">
+                                Question Type
+                              </Label>
+                              <Select
+                                value={question.questionType}
+                                onValueChange={(value: "text_long" | "yes_no") => updateQuestion(question.id, { questionType: value })}
+                              >
+                                <SelectTrigger className="h-11">
+                                  <SelectValue placeholder="Select question type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="text_long">
+                                    <div className="flex items-center gap-2">
+                                      <FileText className="h-4 w-4 text-black" />
+                                      Text
+                                    </div>
+                                  </SelectItem>
+                                  <SelectItem value="yes_no">
+                                    <div className="flex items-center gap-2">
+                                      <HelpCircle className="h-4 w-4 text-black" />
+                                      Yes/No
+                                    </div>
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+
+                          {/* Required toggle */}
+                          <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200">
+                            <div className="flex items-center space-x-3">
+                              <Switch
+                                checked={question.isRequired}
+                                onCheckedChange={(checked) => updateQuestion(question.id, { isRequired: checked })}
+                              />
+                              <div>
+                                <Label className="text-sm font-medium">Required Question</Label>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Respondents will have to answer this question
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Submit Actions */}
+          <div className="flex justify-end gap-4 pt-6">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => router.back()}
+              className="min-w-[120px] bg-black text-white border-black hover:bg-neutral-900 hover:text-white"
+            >
+              Cancel
+            </Button>
+            <Button 
+              type="submit" 
+              disabled={isSubmitting || !title.trim()}
+              className="min-w-[160px] bg-black text-white hover:bg-neutral-900 shadow-sm"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {isSubmitting ? "Creating..." : "Create Survey"}
+            </Button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
