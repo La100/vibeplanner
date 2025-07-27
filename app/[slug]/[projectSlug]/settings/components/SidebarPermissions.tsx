@@ -16,7 +16,9 @@ import {
   CheckSquare,
   Files,
   Eye,
-  Save
+  Save,
+  Contact,
+  StickyNote
 } from "lucide-react";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
@@ -44,6 +46,18 @@ const sidebarSections: PermissionSection[] = [
     label: "Tasks", 
     icon: CheckSquare,
     description: "Task management and tracking"
+  },
+  { 
+    key: "notes", 
+    label: "Notes", 
+    icon: StickyNote,
+    description: "Project notes and documentation"
+  },
+  { 
+    key: "contacts", 
+    label: "Contacts", 
+    icon: Contact,
+    description: "Project contacts and stakeholders"
   },
   { 
     key: "calendar", 

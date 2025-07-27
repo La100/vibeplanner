@@ -27,7 +27,9 @@ import {
   Files,
   Sparkles,
   MessageSquare,
-  ClipboardList
+  ClipboardList,
+  Contact,
+  StickyNote
 } from "lucide-react";
 import { Suspense } from "react";
 
@@ -48,6 +50,8 @@ function ProjectSidebarContent() {
   const allNavItems = [
     { href: `/${params.slug}/${params.projectSlug}`, label: "Overview", icon: LayoutDashboard, key: "overview" },
     { href: `/${params.slug}/${params.projectSlug}/tasks`, label: "Tasks", icon: CheckSquare, key: "tasks" },
+    { href: `/${params.slug}/${params.projectSlug}/notes`, label: "Notes", icon: StickyNote, key: "notes" },
+    { href: `/${params.slug}/${params.projectSlug}/contacts`, label: "Contacts", icon: Contact, key: "contacts" },
     { href: `/${params.slug}/${params.projectSlug}/chat`, label: "Chat", icon: MessageSquare, key: "chat", hasUnread: totalUnreadCount > 0 },
     { href: `/${params.slug}/${params.projectSlug}/surveys`, label: "Surveys", icon: ClipboardList, key: "surveys" },
     { href: `/${params.slug}/${params.projectSlug}/ai`, label: "AI", icon: Sparkles, key: "ai" },

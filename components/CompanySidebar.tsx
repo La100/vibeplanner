@@ -23,7 +23,8 @@ import {
   FolderOpen,
   ArrowLeft,
   BarChart3,
-  MessageSquare
+  MessageSquare,
+  Contact
 } from "lucide-react";
 import { Suspense } from "react";
 
@@ -58,6 +59,7 @@ function CompanySidebarContent() {
     { href: `/${params.slug}`, label: "Dashboard", icon: LayoutDashboard, allowedRoles: ["admin", "member"] },
     { href: `/${params.slug}/projects`, label: "Projects", icon: FolderOpen, allowedRoles: ["admin", "member", "customer"] },
     { href: `/${params.slug}/team`, label: "Team", icon: Users, allowedRoles: ["admin", "member"] },
+    { href: `/${params.slug}/contacts`, label: "Contacts", icon: Contact, allowedRoles: ["admin", "member"] },
     { href: `/${params.slug}/chat`, label: "Chat", icon: MessageSquare, hasUnread: totalUnreadCount > 0, allowedRoles: ["admin", "member"] },
     { href: `/${params.slug}/reports`, label: "Reports", icon: BarChart3, allowedRoles: ["admin", "member"] },
     { href: `/${params.slug}/settings`, label: "Settings", icon: Settings, allowedRoles: ["admin", "member"] },

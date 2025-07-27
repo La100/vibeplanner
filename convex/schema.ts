@@ -133,6 +133,8 @@ export default defineSchema({
     sidebarPermissions: v.optional(v.object({
       overview: v.optional(v.object({ visible: v.boolean() })),
       tasks: v.optional(v.object({ visible: v.boolean() })),
+      notes: v.optional(v.object({ visible: v.boolean() })),
+      contacts: v.optional(v.object({ visible: v.boolean() })),
       surveys: v.optional(v.object({ visible: v.boolean() })),
       calendar: v.optional(v.object({ visible: v.boolean() })),
       gantt: v.optional(v.object({ visible: v.boolean() })),
