@@ -233,12 +233,15 @@ export default defineSchema({
       v.literal("completed"),
       v.literal("failed")
     )),
+    // For moodboard images - which section they belong to
+    moodboardSection: v.optional(v.string()),
   })
     .index("by_team", ["teamId"])
     .index("by_project", ["projectId"])
     .index("by_task", ["taskId"])
     .index("by_folder", ["folderId"])
-    .index("by_uploaded_by", ["uploadedBy"]),
+    .index("by_uploaded_by", ["uploadedBy"])
+    .index("by_moodboard_section", ["projectId", "moodboardSection"]),
 
   // Comments
   comments: defineTable({
@@ -607,4 +610,64 @@ export default defineSchema({
     .index("by_thread", ["threadId"])
     .index("by_thread_and_order", ["threadId", "order"])
     .index("by_project", ["projectId"]),
+
+  // Contacts/Address Book
+  contacts: defineTable({
+    name: v.string(),
+    companyName: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    address: v.optional(v.string()),
+    city: v.optional(v.string()),
+    country: v.optional(v.string()),
+    postalCode: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    type: v.union(
+      v.literal("contractor"), // wykonawca
+      v.literal("supplier"),   // dostawca
+      v.literal("subcontractor"), // podwykonawca
+      v.literal("other")       // inne
+    ),
+    teamId: v.id("teams"),
+    createdBy: v.string(), // Clerk user ID
+    isActive: v.boolean(),
+    website: v.optional(v.string()),
+    taxId: v.optional(v.string()), // NIP/VAT ID
+  })
+    .index("by_team", ["teamId"])
+    .index("by_type", ["type"])
+    .index("by_created_by", ["createdBy"])
+    .index("by_company_name", ["companyName"]),
+
+  // Contact assignments to projects
+  projectContacts: defineTable({
+    projectId: v.id("projects"),
+    contactId: v.id("contacts"),
+    teamId: v.id("teams"),
+    role: v.optional(v.string()), // rola w projekcie np. "główny wykonawca"
+    assignedBy: v.string(), // Clerk user ID
+    assignedAt: v.number(),
+    isActive: v.boolean(),
+    notes: v.optional(v.string()),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_contact", ["contactId"])
+    .index("by_team", ["teamId"])
+    .index("by_project_and_contact", ["projectId", "contactId"]),
+
+  // Project Notes
+  notes: defineTable({
+    title: v.string(),
+    content: v.string(),
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    createdBy: v.string(), // Clerk user ID
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    isArchived: v.boolean(),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_team", ["teamId"])
+    .index("by_created_by", ["createdBy"])
+    .index("by_project_and_archived", ["projectId", "isArchived"]),
 });

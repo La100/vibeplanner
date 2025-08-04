@@ -189,6 +189,7 @@ export const addFile = mutation({
     fileName: v.string(),
     fileType: v.string(),
     fileSize: v.optional(v.number()),
+    moodboardSection: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -240,6 +241,7 @@ export const addFile = mutation({
       uploadedBy: identity.subject,
       version: 1,
       isLatest: true,
+      moodboardSection: args.moodboardSection,
     });
   },
 });
@@ -535,6 +537,232 @@ export const deleteFile = mutation({
     
     // Usuń z bazy danych
     await ctx.db.delete(args.fileId);
+    
+    return { success: true };
+  },
+});
+
+// Get moodboard images for a project by section
+export const getMoodboardImagesBySection = query({
+  args: { 
+    projectId: v.id("projects"),
+    section: v.string()
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const project = await ctx.db.get(args.projectId);
+    if (!project) return [];
+
+    // Check access
+    const hasAccess = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!hasAccess || !hasAccess.isActive) return [];
+
+    // Get only image files for this specific moodboard section
+    const files = await ctx.db
+      .query("files")
+      .withIndex("by_moodboard_section", q => 
+        q.eq("projectId", args.projectId).eq("moodboardSection", args.section)
+      )
+      .filter(q => q.eq(q.field("fileType"), "image"))
+      .collect();
+
+    // Generate URLs for files
+    const filesWithUrls = await Promise.all(
+      files.map(async (file) => {
+        try {
+          const url = await r2.getUrl(file.storageId as string, {
+            expiresIn: 60 * 60 * 24, // 24 hours
+          });
+          return { 
+            id: file.storageId as string,
+            url,
+            name: file.name,
+            _creationTime: file._creationTime
+          };
+        } catch (error) {
+          console.error(`Error generating URL for file ${file._id}:`, error);
+          return { 
+            id: file.storageId as string,
+            url: "",
+            name: file.name,
+            _creationTime: file._creationTime
+          };
+        }
+      })
+    );
+
+    return filesWithUrls;
+  },
+});
+
+// Get moodboard images for a project (legacy - keep for compatibility)
+export const getMoodboardImages = query({
+  args: { 
+    projectId: v.id("projects")
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const project = await ctx.db.get(args.projectId);
+    if (!project) return [];
+
+    // Check access
+    const hasAccess = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!hasAccess || !hasAccess.isActive) return [];
+
+    // Get only image files without folder (moodboard images)
+    const files = await ctx.db
+      .query("files")
+      .withIndex("by_project", q => q.eq("projectId", args.projectId))
+      .filter(q => q.and(
+        q.eq(q.field("folderId"), undefined),
+        q.eq(q.field("fileType"), "image")
+      ))
+      .collect();
+
+    // Generate URLs for files
+    const filesWithUrls = await Promise.all(
+      files.map(async (file) => {
+        try {
+          const url = await r2.getUrl(file.storageId as string, {
+            expiresIn: 60 * 60 * 24, // 24 hours
+          });
+          return { 
+            id: file.storageId as string,
+            url,
+            name: file.name,
+            _creationTime: file._creationTime
+          };
+        } catch (error) {
+          console.error(`Error generating URL for file ${file._id}:`, error);
+          return { 
+            id: file.storageId as string,
+            url: "",
+            name: file.name,
+            _creationTime: file._creationTime
+          };
+        }
+      })
+    );
+
+    return filesWithUrls;
+  },
+});
+
+// Find file by storageId for moodboard deletion
+export const getFileByStorageId = query({
+  args: { 
+    projectId: v.id("projects"),
+    storageId: v.string()
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const project = await ctx.db.get(args.projectId);
+    if (!project) return null;
+
+    // Check access
+    const hasAccess = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!hasAccess || !hasAccess.isActive) return null;
+
+    // Find file by storageId
+    const file = await ctx.db
+      .query("files")
+      .withIndex("by_project", q => q.eq("projectId", args.projectId))
+      .filter(q => q.eq(q.field("storageId"), args.storageId))
+      .unique();
+
+    return file;
+  },
+});
+
+// Delete file by storageId (for moodboard)
+export const deleteFileByStorageId = mutation({
+  args: { 
+    projectId: v.id("projects"),
+    storageId: v.string()
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const project = await ctx.db.get(args.projectId);
+    if (!project) throw new Error("Project not found");
+
+    // Check access
+    const hasAccess = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q => 
+        q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!hasAccess || !hasAccess.isActive) {
+      throw new Error("No access to this project");
+    }
+
+    // Find file by storageId
+    const file = await ctx.db
+      .query("files")
+      .withIndex("by_project", q => q.eq("projectId", args.projectId))
+      .filter(q => q.eq(q.field("storageId"), args.storageId))
+      .unique();
+
+    if (!file) {
+      throw new Error("File not found");
+    }
+
+    // Check if user can delete file (same logic as deleteFile)
+    if (file.uploadedBy !== identity.subject) {
+      const member = await ctx.db
+        .query("teamMembers")
+        .withIndex("by_team_and_user", q => 
+          q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
+        )
+        .unique();
+      
+      if (!member || (member.role !== "admin" && member.role !== "member")) {
+        throw new Error("No permission to delete this file");
+      }
+    }
+
+    // Delete from R2
+    try {
+      await ctx.runMutation(components.r2.lib.deleteObject, {
+        accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+        bucket: process.env.R2_BUCKET!,
+        endpoint: process.env.R2_ENDPOINT!,
+        key: file.storageId,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+      });
+    } catch (error) {
+      console.error(`Failed to delete file from R2: ${error}`);
+    }
+    
+    // Delete from database
+    await ctx.db.delete(file._id);
     
     return { success: true };
   },

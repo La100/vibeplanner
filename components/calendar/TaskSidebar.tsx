@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { format } from "date-fns";
 import { X, Edit3, Calendar, Clock, Flag, CheckCircle2, Circle } from "lucide-react";
@@ -45,6 +45,11 @@ export function TaskSidebar({
   const router = useRouter();
   const params = useParams<{ slug: string, projectSlug: string }>();
 
+  // Reset editing state when event changes
+  useEffect(() => {
+    setIsEditing(false);
+  }, [event?.id]);
+
   if (!isOpen || !event) return null;
 
   const isTask = event.sourceType === 'task';
@@ -76,17 +81,18 @@ export function TaskSidebar({
         onClick={onClose}
       />
       
-      {/* Sidebar */}
-      <div className={cn(
-        "fixed right-0 top-0 h-full w-80 bg-white shadow-xl transform transition-transform duration-300 ease-in-out z-50",
-        isOpen ? "translate-x-0" : "translate-x-full"
-      )}>
-        <div className="flex flex-col h-full">
-          {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b">
-            <h2 className="text-lg font-semibold">
-              {isTask ? 'Task Details' : 'Shopping Item'}
-            </h2>
+              {/* Sidebar */}
+        <div className={cn(
+          "fixed right-0 top-0 h-full bg-white shadow-xl transform transition-transform duration-300 ease-in-out z-50",
+          "w-full sm:w-96 max-w-full",
+          isOpen ? "translate-x-0" : "translate-x-full"
+        )}>
+          <div className="flex flex-col h-full">
+            {/* Header */}
+            <div className="flex items-center justify-between p-3 sm:p-4 border-b">
+              <h2 className="text-base sm:text-lg font-semibold">
+                {isTask ? 'Task Details' : 'Shopping Item'}
+              </h2>
             <Button
               variant="ghost"
               size="sm"
@@ -98,12 +104,12 @@ export function TaskSidebar({
           </div>
 
           {/* Content */}
-          <ScrollArea className="flex-1 p-4">
-            <div className="space-y-6">
+          <ScrollArea className="flex-1 p-3 sm:p-4">
+            <div className="space-y-4 sm:space-y-6">
               {/* Title and Status */}
               <div>
                 <div className="flex items-start justify-between mb-2">
-                  <h3 className="text-xl font-semibold text-gray-900 flex-1" onClick={() => setIsEditing(true)}>
+                  <h3 className="text-lg sm:text-xl font-semibold text-gray-900 flex-1 pr-2" onClick={() => setIsEditing(true)}>
                     {event.title}
                   </h3>
                   {isEditing && (
@@ -111,14 +117,14 @@ export function TaskSidebar({
                       value={event.title}
                       onChange={() => { /* Handle change */ }}
                       onBlur={() => setIsEditing(false)}
-                      className="w-full text-xl font-semibold text-gray-900 bg-transparent border-b-2 border-blue-500 focus:outline-none"
+                      className="w-full text-lg sm:text-xl font-semibold text-gray-900 bg-transparent border-b-2 border-blue-500 focus:outline-none resize-none"
                     />
                   )}
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
                     onClick={handleStatusToggle}
-                    className="ml-2 p-1"
+                    className="ml-2 p-1 flex-shrink-0"
                   >
                     {event.status === 'completed' ? (
                       <CheckCircle2 className="h-5 w-5 text-green-600" />
@@ -153,7 +159,7 @@ export function TaskSidebar({
               {/* Description */}
               {event.description && (
                 <div>
-                  <h4 className="font-medium text-gray-900 mb-2">Description</h4>
+                  <h4 className="font-medium text-gray-900 mb-2 text-sm sm:text-base">Description</h4>
                   <p className="text-sm text-gray-600 leading-relaxed">
                     {event.description}
                   </p>
@@ -164,19 +170,19 @@ export function TaskSidebar({
 
               {/* Time Info */}
               <div>
-                <h4 className="font-medium text-gray-900 mb-3">Schedule</h4>
+                <h4 className="font-medium text-gray-900 mb-3 text-sm sm:text-base">Schedule</h4>
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-sm">
-                    <Calendar className="h-4 w-4 text-gray-500" />
-                    <span className="text-gray-600">
+                    <Calendar className="h-4 w-4 text-gray-500 flex-shrink-0" />
+                    <span className="text-gray-600 text-xs sm:text-sm">
                       {format(event.startTime, 'EEEE, MMMM d, yyyy')}
                     </span>
                   </div>
                   
                   {!event.isAllDay && (
                     <div className="flex items-center gap-2 text-sm">
-                      <Clock className="h-4 w-4 text-gray-500" />
-                      <span className="text-gray-600">
+                      <Clock className="h-4 w-4 text-gray-500 flex-shrink-0" />
+                      <span className="text-gray-600 text-xs sm:text-sm">
                         {format(event.startTime, 'h:mm a')} - {format(event.endTime, 'h:mm a')}
                       </span>
                     </div>
@@ -184,8 +190,8 @@ export function TaskSidebar({
                   
                   {event.isAllDay && (
                     <div className="flex items-center gap-2 text-sm">
-                      <Clock className="h-4 w-4 text-gray-500" />
-                      <span className="text-gray-600">All day</span>
+                      <Clock className="h-4 w-4 text-gray-500 flex-shrink-0" />
+                      <span className="text-gray-600 text-xs sm:text-sm">All day</span>
                     </div>
                   )}
                 </div>
@@ -194,16 +200,16 @@ export function TaskSidebar({
               {/* Assignment */}
               {event.assignedToName && event.assignedTo && (
                 <div>
-                  <h4 className="font-medium text-gray-900 mb-3">Assigned to</h4>
+                  <h4 className="font-medium text-gray-900 mb-3 text-sm sm:text-base">Assigned to</h4>
                   <div className="flex items-center gap-3">
-                    <Avatar className="h-8 w-8">
+                    <Avatar className="h-8 w-8 flex-shrink-0">
                       <AvatarImage src={event.assignedToImageUrl} />
                       <AvatarFallback className="text-sm">
                         {event.assignedToName.charAt(0)}
                       </AvatarFallback>
                     </Avatar>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 truncate">
                         {event.assignedToName}
                       </p>
                       <p className="text-xs text-gray-500">Assignee</p>
@@ -215,7 +221,7 @@ export function TaskSidebar({
               {/* Project */}
               {event.project && (
                 <div>
-                  <h4 className="font-medium text-gray-900 mb-2">Project</h4>
+                  <h4 className="font-medium text-gray-900 mb-2 text-sm sm:text-base">Project</h4>
                   <p className="text-sm text-gray-600">{event.project.name}</p>
                 </div>
               )}
@@ -227,7 +233,7 @@ export function TaskSidebar({
                   
                   {(event.sourceData as Doc<"tasks">).tags && (event.sourceData as Doc<"tasks">).tags.length > 0 && (
                     <div>
-                      <h4 className="font-medium text-gray-900 mb-2">Tags</h4>
+                      <h4 className="font-medium text-gray-900 mb-2 text-sm sm:text-base">Tags</h4>
                       <div className="flex flex-wrap gap-1">
                         {(event.sourceData as Doc<"tasks">).tags.map((tag: string, index: number) => (
                           <Badge key={index} variant="secondary" className="text-xs">
@@ -240,7 +246,7 @@ export function TaskSidebar({
                   
                   {(event.sourceData as Doc<"tasks">).cost && (
                     <div>
-                      <h4 className="font-medium text-gray-900 mb-2">Cost</h4>
+                      <h4 className="font-medium text-gray-900 mb-2 text-sm sm:text-base">Cost</h4>
                       <p className="text-sm text-gray-600">{(event.sourceData as Doc<"tasks">).cost} {currencySymbol}</p>
                     </div>
                   )}
@@ -254,21 +260,21 @@ export function TaskSidebar({
                   
                   {(event.sourceData as Doc<"shoppingListItems">).quantity && (
                     <div>
-                      <h4 className="font-medium text-gray-900 mb-2">Quantity</h4>
+                      <h4 className="font-medium text-gray-900 mb-2 text-sm sm:text-base">Quantity</h4>
                       <p className="text-sm text-gray-600">{(event.sourceData as Doc<"shoppingListItems">).quantity}</p>
                     </div>
                   )}
                   
                   {(event.sourceData as Doc<"shoppingListItems">).supplier && (
                     <div>
-                      <h4 className="font-medium text-gray-900 mb-2">Supplier</h4>
-                      <p className="text-sm text-gray-600">{(event.sourceData as Doc<"shoppingListItems">).supplier}</p>
+                      <h4 className="font-medium text-gray-900 mb-2 text-sm sm:text-base">Supplier</h4>
+                      <p className="text-sm text-gray-600 break-words">{(event.sourceData as Doc<"shoppingListItems">).supplier}</p>
                     </div>
                   )}
                   
                   {(event.sourceData as Doc<"shoppingListItems">).unitPrice && (
                     <div>
-                      <h4 className="font-medium text-gray-900 mb-2">Unit Price</h4>
+                      <h4 className="font-medium text-gray-900 mb-2 text-sm sm:text-base">Unit Price</h4>
                       <p className="text-sm text-gray-600">{(event.sourceData as Doc<"shoppingListItems">).unitPrice} {currencySymbol}</p>
                     </div>
                   )}
@@ -287,8 +293,8 @@ export function TaskSidebar({
             </div>
           </ScrollArea>
 
-          {/* Footer Actions */}
-          <div className="p-4 border-t bg-gray-50">
+                      {/* Footer Actions */}
+            <div className="p-3 sm:p-4 border-t bg-gray-50">
             <div className="flex gap-2">
               <Button
                 variant="outline"

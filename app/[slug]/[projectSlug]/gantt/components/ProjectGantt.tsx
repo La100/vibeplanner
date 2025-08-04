@@ -3,20 +3,20 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useProject } from "@/components/providers/ProjectProvider";
-import { 
-  GanttProvider, 
-  GanttSidebar, 
-  GanttSidebarGroup, 
-  GanttSidebarItem, 
-  GanttTimeline, 
-  GanttHeader, 
+import {
+  GanttProvider,
+  GanttSidebar,
+  GanttSidebarGroup,
+  GanttSidebarItem,
+  GanttTimeline,
+  GanttHeader,
   GanttToday,
   GanttFeatureList,
   GanttFeatureListGroup,
   GanttFeatureItem,
   type GanttFeature,
   type Range
-} from "@/components/ui/kibo-gantt";
+} from "@/components/ui/kibo-ui/gantt";
 import { TaskSidebar } from "@/components/calendar/TaskSidebar";
 import { transformTaskToEvent, CalendarEvent } from "@/components/calendar/utils";
 import { useState } from "react";
@@ -40,15 +40,16 @@ export function ProjectGanttSkeleton() {
         <Skeleton className="h-5 w-1/3 mt-2" />
       </div>
 
-      <div className="mb-4">
+      <div className="flex gap-4 mb-4">
         <Skeleton className="h-10 w-32" />
+        <Skeleton className="h-10 w-24" />
       </div>
 
-      <div className="flex-grow border rounded-lg p-4">
+      <div className="flex-grow border rounded-lg">
         <div className="flex h-full">
           {/* Sidebar Skeleton */}
           <div className="w-1/4 pr-4 border-r">
-            <div className="space-y-3">
+            <div className="space-y-3 p-4">
               <Skeleton className="h-8 w-full" />
               <Skeleton className="h-8 w-full" />
               <Skeleton className="h-8 w-full" />
@@ -59,7 +60,7 @@ export function ProjectGanttSkeleton() {
           {/* Timeline Skeleton */}
           <div className="w-3/4 pl-4">
             <Skeleton className="h-8 w-full mb-4" /> {/* Header */}
-            <div className="space-y-3">
+            <div className="space-y-3 p-4">
               <Skeleton className="h-8 w-full" />
               <Skeleton className="h-8 w-full" />
               <Skeleton className="h-8 w-full" />
@@ -83,7 +84,6 @@ export default function ProjectGantt() {
   const tasks = useQuery(api.tasks.listProjectTasks, {
     projectId: project._id,
   });
-  
 
   if (!tasks) {
     return <ProjectGanttSkeleton />;
@@ -111,14 +111,14 @@ export default function ProjectGantt() {
       const calendarEvent = transformTaskToEvent({
         ...task,
         assignedToName: task.assignedToName,
-        assignedToImageUrl: task.assignedToImageUrl,
+        assignedToImageUrl: task.assignedToImageUrl || "",
         project: {
           id: project._id,
           name: project.name,
           slug: project.slug
         }
       });
-      
+
       if (calendarEvent) {
         setSelectedTask(calendarEvent);
         setIsSidebarOpen(true);
@@ -136,71 +136,74 @@ export default function ProjectGantt() {
     console.log('Status change:', event, newStatus);
   };
 
-
   return (
-    <div className="h-full flex flex-col p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold">{project.name} - Gantt Chart</h1>
-        <p className="text-muted-foreground">Visualize your project timeline and drag tasks to reschedule</p>
-      </div>
+    <div className="h-[calc(100vh-57px)] flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="flex-shrink-0 p-6 border-b">
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold">{project.name} - Gantt Chart</h1>
+          <p className="text-muted-foreground">Visualize your project timeline</p>
+        </div>
 
-      <div className="flex gap-4 mb-4">
-        <Select value={range} onValueChange={(value: Range) => setRange(value)}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="daily">Daily</SelectItem>
-            <SelectItem value="monthly">Monthly</SelectItem>
-            <SelectItem value="quarterly">Quarterly</SelectItem>
-          </SelectContent>
-        </Select>
-        
-        <div className="flex items-center gap-2">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => setZoom(Math.max(50, zoom - 25))}
-          >
-            -
-          </Button>
-          <span className="text-sm w-12 text-center">{zoom}%</span>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => setZoom(Math.min(200, zoom + 25))}
-          >
-            +
-          </Button>
+        <div className="flex gap-4">
+          <Select value={range} onValueChange={(value: Range) => setRange(value)}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="daily">Daily</SelectItem>
+              <SelectItem value="monthly">Monthly</SelectItem>
+              <SelectItem value="quarterly">Quarterly</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setZoom(Math.max(50, zoom - 25))}
+            >
+              -
+            </Button>
+            <span className="text-sm w-12 text-center">{zoom}%</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setZoom(Math.min(200, zoom + 25))}
+            >
+              +
+            </Button>
+          </div>
         </div>
       </div>
 
-      <div className="flex-grow">
-        <GanttProvider 
-          range={range} 
-          zoom={zoom} 
+      {/* Gantt Chart */}
+      <div className="flex-1 overflow-hidden">
+        <GanttProvider
+          range={range}
+          zoom={zoom}
           className="h-full"
         >
           <GanttSidebar>
             <GanttSidebarGroup name="Project Tasks">
               {ganttFeatures.map(feature => (
-                <GanttSidebarItem 
-                  key={feature.id} 
+                <GanttSidebarItem
+                  key={feature.id}
                   feature={feature}
                   onSelectItem={handleTaskClick}
                 />
               ))}
             </GanttSidebarGroup>
           </GanttSidebar>
-          
+
           <GanttTimeline>
             <GanttHeader />
             <GanttToday />
             <GanttFeatureList>
               <GanttFeatureListGroup>
                 {ganttFeatures.map(feature => (
-                  <GanttFeatureItem 
-                    key={feature.id} 
+                  <GanttFeatureItem
+                    key={feature.id}
                     {...feature}
                     onClick={handleTaskClick}
                   />
@@ -210,7 +213,7 @@ export default function ProjectGantt() {
           </GanttTimeline>
         </GanttProvider>
       </div>
-      
+
       <TaskSidebar
         event={selectedTask}
         isOpen={isSidebarOpen}

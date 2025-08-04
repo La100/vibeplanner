@@ -4,8 +4,19 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useProject } from "@/components/providers/ProjectProvider";
 import { Calendar } from "@/components/calendar/Calendar";
+import { Gantt } from "@/components/gantt/Gantt";
 import { transformDataToEvents } from "@/components/calendar/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { TaskSidebar } from "@/components/calendar/TaskSidebar";
+import { useState, useEffect } from "react";
+import { CalendarEvent } from "@/components/calendar/utils";
+import { CalendarIcon, BarChart3Icon } from "lucide-react";
+import { GanttHeader } from "@/components/gantt/GanttHeader";
+import { SharedFilters } from "@/components/shared/types";
+
+type ViewType = "calendar" | "gantt";
+
 
 export function ProjectCalendarSkeleton() {
   return (
@@ -31,12 +42,31 @@ export function ProjectCalendarSkeleton() {
 
 export default function ProjectCalendar() {
   const { project } = useProject();
+  const [currentView, setCurrentView] = useState<ViewType>("calendar");
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [filters, setFilters] = useState<SharedFilters>({
+    searchQuery: "",
+    eventType: [],
+    priority: [],
+    status: []
+  });
+
+  // Auto-open sidebar in Gantt view, close in Calendar view
+  useEffect(() => {
+    if (currentView === "gantt") {
+      setIsSidebarOpen(true);
+    } else {
+      setIsSidebarOpen(false);
+    }
+    // Always reset selected event when switching views
+    setSelectedEvent(null);
+  }, [currentView]);
 
   const hasAccess = useQuery(api.projects.checkUserProjectAccess, {
     projectId: project._id,
   });
 
-  // Check original data
   const allTasks = useQuery(api.tasks.listProjectTasks, {
     projectId: project._id,
   });
@@ -44,10 +74,6 @@ export default function ProjectCalendar() {
   const allShoppingItems = useQuery(api.shopping.listShoppingListItems, {
     projectId: project._id,
   });
-
-
-  // const updateTaskDates = useMutation(api.calendar.updateTaskDates);
-  // const updateShoppingItemDate = useMutation(api.calendar.updateShoppingItemBuyBefore);
 
   if (!allTasks || !allShoppingItems || hasAccess === false) {
     if (hasAccess === false) {
@@ -63,7 +89,6 @@ export default function ProjectCalendar() {
     }
     return <ProjectCalendarSkeleton />;
   }
-
 
   // Transform data to calendar events
   const calendarEvents = transformDataToEvents(
@@ -89,46 +114,68 @@ export default function ProjectCalendar() {
     }))
   );
 
-  // Debug: check first task
-  if (allTasks.length > 0) {
-    console.log('🔍 PIERWSZE ZADANIE:', {
-      title: allTasks[0].title,
-      startDate: allTasks[0].startDate,
-      endDate: allTasks[0].endDate,
-      dueDate: allTasks[0].dueDate,
-    });
-  }
 
-  // Debug: check first event
-  if (calendarEvents.length > 0) {
-    console.log('🔍 PIERWSZE WYDARZENIE:', {
-      title: calendarEvents[0].title,
-      startTime: calendarEvents[0].startTime,
-      endTime: calendarEvents[0].endTime,
-      isAllDay: calendarEvents[0].isAllDay,
-    });
-  }
-
-
-
-  const handleEventClick = () => {
-    // Don't redirect - sidebar will handle showing details
+  const handleEventClick = (event: CalendarEvent) => {
+    if (currentView === "gantt") {
+      setSelectedEvent(event);
+      // Sidebar is always open in Gantt view, just update selected event
+    }
+    // For calendar view, don't handle event clicks (original behavior)
   };
-
 
   const handleDateClick = (date: Date) => {
-    console.log('Date clicked:', date);
+    // Date click handler for calendar view
   };
 
+  const handleSidebarClose = () => {
+    setIsSidebarOpen(false);
+    setSelectedEvent(null);
+  };
 
   return (
-    <div className="h-screen w-full">
-      <Calendar
-        events={calendarEvents}
-        onEventClick={handleEventClick}
-    
-        onDateClick={handleDateClick}
-        className="h-full w-full"
+    <div className="h-screen w-full relative overflow-hidden">
+      {/* Top Header */}
+      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white">
+        <h1 className="text-xl font-semibold">Schedule</h1>
+      </div>
+
+      {/* Shared Filters */}
+      <GanttHeader 
+        filters={filters}
+        onFiltersChange={setFilters}
+        currentView={currentView}
+        onViewChange={setCurrentView}
+      />
+
+      {/* Content Area */}
+      <div className="flex-1 w-full h-[calc(100vh-73px-120px)]">
+        {currentView === "calendar" ? (
+          <Calendar
+            events={calendarEvents}
+            onEventClick={handleEventClick}
+            onDateClick={handleDateClick}
+            className="h-full w-full"
+            filters={filters}
+            onFiltersChange={setFilters}
+          />
+        ) : (
+          <Gantt
+            events={calendarEvents}
+            onEventClick={handleEventClick}
+            className="h-full w-full"
+            filters={filters}
+            onFiltersChange={setFilters}
+          />
+        )}
+      </div>
+
+      {/* Sidebar for Gantt view */}
+      <TaskSidebar
+        key={selectedEvent?.id || 'no-event'}
+        event={selectedEvent}
+        isOpen={currentView === "gantt" && isSidebarOpen}
+        onClose={handleSidebarClose}
+        onStatusChange={() => {}}
       />
     </div>
   );

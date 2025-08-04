@@ -149,34 +149,34 @@ export function CalendarEventCard({
         onClick={onClick}
         className={cn(
           "rounded-lg border cursor-pointer transition-colors hover:bg-accent",
-          "p-2 text-sm",
+          "p-1.5 sm:p-2 text-sm",
           config.colors.light,
           config.colors.border,
           className
         )}
         title={`${event.title} (${eventType === 'start' ? 'Start' : eventType === 'end' ? 'End' : 'Single day'}) - Priority: ${event.priority}`}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Priority dot */}
           {priority && (
-            <div className={cn("w-2 h-2 rounded-full flex-shrink-0", priority.dot)} />
+            <div className={cn("w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full flex-shrink-0", priority.dot)} />
           )}
           
           {/* Event icon and title */}
-          <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            <Icon className={cn("h-3 w-3 flex-shrink-0", config.colors.text)} />
-            <span className={cn("truncate text-xs font-medium", config.colors.text)}>
+          <div className="flex items-center gap-1 sm:gap-1.5 flex-1 min-w-0">
+            <Icon className={cn("h-2.5 w-2.5 sm:h-3 sm:w-3 flex-shrink-0", config.colors.text)} />
+            <span className={cn("truncate font-medium", config.colors.text, "text-[10px] sm:text-xs")}>
               {getEventTitle()}
             </span>
           </div>
           
           {/* Indicators */}
-          <div className="flex items-center gap-1 flex-shrink-0">
+          <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
             {event.assignedToName && (
-              <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60" />
+              <div className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-muted-foreground/60" />
             )}
             {eventType !== 'single' && (
-              <ArrowRight className="h-2.5 w-2.5 text-muted-foreground" />
+              <ArrowRight className="h-2 w-2 sm:h-2.5 sm:w-2.5 text-muted-foreground" />
             )}
           </div>
         </div>

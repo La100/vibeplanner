@@ -67,7 +67,7 @@ export function transformTaskToEvent(task: Task & {
     id: task._id,
     title: task.title,
     description: task.description,
-    type: task.priority === 'urgent' ? 'deadline' : 'task',
+    type: task.dueDate ? 'deadline' : 'task',
     startTime,
     endTime,
     isAllDay,

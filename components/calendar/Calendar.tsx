@@ -3,86 +3,114 @@
 import { useState, useMemo, useCallback } from "react";
 import { startOfDay, isSameDay } from "date-fns";
 import { CalendarProvider } from "./CalendarProvider";
-import { CalendarHeader } from "./CalendarHeader";
 import { MonthView } from "./MonthView";
 import { TaskSidebar } from "./TaskSidebar";
 import { DayEventsModal } from "./DayEventsModal";
 import { useCalendar } from "./CalendarProvider";
 import { CalendarEvent } from "./utils";
+import { SharedFilters, AdvancedFilters } from "../shared/types";
+import { useSmartFiltering } from "../shared/smart-filter-engine";
+import { convertLegacyFilters } from "../shared/filter-adapter";
 
-interface CalendarFilters {
-  searchQuery: string;
-  eventType: string[];
-  priority: string[];
-  status: string[];
-}
 
 interface CalendarProps {
   events?: CalendarEvent[];
   onEventClick?: (event: CalendarEvent) => void;
   onDateClick?: (date: Date) => void;
   className?: string;
+  filters?: SharedFilters;
+  onFiltersChange?: (filters: SharedFilters) => void;
+  // New props for smart filtering
+  useSmartFiltering?: boolean;
+  currentUserId?: string;
 }
 
 function CalendarContent({ 
   events = [], 
   onEventClick, 
-  onDateClick
+  onDateClick,
+  filters: externalFilters,
+  onFiltersChange,
+  useSmartFiltering = false,
+  currentUserId
 }: CalendarProps) {
   const { setSelectedDate } = useCalendar();
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [dayModalDate, setDayModalDate] = useState<Date | null>(null);
   const [isDayModalOpen, setIsDayModalOpen] = useState(false);
-  const [filters, setFilters] = useState<CalendarFilters>({
+  
+  // Use external filters if provided, otherwise use default empty filters
+  const filters = externalFilters || {
     searchQuery: "",
     eventType: [],
     priority: [],
     status: []
-  });
+  };
 
-  // Apply filters to events
-  const filteredEvents = useMemo(() => {
-    if (!events) return [];
-    
-    return events.filter((event) => {
-      // Search query filter
-      if (filters.searchQuery && !event.title.toLowerCase().includes(filters.searchQuery.toLowerCase())) {
-        return false;
-      }
-      
-      // Event type filter
-      if (filters.eventType.length > 0 && !filters.eventType.includes(event.type)) {
-        return false;
-      }
-      
-      // Priority filter
-      if (filters.priority.length > 0 && event.priority && !filters.priority.includes(event.priority)) {
-        return false;
-      }
-      
-      // Status filter
-      if (filters.status.length > 0 && event.status && !filters.status.includes(event.status)) {
-        return false;
-      }
-      
-      return true;
-    });
-  }, [events, filters]);
+  // Smart filtering context
+  const filterContext = useMemo(() => ({
+    currentUserId,
+    currentDate: new Date(),
+    projectData: {
+      hasOverdueItems: false,
+      overdueCount: 0,
+      hasUpcomingDeadlines: false,
+      upcomingDeadlineCount: 0,
+      averageTaskDuration: 0,
+      criticalPath: []
+    }
+  }), [currentUserId]);
+
+  // Apply filters to events - use smart filtering if enabled
+  const filteredEvents = useSmartFiltering 
+    ? useSmartFiltering(events || [], convertLegacyFilters(filters), filterContext)
+    : useMemo(() => {
+        if (!events) return [];
+        
+        return events.filter((event) => {
+          // Search query filter
+          if (filters.searchQuery && !event.title.toLowerCase().includes(filters.searchQuery.toLowerCase())) {
+            return false;
+          }
+          
+          // Event type filter
+          if (filters.eventType.length > 0 && !filters.eventType.includes(event.type)) {
+            return false;
+          }
+          
+          // Priority filter
+          if (filters.priority.length > 0 && event.priority && !filters.priority.includes(event.priority)) {
+            return false;
+          }
+          
+          // Status filter - check original source status
+          if (filters.status.length > 0) {
+            if (event.sourceType === 'task') {
+              const originalStatus = (event.sourceData as any).status;
+              if (!filters.status.includes(originalStatus)) {
+                return false;
+              }
+            } else if (event.sourceType === 'shopping') {
+              const originalStatus = (event.sourceData as any).realizationStatus;
+              if (!filters.status.includes(originalStatus)) {
+                return false;
+              }
+            }
+          }
+          
+          return true;
+        });
+      }, [events, filters]);
 
   const handleDateClick = (date: Date) => {
     setSelectedDate(date);
-    
-    // Get events for this date to decide whether to open modal
-    const dayEvents = getDayEvents(date);
-    
-    if (dayEvents.length > 3) {
-      // If more than 3 events, open day modal
-      setDayModalDate(date);
-      setIsDayModalOpen(true);
-    }
-    
     onDateClick?.(date);
+  };
+
+  const handleMoreEventsClick = (date: Date) => {
+    setDayModalDate(date);
+    setIsDayModalOpen(true);
   };
 
 
@@ -144,16 +172,13 @@ function CalendarContent({
         events={filteredEvents}
         onEventClick={handleEventClick}
         onDateClick={handleDateClick}
+        onMoreEventsClick={handleMoreEventsClick}
       />
     );
   };
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
-      <CalendarHeader 
-        filters={filters}
-        onFiltersChange={setFilters}
-      />
       <div className="flex-1 overflow-hidden">
         {renderCurrentView()}
       </div>
@@ -182,7 +207,11 @@ export function Calendar({
   events, 
   onEventClick, 
   onDateClick,
-  className 
+  className,
+  filters,
+  onFiltersChange,
+  useSmartFiltering,
+  currentUserId
 }: CalendarProps) {
   return (
     <CalendarProvider>
@@ -191,6 +220,10 @@ export function Calendar({
           events={events}
           onEventClick={onEventClick}
           onDateClick={onDateClick}
+          filters={filters}
+          onFiltersChange={onFiltersChange}
+          useSmartFiltering={useSmartFiltering}
+          currentUserId={currentUserId}
         />
       </div>
     </CalendarProvider>
