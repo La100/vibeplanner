@@ -25,15 +25,14 @@ export const seedGangProject = action({
   },
 });
 
+// Legacy functions - no longer needed with 1M context
 export const resetIndexingForProject = action({
   args: {
     projectId: v.id("projects"),
   },
   returns: v.object({ success: v.boolean(), message: v.string() }),
   handler: async (ctx, args): Promise<{ success: boolean; message: string }> => {
-    return await ctx.runAction(api.ai_indexing.resetIndexingStatus, {
-      projectId: args.projectId,
-    });
+    return { success: true, message: "No indexing needed with 1M context" };
   },
 });
 
@@ -43,9 +42,7 @@ export const resetAllIndexing = action({
   },
   returns: v.object({ success: v.boolean(), message: v.string(), resetCount: v.number() }),
   handler: async (ctx, args): Promise<{ success: boolean; message: string; resetCount: number }> => {
-    return await ctx.runAction(api.ai_indexing.resetAllStuckIndexing, {
-      clerkOrgId: args.clerkOrgId,
-    });
+    return { success: true, message: "No indexing needed with 1M context", resetCount: 0 };
   },
 });
 
@@ -55,8 +52,6 @@ export const startIndexing = action({
   },
   returns: v.object({ success: v.boolean(), message: v.string() }),
   handler: async (ctx, args): Promise<{ success: boolean; message: string }> => {
-    return await ctx.runAction(api.ai_new.initIndex, {
-      projectId: args.projectId,
-    });
+    return { success: true, message: "No indexing needed with 1M context" };
   },
 });

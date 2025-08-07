@@ -869,4 +869,18 @@ export const getFileById = query({
   handler: async (ctx, args) => {
     return await ctx.db.get(args.fileId);
   },
+});
+
+// Update file with PDF analysis results
+export const updateFileAnalysis = internalMutation({
+  args: {
+    fileId: v.id("files"),
+    analysis: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.fileId, {
+      pdfAnalysis: args.analysis,
+      analysisStatus: "completed",
+    });
+  },
 }); 

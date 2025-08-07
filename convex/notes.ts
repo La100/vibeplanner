@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation, internalQuery } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
 
 // Utility function to check project access
 const hasProjectAccess = async (ctx: any, projectId: Id<"projects">, requireWriteAccess = false): Promise<boolean> => {
@@ -116,6 +117,8 @@ export const createNote = mutation({
             isArchived: false,
         });
 
+        // No indexing needed with 1M context - data is always fresh!
+
         return noteId;
     },
 });
@@ -162,6 +165,10 @@ export const updateNote = mutation({
             updatedAt: Date.now(),
         });
 
+        // Trigger AI re-indexing for the updated note if project is indexed
+        const project = await ctx.db.get(note.projectId);
+        // No indexing needed with 1M context - data is always fresh!
+
         return args.noteId;
     },
 });
@@ -202,6 +209,8 @@ export const deleteNote = mutation({
             isArchived: true,
             updatedAt: Date.now(),
         });
+
+        // No indexing needed with 1M context - data is always fresh!
 
         return args.noteId;
     },
@@ -257,4 +266,32 @@ export const getNotesForIndexing = internalQuery({
 
         return notes;
     },
-}); 
+});
+
+// Get single note for AI indexing
+export const getNoteById = internalQuery({
+    args: { noteId: v.id("notes") },
+    handler: async (ctx, args) => {
+        const note = await ctx.db.get(args.noteId);
+        return note;
+    },
+});
+
+// Get notes changed after a specific date for incremental indexing
+export const getNotesChangedAfter = internalQuery({
+    args: { 
+        projectId: v.id("projects"),
+        since: v.number()
+    },
+    handler: async (ctx, args) => {
+        const notes = await ctx.db
+            .query("notes")
+            .withIndex("by_project_and_archived", (q) =>
+                q.eq("projectId", args.projectId).eq("isArchived", false)
+            )
+            .filter((q) => q.gte(q.field("updatedAt"), args.since))
+            .collect();
+
+        return notes;
+    },
+});

@@ -9,7 +9,6 @@ export const createThreadInDB = internalMutation({
     threadId: v.string(),
     projectId: v.id("projects"),
     userClerkId: v.string(),
-    systemPrompt: v.string(),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -17,7 +16,7 @@ export const createThreadInDB = internalMutation({
     const project = await ctx.db.get(args.projectId);
     if (!project) throw new Error("Project not found");
     
-    // Create thread entry
+    // Create thread entry - no need to store system prompt anymore
     await ctx.db.insert("aiChatThreads", {
       threadId: args.threadId,
       projectId: args.projectId,
@@ -25,16 +24,6 @@ export const createThreadInDB = internalMutation({
       userClerkId: args.userClerkId,
       title: "Chat Thread",
       isActive: true,
-    });
-    
-    // Add system message
-    await ctx.db.insert("aiChatMessages", {
-      threadId: args.threadId,
-      role: "system",
-      content: args.systemPrompt,
-      order: 0,
-      projectId: args.projectId,
-      userClerkId: args.userClerkId,
     });
     
     return null;
@@ -49,7 +38,6 @@ export const getThreadMessages = internalQuery({
   returns: v.array(v.object({
     role: v.union(v.literal("system"), v.literal("user"), v.literal("assistant")),
     content: v.string(),
-    order: v.number(),
   })),
   handler: async (ctx, args) => {
     const messages = await ctx.db
@@ -58,11 +46,12 @@ export const getThreadMessages = internalQuery({
       .order("asc")
       .collect();
     
-    return messages.map(msg => ({
-      role: msg.role,
-      content: msg.content,
-      order: msg.order,
-    }));
+    return messages
+      .filter(msg => msg.role !== "system") // Skip system messages - we don't store them anymore
+      .map(msg => ({
+        role: msg.role,
+        content: msg.content,
+      }));
   },
 });
 
@@ -205,3 +194,4 @@ export const getThreadInfo = internalQuery({
     };
   },
 });
+

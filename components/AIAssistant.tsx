@@ -7,10 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUser } from "@clerk/nextjs";
 import { useProject } from '@/components/providers/ProjectProvider';
-import { Sparkles, Send, RotateCcw, Loader2, RefreshCw, Paperclip, X } from "lucide-react";
+import { Send, RotateCcw, Loader2, Paperclip, X, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-
-type IndexingStatus = "idle" | "indexing" | "done";
 
 const AIAssistant = () => {
   const { user } = useUser();
@@ -18,9 +16,6 @@ const AIAssistant = () => {
   const [message, setMessage] = useState("");
   const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isIndexing, setIsIndexing] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [updateResult, setUpdateResult] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [threadId, setThreadId] = useState<string | undefined>(undefined);
@@ -36,15 +31,11 @@ const AIAssistant = () => {
     scrollToBottom();
   }, [chatHistory, isLoading]);
 
-  const sendMessage = useAction(api.ai_agent_simple.chatWithThread);
-  const createThread = useAction(api.ai_agent_simple.createThread);
-  const indexProject = useAction(api.ai_new.initIndex);
-  const resetIndexing = useAction(api.testSeed.resetIndexingForProject);
-  const updateAIKnowledge = useAction(api.ai_new.updateAIKnowledge);
+  const sendMessage = useAction(api.ai.chatWithAgentStream);
+  const createThread = useAction(api.ai.createThread);
   const generateUploadUrl = useMutation(api.files.generateUploadUrlWithCustomKey);
   const addFile = useMutation(api.files.addFile);
-
-  const indexingStatus: IndexingStatus = project?.aiIndexingStatus || "idle";
+  const analyzePDF = useAction(api.pdfAnalysis.analyzePDFWithGemini);
 
   const handleSendMessage = async () => {
     if (!project || (!message.trim() && !selectedFile) || !user?.id) return;
@@ -89,11 +80,23 @@ const AIAssistant = () => {
           fileSize: selectedFile.size,
         });
 
-        // Trigger text extraction for supported file types
-        if (selectedFile.type === 'application/pdf' || 
-            selectedFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-            selectedFile.type.startsWith('image/') ||
-            selectedFile.type === 'text/plain') {
+        // Trigger analysis for supported file types
+        if (selectedFile.type === 'application/pdf') {
+          // PDF Analysis with Vertex AI
+          console.log('Triggering PDF analysis for file:', fileResult);
+          try {
+            await analyzePDF({
+              fileId: fileResult,
+              projectId: project._id,
+            });
+            toast.success("PDF analysis started - results will appear in chat context");
+          } catch (error) {
+            console.error('PDF analysis failed:', error);
+            toast.error("PDF analysis failed");
+          }
+        } else if (selectedFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+                   selectedFile.type.startsWith('image/') ||
+                   selectedFile.type === 'text/plain') {
           
           // Note: This will be triggered in background
           console.log('Triggering text extraction for file:', fileResult);
@@ -111,6 +114,9 @@ const AIAssistant = () => {
         setMessage("");
       }
 
+      // Add empty assistant message immediately for instant feedback
+      setChatHistory(prev => [...prev, { role: 'assistant', content: '' }]);
+
       const result = await sendMessage({
         threadId: currentThreadId,
         message: userMessage,
@@ -118,7 +124,12 @@ const AIAssistant = () => {
         userClerkId: user.id,
       });
       
-      setChatHistory(prev => [...prev, { role: 'assistant', content: result.response }]);
+      // Update the last message with the full response
+      setChatHistory(prev => {
+        const updated = [...prev];
+        updated[updated.length - 1] = { role: 'assistant', content: result.response };
+        return updated;
+      });
       
     } catch (error) {
       console.error('Error sending message:', error);
@@ -138,38 +149,7 @@ const AIAssistant = () => {
     toast.info("Conversation has been reset.");
   };
 
-  const handleIndexProject = async () => {
-    if (!project) return;
-    setIsIndexing(true);
-    await indexProject({ projectId: project._id });
-    setIsIndexing(false);
-  };
 
-  const handleResetIndexing = async () => {
-    if (!project) return;
-    await resetIndexing({ projectId: project._id });
-  };
-
-  const handleUpdateAIKnowledge = async () => {
-    if (!project) return;
-    
-    setIsUpdating(true);
-    setUpdateResult(null);
-    
-    try {
-      const result = await updateAIKnowledge({ projectId: project._id });
-      setUpdateResult(`✅ ${result.message} (${result.updatedTasks} tasks, ${result.updatedItems} items, ${result.updatedSurveys} surveys)`);
-      
-      // Auto-hide message after 5 seconds
-      setTimeout(() => setUpdateResult(null), 5000);
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      setUpdateResult(`❌ ${errorMessage}`);
-      setTimeout(() => setUpdateResult(null), 5000);
-    } finally {
-      setIsUpdating(false);
-    }
-  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -194,25 +174,6 @@ const AIAssistant = () => {
     fileInputRef.current?.click();
   };
 
-  const getIndexingButtonText = () => {
-    if (isIndexing) return "Indexing...";
-    
-    switch (indexingStatus) {
-      case 'indexing':
-        return "Indexing...";
-      case 'done':
-        const lastIndexed = project?.aiLastIndexedAt;
-        const itemsCount = project?.aiIndexedItemsCount;
-        if (lastIndexed) {
-          const timeAgo = new Date(lastIndexed).toLocaleDateString();
-          return `Re-index (${itemsCount} items, ${timeAgo})`;
-        }
-        return "Re-index Project";
-      case 'idle':
-      default:
-        return "Index Project for AI";
-    }
-  };
 
   return (
     <div className="flex flex-col h-full bg-muted/30">
@@ -224,63 +185,17 @@ const AIAssistant = () => {
             <p className="text-sm text-muted-foreground">Ask questions about your project</p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button 
-              onClick={handleResetConversation}
-              variant="outline"
-              size="sm"
-              disabled={chatHistory.length === 0}
-            >
-              <RotateCcw className="h-4 w-4 mr-2" />
-              New Chat
-            </Button>
-
-            {indexingStatus === 'indexing' && (
-              <Button 
-                onClick={handleResetIndexing} 
-                variant="destructive"
-                size="sm"
-              >
-                <RotateCcw className="h-4 w-4 mr-2" />
-                Reset
-              </Button>
-            )}
-            
-            {/* Update AI Knowledge Button - only show if project was indexed */}
-            {indexingStatus === 'done' && (
-              <Button 
-                onClick={handleUpdateAIKnowledge}
-                variant="secondary"
-                size="sm"
-                disabled={isUpdating}
-              >
-                {isUpdating ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                )}
-                {isUpdating ? "Updating..." : "Update AI"}
-              </Button>
-            )}
-            
-            <Button 
-              onClick={handleIndexProject} 
-              variant="outline"
-              disabled={indexingStatus === 'indexing' || isIndexing}
-            >
-              <Sparkles className="h-4 w-4 mr-2" />
-              {getIndexingButtonText()}
-            </Button>
-          </div>
+          <Button 
+            onClick={handleResetConversation}
+            variant="outline"
+            size="sm"
+            disabled={chatHistory.length === 0}
+          >
+            <RotateCcw className="h-4 w-4 mr-2" />
+            New Chat
+          </Button>
         </div>
       </div>
-
-      {/* Update Result Message */}
-      {updateResult && (
-        <div className="border-b bg-background px-6 py-2">
-          <p className="text-sm text-muted-foreground">{updateResult}</p>
-        </div>
-      )}
 
       {/* Chat Area */}
       <div className="flex-1 overflow-y-auto">
@@ -304,21 +219,22 @@ const AIAssistant = () => {
                   ? 'bg-primary text-primary-foreground shadow-sm' 
                   : 'bg-card border shadow-sm'
               } rounded-xl px-4 py-3`}>
-                <p className="text-sm leading-relaxed whitespace-pre-wrap">{chat.content}</p>
+                {chat.content === '' && chat.role === 'assistant' ? (
+                  // Show typing indicator for empty assistant messages
+                  <div className="flex items-center gap-2">
+                    <div className="flex space-x-1">
+                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"></div>
+                    </div>
+                    <span className="text-sm text-muted-foreground">AI is thinking...</span>
+                  </div>
+                ) : (
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{chat.content}</p>
+                )}
               </div>
             </div>
           ))}
-          
-          {isLoading && (
-            <div className="flex justify-start">
-              <div className="bg-card border shadow-sm rounded-xl px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="text-sm">Thinking...</span>
-                </div>
-              </div>
-            </div>
-          )}
           
           <div ref={messagesEndRef} />
         </div>
@@ -335,33 +251,31 @@ const AIAssistant = () => {
           className="hidden"
         />
 
-        {indexingStatus !== 'done' && (
-          <div className="mb-4 p-4 rounded-xl bg-muted border">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Sparkles className="h-4 w-4" />
-              <span className="text-sm">
-                {indexingStatus === 'indexing' ? 'Indexing your project...' : 'Please index your project first to start chatting'}
-              </span>
-            </div>
-          </div>
-        )}
 
         {/* Selected file preview */}
         {selectedFile && (
-          <div className="mb-4 flex items-center gap-2 p-3 bg-muted rounded-lg">
-            <Paperclip className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm flex-1 truncate">{selectedFile.name}</span>
-            <span className="text-xs text-muted-foreground">
-              {(selectedFile.size / 1024 / 1024).toFixed(1)} MB
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleRemoveFile}
-              className="h-6 w-6 p-0"
-            >
-              <X className="h-4 w-4" />
-            </Button>
+          <div className="mb-4 p-3 bg-muted rounded-lg">
+            <div className="flex items-center gap-2">
+              <Paperclip className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm flex-1 truncate">{selectedFile.name}</span>
+              <span className="text-xs text-muted-foreground">
+                {(selectedFile.size / 1024 / 1024).toFixed(1)} MB
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRemoveFile}
+                className="h-6 w-6 p-0"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            {selectedFile.type === 'application/pdf' && (
+              <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
+                <Sparkles className="h-3 w-3" />
+                PDF will be analyzed with AI for better context understanding
+              </div>
+            )}
           </div>
         )}
         
@@ -371,26 +285,26 @@ const AIAssistant = () => {
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && !isLoading && !isUploading && indexingStatus === 'done') {
+              if (e.key === 'Enter' && !e.shiftKey && !isLoading && !isUploading) {
                 e.preventDefault();
                 handleSendMessage();
               }
             }}
             placeholder={selectedFile ? "Add a message (optional)" : "Ask me anything about your project..."}
-            disabled={isLoading || isUploading || indexingStatus !== 'done'}
+            disabled={isLoading || isUploading}
             className="flex-1"
           />
           <Button
             variant="ghost"
             size="sm"
-            disabled={isLoading || isUploading || indexingStatus !== 'done'}
+            disabled={isLoading || isUploading}
             onClick={handleAttachmentClick}
           >
             <Paperclip className="h-4 w-4" />
           </Button>
           <Button 
             onClick={handleSendMessage} 
-            disabled={isLoading || isUploading || indexingStatus !== 'done' || (!message.trim() && !selectedFile)}
+            disabled={isLoading || isUploading || (!message.trim() && !selectedFile)}
             size="sm"
           >
             {isLoading || isUploading ? (

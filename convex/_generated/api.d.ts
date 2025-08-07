@@ -10,10 +10,8 @@
 
 import type * as activityLog from "../activityLog.js";
 import type * as adminFunctions from "../adminFunctions.js";
-import type * as ai_agent_simple from "../ai_agent_simple.js";
+import type * as ai from "../ai.js";
 import type * as ai_database from "../ai_database.js";
-import type * as ai_indexing from "../ai_indexing.js";
-import type * as ai_new from "../ai_new.js";
 import type * as calendar from "../calendar.js";
 import type * as chatChannels from "../chatChannels.js";
 import type * as chatMessages from "../chatMessages.js";
@@ -26,6 +24,7 @@ import type * as files from "../files.js";
 import type * as http from "../http.js";
 import type * as myFunctions from "../myFunctions.js";
 import type * as notes from "../notes.js";
+import type * as pdfAnalysis from "../pdfAnalysis.js";
 import type * as projects from "../projects.js";
 import type * as quickAdmin from "../quickAdmin.js";
 import type * as rag from "../rag.js";
@@ -56,10 +55,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   activityLog: typeof activityLog;
   adminFunctions: typeof adminFunctions;
-  ai_agent_simple: typeof ai_agent_simple;
+  ai: typeof ai;
   ai_database: typeof ai_database;
-  ai_indexing: typeof ai_indexing;
-  ai_new: typeof ai_new;
   calendar: typeof calendar;
   chatChannels: typeof chatChannels;
   chatMessages: typeof chatMessages;
@@ -72,6 +69,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   myFunctions: typeof myFunctions;
   notes: typeof notes;
+  pdfAnalysis: typeof pdfAnalysis;
   projects: typeof projects;
   quickAdmin: typeof quickAdmin;
   rag: typeof rag;

@@ -71,10 +71,13 @@ export default defineSchema({
     trialEnd: v.optional(v.number()), // Unix timestamp
     cancelAtPeriodEnd: v.optional(v.boolean()),
     subscriptionLimits: v.optional(v.object({
+      id: v.string(),
+      name: v.string(),
       maxProjects: v.number(),
       maxTeamMembers: v.number(),
       maxStorageGB: v.number(),
       hasAdvancedFeatures: v.boolean(),
+      price: v.number(),
     }))
   })
     .index("by_clerk_org", ["clerkOrgId"])
@@ -230,6 +233,14 @@ export default defineSchema({
     textExtractionStatus: v.optional(v.union(
       v.literal("pending"),
       v.literal("processing"), 
+      v.literal("completed"),
+      v.literal("failed")
+    )),
+    // PDF analysis with Vertex AI
+    pdfAnalysis: v.optional(v.string()), // Analysis results for PDF files
+    analysisStatus: v.optional(v.union(
+      v.literal("pending"),
+      v.literal("processing"),
       v.literal("completed"),
       v.literal("failed")
     )),
