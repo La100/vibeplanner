@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery } from "convex/react";
 import { useParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,6 @@ import {
 } from "@/components/ui/select";
 import { Plus, Search, Mail, Phone, MapPin } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { toast } from "sonner";
 import { ContactForm } from "./ContactForm";
 import { Id } from "@/convex/_generated/dataModel";
 

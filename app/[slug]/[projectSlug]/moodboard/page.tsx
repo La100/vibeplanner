@@ -5,8 +5,7 @@ import { useProject } from "@/components/providers/ProjectProvider";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Plus, Upload, Edit3, Trash2 } from "lucide-react";
+import { Plus, Edit3, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
@@ -128,10 +127,9 @@ function MoodboardRowTitle({ title, isEditing, onEdit, onSave, onUpload, isUploa
   );
 }
 
-function MoodboardRow({ row, onUpdateTitle, onAddImages }: { 
+function MoodboardRow({ row, onUpdateTitle }: { 
   row: MoodboardRow; 
   onUpdateTitle: (rowId: string, newTitle: string) => void;
-  onAddImages: (rowId: string, images: MoodboardImage[]) => void;
 }) {
   const { project } = useProject();
   const [selectedImage, setSelectedImage] = useState<MoodboardImage | null>(null);
@@ -318,10 +316,7 @@ export default function MoodboardPage() {
     ));
   };
 
-  const handleAddImages = (rowId: string, newImages: MoodboardImage[]) => {
-    // Images will be automatically added via the query refresh
-    // No need to update local state manually
-  };
+
 
   const handleAddRow = () => {
     const newRow: MoodboardRow = {
@@ -349,7 +344,6 @@ export default function MoodboardPage() {
               key={row.id} 
               row={row} 
               onUpdateTitle={handleUpdateTitle}
-              onAddImages={handleAddImages}
             />
           ))}
         </div>

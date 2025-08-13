@@ -15,10 +15,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
-import { X } from "lucide-react";
 
 interface ContactFormProps {
   contactId?: Id<"contacts">;

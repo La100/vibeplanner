@@ -7,11 +7,9 @@ import { Calendar } from "@/components/calendar/Calendar";
 import { Gantt } from "@/components/gantt/Gantt";
 import { transformDataToEvents } from "@/components/calendar/utils";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
 import { TaskSidebar } from "@/components/calendar/TaskSidebar";
 import { useState, useEffect } from "react";
 import { CalendarEvent } from "@/components/calendar/utils";
-import { CalendarIcon, BarChart3Icon } from "lucide-react";
 import { GanttHeader } from "@/components/gantt/GanttHeader";
 import { SharedFilters } from "@/components/shared/types";
 
@@ -123,7 +121,7 @@ export default function ProjectCalendar() {
     // For calendar view, don't handle event clicks (original behavior)
   };
 
-  const handleDateClick = (date: Date) => {
+  const handleDateClick = () => {
     // Date click handler for calendar view
   };
 

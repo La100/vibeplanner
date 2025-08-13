@@ -18,7 +18,6 @@ import {
   type Range
 } from "@/components/ui/kibo-ui/gantt";
 import { CalendarEvent } from "@/components/calendar/utils";
-import { GanttHeader } from "./GanttHeader";
 import { SharedFilters } from "../shared/types";
 
 interface GanttProps {
@@ -41,8 +40,7 @@ export function Gantt({
   events = [], 
   onEventClick,
   className,
-  filters,
-  onFiltersChange
+  filters
 }: GanttProps) {
   const [ganttRange, setGanttRange] = useState<Range>('monthly');
   const [ganttZoom, setGanttZoom] = useState(100);
@@ -76,12 +74,12 @@ export function Gantt({
       // Status filter - check original source status  
       if (filters.status.length > 0) {
         if (event.sourceType === 'task') {
-          const originalStatus = (event.sourceData as any).status;
+          const originalStatus = (event.sourceData as {status: string}).status;
           if (!filters.status.includes(originalStatus)) {
             return false;
           }
         } else if (event.sourceType === 'shopping') {
-          const originalStatus = (event.sourceData as any).realizationStatus;
+          const originalStatus = (event.sourceData as {realizationStatus: string}).realizationStatus;
           if (!filters.status.includes(originalStatus)) {
             return false;
           }

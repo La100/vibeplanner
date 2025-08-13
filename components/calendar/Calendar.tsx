@@ -8,9 +8,7 @@ import { TaskSidebar } from "./TaskSidebar";
 import { DayEventsModal } from "./DayEventsModal";
 import { useCalendar } from "./CalendarProvider";
 import { CalendarEvent } from "./utils";
-import { SharedFilters, AdvancedFilters } from "../shared/types";
-import { useSmartFiltering } from "../shared/smart-filter-engine";
-import { convertLegacyFilters } from "../shared/filter-adapter";
+import { SharedFilters } from "../shared/types";
 
 
 interface CalendarProps {
@@ -21,7 +19,6 @@ interface CalendarProps {
   filters?: SharedFilters;
   onFiltersChange?: (filters: SharedFilters) => void;
   // New props for smart filtering
-  useSmartFiltering?: boolean;
   currentUserId?: string;
 }
 
@@ -29,10 +26,7 @@ function CalendarContent({
   events = [], 
   onEventClick, 
   onDateClick,
-  filters: externalFilters,
-  onFiltersChange,
-  useSmartFiltering = false,
-  currentUserId
+  filters: externalFilters
 }: CalendarProps) {
   const { setSelectedDate } = useCalendar();
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
@@ -40,33 +34,17 @@ function CalendarContent({
   const [dayModalDate, setDayModalDate] = useState<Date | null>(null);
   const [isDayModalOpen, setIsDayModalOpen] = useState(false);
   
-  // Use external filters if provided, otherwise use default empty filters
-  const filters = externalFilters || {
-    searchQuery: "",
-    eventType: [],
-    priority: [],
-    status: []
-  };
-
-  // Smart filtering context
-  const filterContext = useMemo(() => ({
-    currentUserId,
-    currentDate: new Date(),
-    projectData: {
-      hasOverdueItems: false,
-      overdueCount: 0,
-      hasUpcomingDeadlines: false,
-      upcomingDeadlineCount: 0,
-      averageTaskDuration: 0,
-      criticalPath: []
-    }
-  }), [currentUserId]);
-
-  // Apply filters to events - use smart filtering if enabled
-  const filteredEvents = useSmartFiltering 
-    ? useSmartFiltering(events || [], convertLegacyFilters(filters), filterContext)
-    : useMemo(() => {
+  // Apply filters to events
+  const filteredEvents = useMemo(() => {
         if (!events) return [];
+        
+        // Use external filters if provided, otherwise use default empty filters
+        const filters = externalFilters || {
+          searchQuery: "",
+          eventType: [],
+          priority: [],
+          status: []
+        };
         
         return events.filter((event) => {
           // Search query filter
@@ -87,12 +65,12 @@ function CalendarContent({
           // Status filter - check original source status
           if (filters.status.length > 0) {
             if (event.sourceType === 'task') {
-              const originalStatus = (event.sourceData as any).status;
+              const originalStatus = (event.sourceData as { status: string }).status;
               if (!filters.status.includes(originalStatus)) {
                 return false;
               }
             } else if (event.sourceType === 'shopping') {
-              const originalStatus = (event.sourceData as any).realizationStatus;
+              const originalStatus = (event.sourceData as { realizationStatus: string }).realizationStatus;
               if (!filters.status.includes(originalStatus)) {
                 return false;
               }
@@ -101,7 +79,7 @@ function CalendarContent({
           
           return true;
         });
-      }, [events, filters]);
+      }, [events, externalFilters]);
 
   const handleDateClick = (date: Date) => {
     setSelectedDate(date);
@@ -208,10 +186,7 @@ export function Calendar({
   onEventClick, 
   onDateClick,
   className,
-  filters,
-  onFiltersChange,
-  useSmartFiltering,
-  currentUserId
+  filters
 }: CalendarProps) {
   return (
     <CalendarProvider>
@@ -221,9 +196,6 @@ export function Calendar({
           onEventClick={onEventClick}
           onDateClick={onDateClick}
           filters={filters}
-          onFiltersChange={onFiltersChange}
-          useSmartFiltering={useSmartFiltering}
-          currentUserId={currentUserId}
         />
       </div>
     </CalendarProvider>

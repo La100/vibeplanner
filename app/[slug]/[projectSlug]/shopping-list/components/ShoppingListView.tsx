@@ -156,6 +156,7 @@ export default function ShoppingListView() {
 
   const handleAddItem = async (itemData: {
     name: string;
+    notes?: string;
     supplier?: string;
     category?: string;
     sectionId?: Id<"shoppingListSections">;
@@ -166,13 +167,15 @@ export default function ShoppingListView() {
     productLink?: string;
     imageUrl?: string;
     priority?: "low" | "medium" | "high" | "urgent";
-    realizationStatus?: "PLANNED" | "ORDERED" | "IN_TRANSIT" | "DELIVERED" | "COMPLETED" | "CANCELLED";
+    realizationStatus?: string;
     assignedTo?: string;
     buyBefore?: number;
   }) => {
+    const { realizationStatus, ...rest } = itemData;
     await createItem({
       projectId: project._id,
-      ...itemData
+      ...rest,
+      realizationStatus: (realizationStatus as "PLANNED" | "ORDERED" | "IN_TRANSIT" | "DELIVERED" | "COMPLETED" | "CANCELLED") || "PLANNED"
     });
     toast.success("Product added");
   };

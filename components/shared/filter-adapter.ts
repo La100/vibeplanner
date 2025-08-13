@@ -17,13 +17,13 @@ export function convertLegacyFilters(legacy: SharedFilters): Partial<AdvancedFil
       milestones: legacy.eventType.length === 0 || legacy.eventType.includes('milestone'),
       meetings: false
     },
-    priorities: new Set(legacy.priority),
+    priorities: new Set(legacy.priority as ("low" | "medium" | "high" | "urgent")[]),
     // Convert status array to appropriate sets
     taskStatuses: new Set(
-      legacy.status.filter(s => ['todo', 'in_progress', 'review', 'done'].includes(s)) as any[]
+      legacy.status.filter(s => ['todo', 'in_progress', 'review', 'done'].includes(s)) as ("todo" | "in_progress" | "review" | "done")[]
     ),
     shoppingStatuses: new Set(
-      legacy.status.filter(s => ['PLANNED', 'ORDERED', 'IN_TRANSIT', 'DELIVERED', 'COMPLETED', 'CANCELLED'].includes(s)) as any[]
+      legacy.status.filter(s => ['PLANNED', 'ORDERED', 'IN_TRANSIT', 'DELIVERED', 'COMPLETED', 'CANCELLED'].includes(s)) as ("PLANNED" | "ORDERED" | "IN_TRANSIT" | "DELIVERED" | "COMPLETED" | "CANCELLED")[]
     ),
     // Set defaults for new fields
     assignees: new Set(),

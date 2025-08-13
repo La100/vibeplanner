@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useMemo, useCallback, useEffect } from "react";
-import { Search, Filter, X, Sparkles, Clock, User, DollarSign, Tag, Calendar, Zap } from "lucide-react";
+import React, { useState, useMemo, useCallback } from "react";
+import { Search, Filter, X, Sparkles, Clock, User, DollarSign, Calendar, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -11,21 +11,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
+
 import { AdvancedFilters, FilterPreset, SmartFilterSuggestion, DEFAULT_FILTER_PRESETS } from "./advanced-filter-types";
 
 interface WorldClassFilterSystemProps {
   filters: Partial<AdvancedFilters>;
   onFiltersChange: (filters: Partial<AdvancedFilters>) => void;
-  projectData?: any;
-  userContext?: any;
+  projectData?: unknown;
+  userContext?: unknown;
   teamMembers?: Array<{ id: string; name: string; imageUrl?: string }>;
   className?: string;
 }
@@ -92,7 +85,7 @@ export function WorldClassFilterSystem({
     const suggestions: SmartFilterSuggestion[] = [];
     
     // Suggest my tasks if not filtered
-    if (!currentFilters.myTasksOnly && userContext?.userId) {
+    if (!currentFilters.myTasksOnly && (userContext as { userId?: string })?.userId) {
       suggestions.push({
         id: 'my-tasks',
         title: 'My Tasks Only',
@@ -105,7 +98,7 @@ export function WorldClassFilterSystem({
     }
     
     // Suggest due soon if not active
-    if (!currentFilters.dueSoon && projectData?.hasUpcomingDeadlines) {
+    if (!currentFilters.dueSoon && (projectData as { hasUpcomingDeadlines?: boolean })?.hasUpcomingDeadlines) {
       suggestions.push({
         id: 'due-soon',
         title: 'Due Soon',
@@ -118,11 +111,12 @@ export function WorldClassFilterSystem({
     }
     
     // Suggest overdue items
-    if (!currentFilters.overdue && projectData?.overdueCount > 0) {
+    const overdueCount = (projectData as { overdueCount?: number })?.overdueCount;
+    if (!currentFilters.overdue && overdueCount && overdueCount > 0) {
       suggestions.push({
         id: 'overdue',
         title: 'Overdue Items',
-        description: `${projectData.overdueCount} items need attention`,
+        description: `${overdueCount} items need attention`,
         filters: { overdue: true },
         reason: 'Address overdue items immediately',
         priority: 'high',
@@ -134,7 +128,7 @@ export function WorldClassFilterSystem({
   }, [currentFilters, projectData, userContext, showSmartSuggestions]);
 
   const updateFilters = useCallback((updates: Partial<AdvancedFilters>) => {
-    onFiltersChange({ ...currentFilters, ...updates });
+    onFiltersChange({ ...currentFilters, ...updates } as Partial<AdvancedFilters>);
   }, [currentFilters, onFiltersChange]);
 
   const clearAllFilters = useCallback(() => {
@@ -147,8 +141,8 @@ export function WorldClassFilterSystem({
         milestones: false,
         meetings: false
       },
-      taskStatuses: new Set(['todo', 'in_progress', 'review']),
-      shoppingStatuses: new Set(['PLANNED', 'ORDERED', 'IN_TRANSIT']),
+      taskStatuses: new Set(['todo', 'in_progress', 'review'] as ("todo" | "in_progress" | "review" | "done")[]),
+      shoppingStatuses: new Set(['PLANNED', 'ORDERED', 'IN_TRANSIT'] as ("PLANNED" | "ORDERED" | "IN_TRANSIT" | "DELIVERED" | "COMPLETED" | "CANCELLED")[]),
       priorities: new Set(),
       assignees: new Set(),
       dateRange: { type: 'all' },
@@ -161,7 +155,7 @@ export function WorldClassFilterSystem({
   }, [onFiltersChange]);
 
   const applyPreset = useCallback((preset: FilterPreset) => {
-    onFiltersChange({ ...currentFilters, ...preset.filters });
+    onFiltersChange({ ...currentFilters, ...preset.filters } as Partial<AdvancedFilters>);
     setIsPresetsOpen(false);
   }, [currentFilters, onFiltersChange]);
 
@@ -184,9 +178,9 @@ export function WorldClassFilterSystem({
     if (newPriorities.has(priority)) {
       newPriorities.delete(priority);
     } else {
-      newPriorities.add(priority);
+      newPriorities.add(priority as "low" | "medium" | "high" | "urgent");
     }
-    updateFilters({ priorities: newPriorities });
+    updateFilters({ priorities: newPriorities as Set<"low" | "medium" | "high" | "urgent"> });
   }, [currentFilters.priorities, updateFilters]);
 
   const toggleAssignee = useCallback((userId: string) => {

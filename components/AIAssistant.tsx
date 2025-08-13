@@ -35,7 +35,7 @@ const AIAssistant = () => {
   const createThread = useAction(api.ai.createThread);
   const generateUploadUrl = useMutation(api.files.generateUploadUrlWithCustomKey);
   const addFile = useMutation(api.files.addFile);
-  const analyzePDF = useAction(api.pdfAnalysis.analyzePDFWithGemini);
+  // const analyzePDF = useAction(api.pdfAnalysis.analyzePDFWithGemini); // Temporarily disabled
 
   const handleSendMessage = async () => {
     if (!project || (!message.trim() && !selectedFile) || !user?.id) return;
@@ -82,8 +82,10 @@ const AIAssistant = () => {
 
         // Trigger analysis for supported file types
         if (selectedFile.type === 'application/pdf') {
-          // PDF Analysis with Vertex AI
-          console.log('Triggering PDF analysis for file:', fileResult);
+          // PDF Analysis with Vertex AI - Temporarily disabled
+          console.log('PDF analysis disabled for file:', fileResult);
+          // TODO: Re-enable after fixing API generation
+          /*
           try {
             await analyzePDF({
               fileId: fileResult,
@@ -94,6 +96,7 @@ const AIAssistant = () => {
             console.error('PDF analysis failed:', error);
             toast.error("PDF analysis failed");
           }
+          */
         } else if (selectedFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
                    selectedFile.type.startsWith('image/') ||
                    selectedFile.type === 'text/plain') {

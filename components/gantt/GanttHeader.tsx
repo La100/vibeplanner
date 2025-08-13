@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { Badge } from "@/components/ui/badge";
-import { Search, X, Filter, BarChart3, Calendar, Sparkles } from "lucide-react";
+import { Search, X, Filter, BarChart3, Calendar } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,8 +29,7 @@ export function GanttHeader({
   filters, 
   onFiltersChange, 
   currentView = "gantt", 
-  onViewChange, 
-  children
+  onViewChange
 }: GanttHeaderProps) {
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
 
@@ -70,14 +69,6 @@ export function GanttHeader({
       ? currentArray.filter(item => item !== value)
       : [...currentArray, value];
     updateFilters({ [type]: newArray });
-  };
-
-  const getViewIcon = () => {
-    return currentView === "calendar" ? <Calendar className="h-4 w-4 sm:h-5 sm:w-5 text-primary-foreground" /> : <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5 text-primary-foreground" />;
-  };
-
-  const getViewTitle = () => {
-    return currentView === "calendar" ? "Calendar View" : "Gantt Chart";
   };
 
   return (

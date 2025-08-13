@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
-import { useParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { useProject } from "@/components/providers/ProjectProvider";
 import { Button } from "@/components/ui/button";
@@ -37,7 +36,6 @@ import { Id } from "@/convex/_generated/dataModel";
 
 export default function ContactsPage() {
   const { project } = useProject();
-  const params = useParams<{ slug: string }>();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
   

@@ -1,6 +1,6 @@
 'use client';
 
-import { Card } from '@/components/ui/card';
+
 import {
   ContextMenu,
   ContextMenuContent,
@@ -8,13 +8,12 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { cn } from '@/lib/utils';
-import { useThrottle, useWindowScroll } from '@uidotdev/usehooks';
+
 import { formatDate, getDate } from 'date-fns';
 import { formatDistance, isSameDay } from 'date-fns';
 import { format } from 'date-fns';
 import {
   addDays,
-  addMonths,
   differenceInDays,
   differenceInHours,
   differenceInMonths,
@@ -26,7 +25,7 @@ import {
 } from 'date-fns';
 import { atom, useAtom } from 'jotai';
 import throttle from 'lodash.throttle';
-import { PlusIcon, TrashIcon } from 'lucide-react';
+import { TrashIcon } from 'lucide-react';
 import {
   createContext,
   useCallback,
@@ -95,16 +94,16 @@ export type GanttContextProps = {
   ref: RefObject<HTMLDivElement | null> | null;
 };
 
-const getsDaysIn = (range: Range) => {
-  // For when range is daily
-  let fn = (_date: Date) => 1;
-
-  if (range === 'monthly' || range === 'quarterly') {
-    fn = getDaysInMonth;
-  }
-
-  return fn;
-};
+// const getsDaysIn = (range: Range) => {
+//   // For when range is daily
+//   let fn = () => 1;
+//
+//   if (range === 'monthly' || range === 'quarterly') {
+//     fn = getDaysInMonth;
+//   }
+//
+//   return fn;
+// };
 
 const getDifferenceIn = (range: Range) => {
   let fn = differenceInDays;
@@ -146,30 +145,30 @@ const getEndOf = (range: Range) => {
   return fn;
 };
 
-const getAddRange = (range: Range) => {
-  let fn = addDays;
+// const getAddRange = (range: Range) => {
+//   let fn = addDays;
+//
+//   if (range === 'monthly' || range === 'quarterly') {
+//     fn = addMonths;
+//   }
+//
+//   return fn;
+// };
 
-  if (range === 'monthly' || range === 'quarterly') {
-    fn = addMonths;
-  }
+// const getDateByMousePosition = (context: GanttContextProps, mouseX: number) => {
+//   const timelineStartDate = new Date(context.timelineData[0].year, 0, 1);
+//   const columnWidth = (context.columnWidth * context.zoom) / 100;
+//   const offset = Math.floor(mouseX / columnWidth);
+//   const daysIn = getsDaysIn(context.range);
+//   const addRange = getAddRange(context.range);
+//   const month = addRange(timelineStartDate, offset);
+//   const daysInMonth = daysIn(month);
+//   const pixelsPerDay = Math.round(columnWidth / daysInMonth);
+//   const dayOffset = Math.floor((mouseX % columnWidth) / pixelsPerDay);
+//   const actualDate = addDays(month, dayOffset);
 
-  return fn;
-};
-
-const getDateByMousePosition = (context: GanttContextProps, mouseX: number) => {
-  const timelineStartDate = new Date(context.timelineData[0].year, 0, 1);
-  const columnWidth = (context.columnWidth * context.zoom) / 100;
-  const offset = Math.floor(mouseX / columnWidth);
-  const daysIn = getsDaysIn(context.range);
-  const addRange = getAddRange(context.range);
-  const month = addRange(timelineStartDate, offset);
-  const daysInMonth = daysIn(month);
-  const pixelsPerDay = Math.round(columnWidth / daysInMonth);
-  const dayOffset = Math.floor((mouseX % columnWidth) / pixelsPerDay);
-  const actualDate = addDays(month, dayOffset);
-
-  return actualDate;
-};
+//   return actualDate;
+// };
 
 const createInitialTimelineData = (today: Date) => {
   const data: TimelineData = [];
@@ -555,9 +554,7 @@ export const GanttCreateMarkerTrigger: FC<GanttCreateMarkerTriggerProps> = ({
   className,
 }) => {
   const gantt = useContext(GanttContext);
-  const [scrollX] = useGanttScrollX();
-  const [windowScroll] = useWindowScroll();
-  const [date, setDate] = useState<Date>(new Date());
+  const [date] = useState<Date>(new Date());
 
   const handleClick = () => onCreateMarker(date);
 
@@ -751,7 +748,7 @@ export const GanttMarker: FC<
     onRemove?: (id: string) => void;
     className?: string;
   }
-> = memo(({ label, date, id, onRemove, className }) => {
+> = memo(function GanttMarkerComponent({ label, date, id, onRemove, className }) {
   const gantt = useContext(GanttContext);
   const differenceIn = getDifferenceIn(gantt.range);
   const timelineStartDate = new Date(gantt.timelineData.at(0)?.year ?? 0, 0, 1);

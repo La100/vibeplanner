@@ -182,8 +182,7 @@ export const DEFAULT_FILTER_PRESETS: FilterPreset[] = [
 // Smart suggestions based on current context
 export const generateSmartSuggestions = (
   currentFilters: Partial<AdvancedFilters>,
-  projectData: any,
-  userContext: any
+  projectData: { hasOverdueItems?: boolean; overdueCount?: number; hasUpcomingDeadlines?: boolean; upcomingDeadlineCount?: number; hasMyTasks?: boolean; [key: string]: unknown }
 ): SmartFilterSuggestion[] => {
   const suggestions: SmartFilterSuggestion[] = [];
   

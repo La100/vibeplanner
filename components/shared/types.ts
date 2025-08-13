@@ -7,4 +7,4 @@ export interface SharedFilters {
 }
 
 // Re-export new advanced filters
-export { AdvancedFilters, FilterPreset, SmartFilterSuggestion } from './advanced-filter-types';
+export type { AdvancedFilters, FilterPreset, SmartFilterSuggestion } from './advanced-filter-types';
