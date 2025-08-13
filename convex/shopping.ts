@@ -80,7 +80,7 @@ export const createShoppingListItem = mutation({
         name: v.string(),
         notes: v.optional(v.string()),
         buyBefore: v.optional(v.number()),
-        priority: v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent")),
+        priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent"))),
         imageUrl: v.optional(v.string()),
         productLink: v.optional(v.string()),
         supplier: v.optional(v.string()),

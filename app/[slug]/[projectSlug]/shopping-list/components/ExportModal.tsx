@@ -12,7 +12,13 @@ interface ExportModalProps {
     includeNotes: boolean;
     groupBySections: boolean;
   };
-  onExportOptionsChange: (options: any) => void;
+  onExportOptionsChange: (options: {
+    format: 'csv' | 'pdf';
+    includeImages: boolean;
+    statusFilter: 'all' | 'planned' | 'ordered' | 'completed';
+    includeNotes: boolean;
+    groupBySections: boolean;
+  }) => void;
   onExport: () => void;
   isPending: boolean;
 }

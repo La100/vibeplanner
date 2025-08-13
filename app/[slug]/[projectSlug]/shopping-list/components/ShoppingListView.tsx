@@ -18,39 +18,8 @@ import { ShoppingListSection } from './ShoppingListSection';
 import { ExportModal } from './ExportModal';
 
 type ShoppingListItem = Doc<"shoppingListItems">;
-type Priority = ShoppingListItem["priority"];
 
-type TeamMember = {
-  _id: Id<"teamMembers">;
-  _creationTime: number;
-  teamId: Id<"teams">;
-  clerkUserId: string;
-  clerkOrgId: string;
-  role: string;
-  permissions: string[];
-  name: string;
-  email: string;
-  imageUrl?: string;
-  joinedAt?: number;
-  projectIds?: Id<"projects">[];
-  isActive: boolean;
-};
 
-interface EditFormData {
-  name?: string;
-  supplier?: string;
-  category?: string;
-  sectionId?: string | Id<"shoppingListSections">;
-  catalogNumber?: string;
-  dimensions?: string;
-  quantity?: number;
-  unitPrice?: string;
-  productLink?: string;
-  imageUrl?: string;
-  priority?: Priority;
-  buyBefore?: string;
-  assigneeId?: string;
-}
 
 export function ShoppingListViewSkeleton() {
   return (
@@ -104,7 +73,7 @@ export function ShoppingListViewSkeleton() {
 }
 
 export default function ShoppingListView() {
-  const [isPending, startTransition] = useTransition();
+  const [isPending] = useTransition();
 
   const { project } = useProject();
 
@@ -118,9 +87,6 @@ export default function ShoppingListView() {
   const createSection = useMutation(api.shopping.createShoppingListSection);
   const deleteSection = useMutation(api.shopping.deleteShoppingListSection);
 
-  // Edit state
-  const [editingItemId, setEditingItemId] = useState<string | null>(null);
-  const [editFormData, setEditFormData] = useState<EditFormData>({});
 
   // Export state
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -188,7 +154,22 @@ export default function ShoppingListView() {
     await deleteSection({ sectionId });
   };
 
-  const handleAddItem = async (itemData: any) => {
+  const handleAddItem = async (itemData: {
+    name: string;
+    supplier?: string;
+    category?: string;
+    sectionId?: Id<"shoppingListSections">;
+    catalogNumber?: string;
+    dimensions?: string;
+    quantity: number;
+    unitPrice?: number;
+    productLink?: string;
+    imageUrl?: string;
+    priority?: "low" | "medium" | "high" | "urgent";
+    realizationStatus?: "PLANNED" | "ORDERED" | "IN_TRANSIT" | "DELIVERED" | "COMPLETED" | "CANCELLED";
+    assignedTo?: string;
+    buyBefore?: number;
+  }) => {
     await createItem({
       projectId: project._id,
       ...itemData
@@ -216,22 +197,8 @@ export default function ShoppingListView() {
   };
 
   const handleStartEdit = (item: ShoppingListItem) => {
-    setEditingItemId(item._id);
-    setEditFormData({
-      name: item.name,
-      supplier: item.supplier || '',
-      category: item.category || '',
-      sectionId: item.sectionId || 'none',
-      catalogNumber: item.catalogNumber || '',
-      dimensions: item.dimensions || '',
-      quantity: item.quantity,
-      unitPrice: item.unitPrice ? item.unitPrice.toString() : '',
-      productLink: item.productLink || '',
-      imageUrl: item.imageUrl || '',
-      priority: item.priority,
-      buyBefore: item.buyBefore ? format(new Date(item.buyBefore), 'yyyy-MM-dd') : '',
-      assigneeId: item.assignedTo || 'none'
-    });
+    // This function is passed to ShoppingListSection but not used in this component
+    console.log('Edit item:', item);
   };
 
   // Export handlers
@@ -348,7 +315,8 @@ export default function ShoppingListView() {
             item.supplier || '-'
           ]);
 
-          (doc as any).autoTable({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (doc as any).autoTable({
             startY: yPosition,
             head: [['Product', 'Qty', 'Unit Price', 'Total', 'Status', 'Supplier']],
             body: tableData,
@@ -357,6 +325,7 @@ export default function ShoppingListView() {
             headStyles: { fillColor: [66, 66, 66], textColor: [255, 255, 255] }
           });
 
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           yPosition = (doc as any).lastAutoTable.finalY + 10;
         });
       } else {
@@ -377,6 +346,7 @@ export default function ShoppingListView() {
           ];
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (doc as any).autoTable({
           startY: yPosition,
           head: [['Section', 'Product', 'Qty', 'Unit Price', 'Total', 'Status']],

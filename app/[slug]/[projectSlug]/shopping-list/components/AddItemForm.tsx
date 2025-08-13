@@ -36,7 +36,22 @@ interface AddItemFormProps {
   sections: Doc<"shoppingListSections">[];
   teamMembers?: TeamMember[];
   currencySymbol: string;
-  onAddItem: (itemData: any) => Promise<void>;
+  onAddItem: (itemData: {
+    name: string;
+    supplier?: string;
+    category?: string;
+    sectionId?: Id<"shoppingListSections">;
+    catalogNumber?: string;
+    dimensions?: string;
+    quantity: number;
+    unitPrice?: number;
+    productLink?: string;
+    imageUrl?: string;
+    priority: "low" | "medium" | "high" | "urgent";
+    realizationStatus: "PLANNED" | "ORDERED" | "IN_TRANSIT" | "DELIVERED" | "COMPLETED" | "CANCELLED";
+    assignedTo?: string;
+    buyBefore?: number;
+  }) => Promise<void>;
   isPending: boolean;
   defaultSectionId?: Id<"shoppingListSections">;
   isInline?: boolean;

@@ -66,6 +66,12 @@ export function ShoppingListItemDetails({ item }: ShoppingListItemDetailsProps) 
                     <span>{item.assignedTo}</span>
                 </div>
             )}
+            {item.notes && (
+                <div className="col-span-2 md:col-span-3">
+                    <span className="font-semibold">Notes:</span>
+                    <p className="mt-1 text-gray-700">{item.notes}</p>
+                </div>
+            )}
         </div>
     )
 } 
