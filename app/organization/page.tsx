@@ -9,6 +9,7 @@ export default function OrganizationPage() {
         hidePersonal
         afterSelectOrganizationUrl="/:slug"
         afterCreateOrganizationUrl="/:slug"
+        hideSlug={true}
       />
     </div>
   );

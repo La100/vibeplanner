@@ -880,8 +880,8 @@ export const GanttProvider: FC<GanttProviderProps> = ({
   }, []);
 
   // Handle scroll events
-  const handleScroll = useCallback(
-    throttle(() => {
+  const handleScroll = useCallback(() => {
+    return throttle(() => {
       if (!scrollRef.current) {
         return;
       }
@@ -943,18 +943,20 @@ export const GanttProvider: FC<GanttProviderProps> = ({
           scrollRef.current.scrollWidth - scrollRef.current.clientWidth;
         setScrollX(scrollRef.current.scrollLeft);
       }
-    }, 100),
-    [timelineData, setScrollX]
-  );
+    }, 100);
+  }, [timelineData, setScrollX]);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.addEventListener('scroll', handleScroll);
+    const scrollElement = scrollRef.current;
+    const scrollHandler = handleScroll();
+    
+    if (scrollElement) {
+      scrollElement.addEventListener('scroll', scrollHandler);
     }
 
     return () => {
-      if (scrollRef.current) {
-        scrollRef.current.removeEventListener('scroll', handleScroll);
+      if (scrollElement) {
+        scrollElement.removeEventListener('scroll', scrollHandler);
       }
     };
   }, [handleScroll]);
