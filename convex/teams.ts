@@ -40,6 +40,13 @@ export const getTeamByClerkOrg = query({
   },
 });
 
+export const getTeamById = query({
+  args: { teamId: v.id("teams") },
+  async handler(ctx, args) {
+    return await ctx.db.get(args.teamId);
+  },
+});
+
 export const getTeamBySlug = query({
     args: { slug: v.string() },
     async handler(ctx, args) {

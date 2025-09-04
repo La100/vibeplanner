@@ -74,6 +74,7 @@ export function ShoppingListViewSkeleton() {
 
 export default function ShoppingListView() {
   const [isPending] = useTransition();
+  const [showMainAddForm, setShowMainAddForm] = useState(false);
 
   const { project } = useProject();
 
@@ -397,7 +398,25 @@ export default function ShoppingListView() {
           grandTotal={grandTotal}
           currencySymbol={currencySymbol}
           onExportClick={() => setIsExportModalOpen(true)}
+          onAddProductClick={() => setShowMainAddForm(!showMainAddForm)}
         />
+
+        {/* Main Add Product Form */}
+        {showMainAddForm && (
+          <div className="mb-6 border rounded-lg p-4 bg-blue-50">
+            <h3 className="text-lg font-semibold mb-4">Add New Product</h3>
+            <AddItemForm
+              sections={sections}
+              teamMembers={teamMembers}
+              currencySymbol={currencySymbol}
+              onAddItem={async (itemData) => {
+                await handleAddItem(itemData);
+                setShowMainAddForm(false);
+              }}
+              isPending={isPending}
+            />
+          </div>
+        )}
 
         {/* Section Manager */}
         <SectionManager

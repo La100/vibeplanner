@@ -1,18 +1,20 @@
 import { Button } from '@/components/ui/button';
-import { DownloadIcon } from 'lucide-react';
+import { DownloadIcon, PlusIcon } from 'lucide-react';
 
 interface ShoppingListHeaderProps {
   projectName: string;
   grandTotal: number;
   currencySymbol: string;
   onExportClick: () => void;
+  onAddProductClick: () => void;
 }
 
 export function ShoppingListHeader({ 
   projectName, 
   grandTotal, 
   currencySymbol, 
-  onExportClick 
+  onExportClick,
+  onAddProductClick
 }: ShoppingListHeaderProps) {
   return (
     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
@@ -23,6 +25,10 @@ export function ShoppingListHeader({
         </p>
       </div>
       <div className="flex gap-2">
+        <Button onClick={onAddProductClick} variant="default">
+          <PlusIcon className="h-4 w-4 mr-2" />
+          Add Product
+        </Button>
         <Button onClick={onExportClick} variant="outline">
           <DownloadIcon className="h-4 w-4 mr-2" />
           Export

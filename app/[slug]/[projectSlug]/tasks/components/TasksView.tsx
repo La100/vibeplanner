@@ -64,7 +64,7 @@ type KanbanTask = {
   description: string | undefined;
   content: string | undefined;
   priority: TaskPriority;
-  endDate: number | undefined;
+  dueDate: number | undefined;
   cost: number | undefined;
   status: TaskStatusLiterals;
   assignedTo: string | null | undefined;
@@ -239,7 +239,7 @@ export default function TasksView() {
     description: task.description,
     content: task.content,
     priority: task.priority as TaskPriority,
-    endDate: task.endDate,
+    dueDate: task.dueDate,
     cost: task.cost,
     status: task.status,
     assignedTo: task.assignedTo,
@@ -467,7 +467,7 @@ export default function TasksView() {
                   <TableHead>Status</TableHead>
                   <TableHead>Priority</TableHead>
                   <TableHead>Assignee</TableHead>
-                  <TableHead onClick={() => handleSortChange('endDate')}>
+                  <TableHead onClick={() => handleSortChange('dueDate')}>
                     <div className="flex items-center cursor-pointer">
                       Due Date <ChevronsUpDown className="ml-2 h-4 w-4" />
                     </div>
@@ -507,7 +507,7 @@ export default function TasksView() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {formatDateTime(task.endDate)}
+                      {formatDateTime(task.dueDate)}
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
@@ -563,9 +563,9 @@ function TaskCardContent({ task, projectSlug, companySlug }: { task: KanbanTask,
       </div>
       {task.description && <p className="text-xs text-muted-foreground mb-2">{task.description}</p>}
       
-      {task.endDate && (
+      {task.dueDate && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <span>Due: {formatDateTime(task.endDate)}</span>
+              <span>Due: {formatDateTime(task.dueDate)}</span>
           </div>
       )}
 

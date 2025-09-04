@@ -90,10 +90,10 @@ function ProjectOverviewContent() {
   const progress = tasks.length > 0 ? (tasks.filter(t => t.status === "done").length / tasks.length) * 100 : 0;
   const completedTasks = tasks.filter(t => t.status === "done").length;
   const inProgressTasks = tasks.filter(t => t.status === "in_progress").length;
-  const overdueTasks = tasks.filter(t => t.endDate && t.endDate < Date.now() && t.status !== "done").length;
+  const overdueTasks = tasks.filter(t => t.dueDate && new Date(t.dueDate).getTime() < Date.now() && t.status !== "done").length;
   const upcomingTasks = tasks.filter(t => {
-    if (!t.endDate || t.status === "done") return false;
-    const endDate = new Date(t.endDate);
+    if (!t.dueDate || t.status === "done") return false;
+    const endDate = new Date(t.dueDate);
     const now = new Date();
     const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
     return endDate >= now && endDate <= nextWeek;
@@ -268,9 +268,9 @@ function ProjectOverviewContent() {
                     )}
                   </div>
                   <div className="flex items-center gap-1 lg:gap-2 flex-shrink-0">
-                    {task.endDate && (
+                    {task.dueDate && (
                       <span className="text-xs text-muted-foreground hidden md:inline">
-                        {new Date(task.endDate).toLocaleDateString()}
+                        {new Date(task.dueDate).toLocaleDateString()}
                       </span>
                     )}
                     <Badge variant="outline" className="text-xs">

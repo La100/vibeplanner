@@ -31,7 +31,7 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 
-import { DateRangePickerWithTime } from "@/components/ui/DateRangePickerWithTime";
+import { DatePicker } from "@/components/ui/date-picker";
 
 
 
@@ -41,19 +41,8 @@ const taskFormSchema = z.object({
     priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
     status: z.enum(["todo", "in_progress", "review", "done"]).optional(),
     assignedTo: z.string().nullable().optional(),
-    dateRange: z.object({
-        from: z.date(),
-        to: z.date().optional(),
-    }).optional(),
+    dueDate: z.date().optional(),
     cost: z.coerce.number().optional(),
-}).refine((data) => {
-    if (data.dateRange?.from && data.dateRange?.to) {
-        return data.dateRange.from <= data.dateRange.to;
-    }
-    return true;
-}, {
-    message: "Start date must be before or equal to end date",
-    path: ["dateRange"],
 });
   
 type TaskFormValues = z.infer<typeof taskFormSchema>;
@@ -85,10 +74,7 @@ export default function TaskForm({ projectId, teamId, teamMembers, currency, tas
             priority: task.priority as TaskFormValues["priority"],
             status: task.status as TaskFormValues["status"],
             assignedTo: task.assignedTo || undefined,
-            dateRange: {
-              from: task.startDate ? new Date(task.startDate) : undefined,
-              to: task.endDate ? new Date(task.endDate) : undefined,
-            },
+            dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
             cost: task.cost,
           }
         : {
@@ -97,7 +83,7 @@ export default function TaskForm({ projectId, teamId, teamMembers, currency, tas
             priority: undefined,
             status: "todo",
             assignedTo: "",
-            dateRange: undefined,
+            dueDate: undefined,
             cost: undefined,
           },
     });
@@ -110,10 +96,7 @@ export default function TaskForm({ projectId, teamId, teamMembers, currency, tas
             priority: task.priority as TaskFormValues["priority"],
             status: task.status as TaskFormValues["status"],
             assignedTo: task.assignedTo || undefined,
-            dateRange: {
-              from: task.startDate ? new Date(task.startDate) : undefined,
-              to: task.endDate ? new Date(task.endDate) : undefined,
-            },
+            dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
             cost: task.cost,
         });
       }
@@ -130,8 +113,7 @@ export default function TaskForm({ projectId, teamId, teamMembers, currency, tas
                 timezoneOffsetInMinutes 
             });
             
-            const startDate = result.dateRange?.from ? new Date(result.dateRange.from) : undefined;
-            const endDate = result.dateRange?.to ? new Date(result.dateRange.to) : undefined;
+            const dueDate = result.dateRange?.from ? new Date(result.dateRange.from) : undefined;
             
             form.reset({
                 title: result.title || "",
@@ -139,7 +121,7 @@ export default function TaskForm({ projectId, teamId, teamMembers, currency, tas
                 priority: result.priority as TaskFormValues["priority"],
                 status: result.status as TaskFormValues["status"] || "todo",
                 assignedTo: result.assignedTo || undefined,
-                dateRange: startDate ? { from: startDate, to: endDate } : undefined,
+                dueDate: dueDate,
                 cost: result.cost || undefined,
             });
 
@@ -162,8 +144,7 @@ export default function TaskForm({ projectId, teamId, teamMembers, currency, tas
             status: values.status || "todo", // Ensure status is not undefined
             assignedTo: values.assignedTo,
             cost: values.cost,
-            startDate: values.dateRange?.from?.getTime(),
-            endDate: values.dateRange?.to?.getTime(),
+            dueDate: values.dueDate?.getTime(),
         };
 
         if (task) {
@@ -308,16 +289,16 @@ export default function TaskForm({ projectId, teamId, teamMembers, currency, tas
                     )}
                 />
                 
-                {/* Date Range Picker */}
+                {/* Due Date Picker */}
                 <FormField
                     control={form.control}
-                    name="dateRange"
+                    name="dueDate"
                     render={({ field }) => (
                     <FormItem className="flex flex-col">
-                        <FormLabel>Date Range</FormLabel>
-                        <DateRangePickerWithTime
-                            value={field.value}
-                            onChange={field.onChange}
+                        <FormLabel>Due Date</FormLabel>
+                        <DatePicker
+                            date={field.value}
+                            onDateChange={field.onChange}
                         />
                         <FormMessage />
                     </FormItem>

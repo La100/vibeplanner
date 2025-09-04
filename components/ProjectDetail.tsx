@@ -78,8 +78,6 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
         teamId: project.teamId,
         status: "todo",
         priority: newTask.priority,
-        startDate: newTask.startDate ? new Date(newTask.startDate).getTime() : undefined,
-        endDate: newTask.endDate ? new Date(newTask.endDate).getTime() : undefined,
         tags: newTask.tags.split(",").map(tag => tag.trim()).filter(tag => tag),
       });
 
@@ -294,7 +292,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                       <div className="flex-1">
                         <p className="font-medium">{task.title}</p>
                         <p className="text-sm text-gray-500">
-                          {task.endDate && `Termin: ${formatDate(task.endDate)}`}
+                          {task.dueDate && `Termin: ${formatDate(task.dueDate)}`}
                         </p>
                       </div>
                       {task.priority && task.priority !== null && (
@@ -463,16 +461,10 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                               <p className="text-sm text-gray-600 mt-1">{task.description}</p>
                             )}
                             <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                              {(task.startDate || task.endDate) && (
+                              {task.dueDate && (
                                 <span className="flex items-center gap-1">
                                   <Calendar className="h-3 w-3" />
-                                  {task.startDate && task.endDate ? (
-                                    <>{formatDate(task.startDate)} - {formatDate(task.endDate)}</>
-                                  ) : task.startDate ? (
-                                    <>Start: {formatDate(task.startDate)}</>
-                                  ) : task.endDate ? (
-                                    <>End: {formatDate(task.endDate)}</>
-                                  ) : null}
+                                  Due: {formatDate(task.dueDate)}
                                 </span>
                               )}
 

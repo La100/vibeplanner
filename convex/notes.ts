@@ -117,7 +117,18 @@ export const createNote = mutation({
             isArchived: false,
         });
 
-        // No indexing needed with 1M context - data is always fresh!
+        // 🚀 AUTO-INDEX NEW NOTE IN BACKGROUND (client doesn't wait)
+        ctx.scheduler.runAfter(0, internal.aiSmart.smartAutoIndex, {
+            content: `NOTE: ${args.title}
+Content: ${args.content.replace(/<[^>]*>/g, '')}`,
+            metadata: {
+                type: "note",
+                projectId: args.projectId,
+                itemId: noteId,
+                title: args.title,
+                createdAt: now,
+            }
+        });
 
         return noteId;
     },

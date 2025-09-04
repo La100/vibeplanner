@@ -25,16 +25,50 @@ interface CalendarEventCardProps {
   eventType?: 'start' | 'end' | 'single';
 }
 
+const getPriorityColors = (priority: string) => {
+  switch (priority) {
+    case 'urgent':
+      return {
+        bg: 'bg-red-500',
+        light: 'bg-red-50',
+        text: 'text-red-700',
+        border: 'border-red-200'
+      };
+    case 'high':
+      return {
+        bg: 'bg-orange-500',
+        light: 'bg-orange-50',
+        text: 'text-orange-700',
+        border: 'border-orange-200'
+      };
+    case 'medium':
+      return {
+        bg: 'bg-yellow-500',
+        light: 'bg-yellow-50',
+        text: 'text-yellow-700',
+        border: 'border-yellow-200'
+      };
+    case 'low':
+      return {
+        bg: 'bg-green-500',
+        light: 'bg-green-50',
+        text: 'text-green-700',
+        border: 'border-green-200'
+      };
+    default:
+      return {
+        bg: 'bg-gray-500',
+        light: 'bg-gray-50',
+        text: 'text-gray-700',
+        border: 'border-gray-200'
+      };
+  }
+};
+
 const eventTypeConfig = {
   task: {
     icon: CalendarDays,
-    label: 'Task',
-    colors: {
-      bg: 'bg-blue-500',
-      light: 'bg-blue-50',
-      text: 'text-blue-700',
-      border: 'border-blue-200'
-    }
+    label: 'Task'
   },
   shopping: {
     icon: ShoppingCart,
@@ -48,13 +82,7 @@ const eventTypeConfig = {
   },
   deadline: {
     icon: AlertCircle,
-    label: 'Deadline',
-    colors: {
-      bg: 'bg-red-500',
-      light: 'bg-red-50',
-      text: 'text-red-700',
-      border: 'border-red-200'
-    }
+    label: 'Deadline'
   },
   milestone: {
     icon: CheckCircle2,
@@ -135,6 +163,11 @@ export function CalendarEventCard({
   const priority = priorityConfig[event.priority as keyof typeof priorityConfig];
   const status = statusConfig[event.status as keyof typeof statusConfig];
   const Icon = config.icon;
+  
+  // Use priority colors for tasks, default colors for other event types
+  const colors = event.type === 'task' 
+    ? getPriorityColors(event.priority || 'medium')
+    : 'colors' in config ? config.colors : getPriorityColors('medium');
 
   const getEventTitle = () => {
     if (eventType === 'start') return `▶ ${event.title}`;
@@ -150,8 +183,8 @@ export function CalendarEventCard({
         className={cn(
           "rounded-lg border cursor-pointer transition-colors hover:bg-accent",
           "p-1.5 sm:p-2 text-sm",
-          config.colors.light,
-          config.colors.border,
+          colors.light,
+          colors.border,
           className
         )}
         title={`${event.title} (${eventType === 'start' ? 'Start' : eventType === 'end' ? 'End' : 'Single day'}) - Priority: ${event.priority}`}
@@ -164,8 +197,8 @@ export function CalendarEventCard({
           
           {/* Event icon and title */}
           <div className="flex items-center gap-1 sm:gap-1.5 flex-1 min-w-0">
-            <Icon className={cn("h-2.5 w-2.5 sm:h-3 sm:w-3 flex-shrink-0", config.colors.text)} />
-            <span className={cn("truncate font-medium", config.colors.text, "text-[10px] sm:text-xs")}>
+            <Icon className={cn("h-2.5 w-2.5 sm:h-3 sm:w-3 flex-shrink-0", colors.text)} />
+            <span className={cn("truncate font-medium", colors.text, "text-[10px] sm:text-xs")}>
               {getEventTitle()}
             </span>
           </div>
@@ -191,7 +224,7 @@ export function CalendarEventCard({
         onClick={onClick}
         className={cn(
           "block p-1.5 rounded-md border bg-white shadow-sm hover:shadow-md transition-all cursor-pointer group",
-          config.colors.border,
+          colors.border,
           "hover:border-blue-300",
           className
         )}
@@ -249,7 +282,7 @@ export function CalendarEventCard({
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-1">
           {/* Event type indicator */}
-          <Icon className={cn("w-3 h-3", config.colors.text)} />
+          <Icon className={cn("w-3 h-3", colors.text)} />
           
           {/* Comments indicator (if applicable) */}
           {event.sourceData && 

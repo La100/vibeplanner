@@ -20,30 +20,55 @@ interface EventCardProps {
   className?: string;
 }
 
+const getPriorityColors = (priority: string) => {
+  switch (priority) {
+    case 'urgent':
+      return {
+        bg: 'bg-red-500',
+        text: 'text-red-700',
+        border: 'border-red-200'
+      };
+    case 'high':
+      return {
+        bg: 'bg-orange-500',
+        text: 'text-orange-700',
+        border: 'border-orange-200'
+      };
+    case 'medium':
+      return {
+        bg: 'bg-yellow-500',
+        text: 'text-yellow-700',
+        border: 'border-yellow-200'
+      };
+    case 'low':
+      return {
+        bg: 'bg-green-500',
+        text: 'text-green-700',
+        border: 'border-green-200'
+      };
+    default:
+      return {
+        bg: 'bg-gray-500',
+        text: 'text-gray-700',
+        border: 'border-gray-200'
+      };
+  }
+};
+
 const eventTypeConfig = {
   task: {
-    icon: CalendarDays,
-    colors: {
-      bg: 'bg-blue-500',
-      text: 'text-blue-700',
-      border: 'border-blue-200'
-    }
+    icon: CalendarDays
   },
   shopping: {
     icon: ShoppingCart,
     colors: {
-      bg: 'bg-green-500',
-      text: 'text-green-700',
-      border: 'border-green-200'
+      bg: 'bg-emerald-500',
+      text: 'text-emerald-700',
+      border: 'border-emerald-200'
     }
   },
   deadline: {
-    icon: AlertCircle,
-    colors: {
-      bg: 'bg-red-500',
-      text: 'text-red-700',
-      border: 'border-red-200'
-    }
+    icon: AlertCircle
   },
   milestone: {
     icon: CheckCircle2,
@@ -65,6 +90,11 @@ const priorityColors = {
 export function EventCard({ event, variant = 'standard', onClick, className }: EventCardProps) {
   const config = eventTypeConfig[event.type as keyof typeof eventTypeConfig] || eventTypeConfig.task;
   const Icon = config.icon;
+  
+  // Use priority colors for tasks, default colors for other event types
+  const colors = event.type === 'task' 
+    ? getPriorityColors(event.priority || 'medium')
+    : 'colors' in config ? config.colors : getPriorityColors('medium');
 
   if (variant === 'compact') {
     return (
@@ -72,7 +102,7 @@ export function EventCard({ event, variant = 'standard', onClick, className }: E
         onClick={onClick}
         className={cn(
           "flex items-center gap-2 p-2 rounded-md cursor-pointer hover:opacity-80 transition-opacity",
-          config.colors.bg,
+          colors.bg,
           "text-white text-xs",
           className
         )}
@@ -92,13 +122,13 @@ export function EventCard({ event, variant = 'standard', onClick, className }: E
         onClick={onClick}
         className={cn(
           "p-3 rounded-lg border-l-4 bg-white shadow-sm hover:shadow-md transition-shadow cursor-pointer",
-          config.colors.border,
+          colors.border,
           className
         )}
       >
         <div className="flex items-start justify-between mb-2">
           <div className="flex items-center gap-2">
-            <Icon className={cn("h-4 w-4", config.colors.text)} />
+            <Icon className={cn("h-4 w-4", colors.text)} />
             <h3 className="font-medium text-sm text-gray-900 truncate">{event.title}</h3>
           </div>
           {event.priority && (
@@ -143,7 +173,7 @@ export function EventCard({ event, variant = 'standard', onClick, className }: E
         onClick={onClick}
         className={cn(
           "p-1.5 rounded-md text-white text-xs h-full overflow-hidden cursor-pointer hover:opacity-90 transition-opacity flex flex-col justify-start",
-          config.colors.bg,
+          colors.bg,
           className
         )}
       >
@@ -173,13 +203,13 @@ export function EventCard({ event, variant = 'standard', onClick, className }: E
         onClick={onClick}
         className={cn(
           "p-4 rounded-lg border bg-white shadow-sm hover:shadow-md transition-shadow cursor-pointer",
-          config.colors.border,
+          colors.border,
           className
         )}
       >
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-3">
-            <div className={cn("p-2 rounded-full", config.colors.bg)}>
+            <div className={cn("p-2 rounded-full", colors.bg)}>
               <Icon className="h-5 w-5 text-white" />
             </div>
             <div>

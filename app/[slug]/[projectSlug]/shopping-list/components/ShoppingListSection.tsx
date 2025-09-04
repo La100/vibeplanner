@@ -190,9 +190,6 @@ export function ShoppingListSection({
     return member?.name || assignedTo;
   };
 
-  if (items.length === 0 && !showAddForm) {
-    return null;
-  }
 
   return (
     <Card className="mb-6">

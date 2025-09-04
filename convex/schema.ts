@@ -181,8 +181,6 @@ export default defineSchema({
     )),
     assignedTo: v.optional(v.union(v.string(), v.null())), // Clerk user ID
     createdBy: v.string(), // Clerk user ID
-    startDate: v.optional(v.number()),
-    endDate: v.optional(v.number()),
     dueDate: v.optional(v.number()),
     tags: v.array(v.string()),
     cost: v.optional(v.number()),
@@ -192,8 +190,7 @@ export default defineSchema({
     .index("by_team", ["teamId"])
     .index("by_status", ["status"])
     .index("by_assigned_to", ["assignedTo"])
-    .index("by_start_date", ["startDate"])
-    .index("by_end_date", ["endDate"]),
+    .index("by_due_date", ["dueDate"]),
 
   // Folders for file organization
   folders: defineTable({
@@ -621,6 +618,61 @@ export default defineSchema({
     .index("by_thread", ["threadId"])
     .index("by_thread_and_order", ["threadId", "order"])
     .index("by_project", ["projectId"]),
+
+  // AI Token Usage Tracking
+  aiTokenUsage: defineTable({
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    userClerkId: v.string(),
+    threadId: v.optional(v.string()),
+    
+    model: v.string(),
+    requestType: v.union(v.literal("chat"), v.literal("embedding"), v.literal("other")),
+    
+    inputTokens: v.number(),
+    outputTokens: v.number(),
+    totalTokens: v.number(),
+    
+    contextSize: v.optional(v.number()),
+    mode: v.optional(v.string()),
+    estimatedCostCents: v.optional(v.number()),
+    responseTimeMs: v.optional(v.number()),
+    success: v.boolean(),
+    errorMessage: v.optional(v.string()),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_team", ["teamId"])
+    .index("by_user", ["userClerkId"])
+    .index("by_thread", ["threadId"]),
+
+  // Product Library
+  productLibrary: defineTable({
+    name: v.string(),
+    description: v.optional(v.string()),
+    category: v.optional(v.string()),
+    brand: v.optional(v.string()),
+    model: v.optional(v.string()),
+    sku: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+    productLink: v.optional(v.string()),
+    supplier: v.optional(v.string()),
+    supplierSku: v.optional(v.string()),
+    dimensions: v.optional(v.string()),
+    weight: v.optional(v.number()),
+    material: v.optional(v.string()),
+    color: v.optional(v.string()),
+    unitPrice: v.optional(v.number()),
+    tags: v.array(v.string()),
+    notes: v.optional(v.string()),
+    teamId: v.id("teams"),
+    createdBy: v.string(), // Clerk user ID
+    isActive: v.boolean(),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_category", ["category"])
+    .index("by_brand", ["brand"])
+    .index("by_supplier", ["supplier"])
+    .index("by_created_by", ["createdBy"]),
 
   // Contacts/Address Book
   contacts: defineTable({

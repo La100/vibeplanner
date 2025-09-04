@@ -217,8 +217,6 @@ export const createTask = mutation({
     dueDate: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
     cost: v.optional(v.number()),
-    startDate: v.optional(v.number()),
-    endDate: v.optional(v.number()),
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -247,8 +245,6 @@ export const updateTask = mutation({
     priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent"), v.null())),
     assignedTo: v.optional(v.union(v.string(), v.null())),
     dueDate: v.optional(v.number()),
-    startDate: v.optional(v.number()),
-    endDate: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
     cost: v.optional(v.number()),
     content: v.optional(v.string()),

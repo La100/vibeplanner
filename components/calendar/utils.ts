@@ -32,36 +32,15 @@ export function transformTaskToEvent(task: Task & {
   project?: { id: string; name: string; slug: string; }
 }): CalendarEvent | null {
   // Only include tasks with dates
-  if (!task.startDate && !task.endDate && !task.dueDate) {
+  if (!task.dueDate) {
     return null;
   }
 
 
-  let startTime: Date;
-  let endTime: Date;
-  let isAllDay: boolean;
-
-  if (task.startDate && task.endDate) {
-    // Task has both start and end dates - use them
-    startTime = new Date(task.startDate);
-    endTime = new Date(task.endDate);
-    isAllDay = false;
-  } else if (task.dueDate) {
-    // Task has only due date - show as all-day event
-    startTime = new Date(task.dueDate);
-    endTime = new Date(task.dueDate);
-    isAllDay = true;
-  } else if (task.startDate) {
-    // Task has only start date - show as all-day event
-    startTime = new Date(task.startDate);
-    endTime = new Date(task.startDate);
-    isAllDay = true;
-  } else {
-    // Task has only end date - show as all-day event
-    startTime = new Date(task.endDate!);
-    endTime = new Date(task.endDate!);
-    isAllDay = true;
-  }
+  // Task has due date - show as all-day event
+  const startTime = new Date(task.dueDate);
+  const endTime = new Date(task.dueDate);
+  const isAllDay = true;
 
   return {
     id: task._id,

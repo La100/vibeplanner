@@ -90,12 +90,12 @@ export default function ProjectGantt() {
   }
 
   const ganttFeatures: GanttFeature[] = tasks
-    ?.filter(task => task.endDate)
+    ?.filter(task => task.dueDate)
     .map(task => ({
       id: task._id,
       name: task.title,
-      startAt: new Date(task.startDate || task.endDate!),
-      endAt: new Date(task.endDate!),
+      startAt: new Date(task.dueDate!),
+      endAt: new Date(task.dueDate!),
       status: {
         id: task.status,
         name: task.status.replace("_", " "),

@@ -11,6 +11,9 @@
 import type * as activityLog from "../activityLog.js";
 import type * as adminFunctions from "../adminFunctions.js";
 import type * as ai from "../ai.js";
+import type * as aiSmart from "../aiSmart.js";
+import type * as aiTokenHelpers from "../aiTokenHelpers.js";
+import type * as aiTokenUsage from "../aiTokenUsage.js";
 import type * as ai_database from "../ai_database.js";
 import type * as calendar from "../calendar.js";
 import type * as chatChannels from "../chatChannels.js";
@@ -25,6 +28,7 @@ import type * as http from "../http.js";
 import type * as myFunctions from "../myFunctions.js";
 import type * as notes from "../notes.js";
 import type * as pdfAnalysis from "../pdfAnalysis.js";
+import type * as productLibrary from "../productLibrary.js";
 import type * as projects from "../projects.js";
 import type * as quickAdmin from "../quickAdmin.js";
 import type * as rag from "../rag.js";
@@ -56,6 +60,9 @@ declare const fullApi: ApiFromModules<{
   activityLog: typeof activityLog;
   adminFunctions: typeof adminFunctions;
   ai: typeof ai;
+  aiSmart: typeof aiSmart;
+  aiTokenHelpers: typeof aiTokenHelpers;
+  aiTokenUsage: typeof aiTokenUsage;
   ai_database: typeof ai_database;
   calendar: typeof calendar;
   chatChannels: typeof chatChannels;
@@ -70,6 +77,7 @@ declare const fullApi: ApiFromModules<{
   myFunctions: typeof myFunctions;
   notes: typeof notes;
   pdfAnalysis: typeof pdfAnalysis;
+  productLibrary: typeof productLibrary;
   projects: typeof projects;
   quickAdmin: typeof quickAdmin;
   rag: typeof rag;

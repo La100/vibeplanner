@@ -22,6 +22,37 @@ const generateNextProjectId = async (ctx: any) => {
 
 // ====== CORE PROJECT FUNCTIONS ======
 
+// Get projects by team ID
+export const getProjectsByTeam = query({
+  args: { teamId: v.id("teams") },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // Check if user is member of this team
+    const membership = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", (q) =>
+        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!membership) {
+      throw new Error("User is not a member of this team");
+    }
+
+    // Get all projects for the team
+    const projects = await ctx.db
+      .query("projects")
+      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+      .collect();
+
+    return projects.sort((a, b) => b._creationTime - a._creationTime);
+  },
+});
+
 export const listProjectsByClerkOrg = query({
   args: { clerkOrgId: v.string() },
   async handler(ctx, args) {

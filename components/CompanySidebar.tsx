@@ -17,14 +17,14 @@ import {
   useSidebar
 } from "@/components/ui/sidebar";
 import { 
-  LayoutDashboard,
   Settings, 
   Users,
   FolderOpen,
   ArrowLeft,
   BarChart3,
   MessageSquare,
-  Contact
+  Contact,
+  Package
 } from "lucide-react";
 import { Suspense } from "react";
 
@@ -52,12 +52,12 @@ function CompanySidebarContent() {
   );
 
   // Calculate total unread messages
-  const totalUnreadCount = unreadCounts ? Object.values(unreadCounts).reduce((sum, count) => sum + count, 0) : 0;
+  const totalUnreadCount = unreadCounts ? Object.values(unreadCounts).reduce((sum, count) => (sum as number) + (count as number), 0) : 0;
 
   // Define navigation items based on user role
   const allNavItems = [
-    { href: `/${params.slug}`, label: "Dashboard", icon: LayoutDashboard, allowedRoles: ["admin", "member"] },
-    { href: `/${params.slug}/projects`, label: "Projects", icon: FolderOpen, allowedRoles: ["admin", "member", "customer"] },
+    { href: `/${params.slug}`, label: "Projects", icon: FolderOpen, allowedRoles: ["admin", "member"] },
+    { href: `/${params.slug}/product-library`, label: "Product Library", icon: Package, allowedRoles: ["admin", "member"] },
     { href: `/${params.slug}/team`, label: "Team", icon: Users, allowedRoles: ["admin", "member"] },
     { href: `/${params.slug}/contacts`, label: "Contacts", icon: Contact, allowedRoles: ["admin", "member"] },
     { href: `/${params.slug}/chat`, label: "Chat", icon: MessageSquare, hasUnread: totalUnreadCount > 0, allowedRoles: ["admin", "member"] },
@@ -122,7 +122,7 @@ function CompanySidebarContent() {
                         <item.icon className="h-4 w-4" />
                         <span>{item.label}</span>
                       </div>
-                      {'hasUnread' in item && item.hasUnread && (
+                      {'hasUnread' in item && item.hasUnread && totalUnreadCount > 0 && (
                         <div className="w-2 h-2 bg-red-500 rounded-full" />
                       )}
                     </Link>

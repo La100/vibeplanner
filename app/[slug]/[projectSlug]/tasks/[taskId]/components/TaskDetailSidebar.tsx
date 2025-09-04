@@ -31,8 +31,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { DateRangePickerWithTime } from "@/components/ui/DateRangePickerWithTime";
-import { DateRange } from "react-day-picker";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface TaskStatusSetting {
@@ -55,8 +54,7 @@ interface TaskDetailSidebarProps {
     status: string;
     priority?: string | null;
     cost?: number;
-    startDate?: number;
-    endDate?: number;
+    dueDate?: number;
     assignedTo?: string | null;
     assignedToName?: string;
     estimatedHours?: number;
@@ -125,10 +123,7 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
 
         if (result.dateRange) {
             if (result.dateRange.from) {
-                updatePayload.startDate = new Date(result.dateRange.from).getTime();
-            }
-            if (result.dateRange.to) {
-                updatePayload.endDate = new Date(result.dateRange.to).getTime();
+                updatePayload.dueDate = new Date(result.dateRange.from).getTime();
             }
         }
         
@@ -149,17 +144,16 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
     }
   };
 
-  const handleDateUpdate = async (range: DateRange | undefined) => {
-    setIsUpdating('dates');
+  const handleDueDateUpdate = async (date: Date | undefined) => {
+    setIsUpdating('dueDate');
      try {
       await updateTask({
         taskId: task._id,
-        startDate: range?.from?.getTime(),
-        endDate: range?.to?.getTime(),
+        dueDate: date?.getTime(),
       });
-      toast.success("Date updated");
+      toast.success("Due date updated");
     } catch (error) {
-      toast.error("Error updating date");
+      toast.error("Error updating due date");
       console.error(error);
     } finally {
       setIsUpdating(null);
@@ -302,18 +296,21 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
           </Select>
         </div>
 
-        {/* Date Range */}
+        {/* Due Date */}
         <div>
-          <Label className="text-sm font-medium">Date</Label>
-          <DateRangePickerWithTime
+          <Label className="text-sm font-medium">Due Date</Label>
+          <DatePicker
+            date={task.dueDate ? new Date(task.dueDate) : undefined}
+            onDateChange={handleDueDateUpdate}
+            placeholder="Set due date"
             className="mt-1"
-            value={{
-              from: task.startDate ? new Date(task.startDate) : undefined,
-              to: task.endDate ? new Date(task.endDate) : undefined,
-            }}
-            onChange={handleDateUpdate}
-            disabled={isUpdating === 'dates'}
           />
+          {isUpdating === 'dueDate' && (
+            <div className="flex items-center mt-1 text-sm text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+              Updating...
+            </div>
+          )}
         </div>
 
         {/* Cost */}

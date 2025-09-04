@@ -3,6 +3,17 @@ import { query, mutation, internalQuery } from "./_generated/server";
 
 // ====== SHOPPING LIST SECTIONS ======
 
+export const getShoppingListSections = query({
+  args: { projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("shoppingListSections")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .order("asc")
+      .collect();
+  },
+});
+
 export const listShoppingListSections = query({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
@@ -204,6 +215,13 @@ export const getShoppingListForIndexing = internalQuery({
 // ====== HELPER FUNCTIONS FOR INCREMENTAL INDEXING ======
 
 export const getShoppingItemById = internalQuery({
+  args: { itemId: v.id("shoppingListItems") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.itemId);
+  },
+});
+
+export const getShoppingListItem = query({
   args: { itemId: v.id("shoppingListItems") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.itemId);

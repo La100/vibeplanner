@@ -47,3 +47,45 @@ export function getTaskPreview(task: { content?: string; description?: string },
   
   return '';
 }
+
+/**
+ * Format currency amount with proper symbol and locale
+ */
+export function formatCurrency(amount: number, currencyCode: string = 'USD'): string {
+  const currencyMap: Record<string, { symbol: string; locale: string }> = {
+    'USD': { symbol: '$', locale: 'en-US' },
+    'EUR': { symbol: '€', locale: 'de-DE' },
+    'PLN': { symbol: 'zł', locale: 'pl-PL' },
+    'GBP': { symbol: '£', locale: 'en-GB' },
+    'CAD': { symbol: 'C$', locale: 'en-CA' },
+    'AUD': { symbol: 'A$', locale: 'en-AU' },
+    'JPY': { symbol: '¥', locale: 'ja-JP' },
+    'CHF': { symbol: 'CHF', locale: 'de-CH' },
+    'SEK': { symbol: 'kr', locale: 'sv-SE' },
+    'NOK': { symbol: 'kr', locale: 'nb-NO' },
+    'DKK': { symbol: 'kr', locale: 'da-DK' },
+    'CZK': { symbol: 'Kč', locale: 'cs-CZ' },
+    'HUF': { symbol: 'Ft', locale: 'hu-HU' },
+    'CNY': { symbol: '¥', locale: 'zh-CN' },
+    'INR': { symbol: '₹', locale: 'en-IN' },
+    'BRL': { symbol: 'R$', locale: 'pt-BR' },
+    'MXN': { symbol: '$', locale: 'es-MX' },
+    'KRW': { symbol: '₩', locale: 'ko-KR' },
+    'SGD': { symbol: 'S$', locale: 'en-SG' },
+    'HKD': { symbol: 'HK$', locale: 'en-HK' },
+  };
+
+  const currency = currencyMap[currencyCode] || currencyMap['USD'];
+  
+  try {
+    return new Intl.NumberFormat(currency.locale, {
+      style: 'currency',
+      currency: currencyCode,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    // Fallback to simple format if Intl.NumberFormat fails
+    return `${currency.symbol}${amount.toFixed(2)}`;
+  }
+}

@@ -910,3 +910,24 @@ export const getSurveyById = internalQuery({
     return await ctx.db.get(args.surveyId);
   },
 });
+
+// Get survey questions for editing
+export const getSurveyQuestions = query({
+  args: { surveyId: v.id("surveys") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("surveyQuestions")
+      .withIndex("by_survey", q => q.eq("surveyId", args.surveyId))
+      .order("asc")
+      .collect();
+  },
+});
+
+// Delete survey question
+export const deleteSurveyQuestion = mutation({
+  args: { questionId: v.id("surveyQuestions") },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.questionId);
+  },
+});
+
