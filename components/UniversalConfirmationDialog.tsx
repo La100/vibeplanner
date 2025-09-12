@@ -12,6 +12,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, User, DollarSign, Tag, Package, Home } from "lucide-react";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { useProject } from '@/components/providers/ProjectProvider';
 
 interface ContentItem {
   type: 'task' | 'note' | 'shopping' | 'survey';
@@ -55,10 +58,10 @@ const typeIcons = {
 };
 
 const typeLabels = {
-  task: "zadanie",
-  note: "notatkę",
-  shopping: "element listy zakupów",
-  survey: "ankietę"
+  task: "task",
+  note: "note",
+  shopping: "shopping item",
+  survey: "survey"
 };
 
 export function UniversalConfirmationDialog({
@@ -74,6 +77,13 @@ export function UniversalConfirmationDialog({
 }: UniversalConfirmationDialogProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedItem, setEditedItem] = useState<ContentItem>(contentItem);
+  const { project } = useProject();
+  
+  // Get team members for assignment dropdown
+  const teamMembers = useQuery(
+    api.teams.getTeamMembers,
+    project ? { teamId: project.teamId } : "skip"
+  );
 
   // Update editedItem when contentItem changes (new item in sequence)
   useEffect(() => {
@@ -116,7 +126,7 @@ export function UniversalConfirmationDialog({
                   data: { ...prev.data, title: e.target.value }
                 }))}
                 className="w-full p-2 border rounded-md font-semibold text-lg"
-                placeholder="Tytuł zadania"
+                placeholder="Task title"
               />
               <textarea
                 value={String(editedItem.data.description || '')}
@@ -126,7 +136,7 @@ export function UniversalConfirmationDialog({
                 }))}
                 className="w-full p-2 border rounded-md text-sm resize-none"
                 rows={2}
-                placeholder="Opis zadania"
+                placeholder="Task description"
               />
             </>
           ) : (
@@ -151,10 +161,10 @@ export function UniversalConfirmationDialog({
                 }))}
                 className="px-3 py-1 border rounded-md text-sm"
               >
-                <option value="low">🟢 Niski</option>
-                <option value="medium">🟡 Średni</option>
-                <option value="high">🟠 Wysoki</option>
-                <option value="urgent">🔴 Pilny</option>
+                <option value="low">🟢 Low</option>
+                <option value="medium">🟡 Medium</option>
+                <option value="high">🟠 High</option>
+                <option value="urgent">🔴 Urgent</option>
               </select>
               <select
                 value={String(editedItem.data.status || 'todo')}
@@ -164,10 +174,10 @@ export function UniversalConfirmationDialog({
                 }))}
                 className="px-3 py-1 border rounded-md text-sm"
               >
-                <option value="todo">📝 Do zrobienia</option>
-                <option value="in_progress">⚡ W trakcie</option>
-                <option value="review">👀 Do przeglądu</option>
-                <option value="done">✅ Gotowe</option>
+                <option value="todo">📝 To Do</option>
+                <option value="in_progress">⚡ In Progress</option>
+                <option value="review">👀 Review</option>
+                <option value="done">✅ Done</option>
               </select>
             </>
           ) : (
@@ -188,43 +198,111 @@ export function UniversalConfirmationDialog({
 
         {/* Details */}
         <div className="space-y-3 border-t pt-3">
-          {Boolean(data.dueDate && String(data.dueDate)) && (
-            <div className="flex items-center gap-2 text-sm">
-              <Calendar className="w-4 h-4 text-gray-500" />
-              <span className="text-gray-600">Termin:</span>
-              <span className="font-medium">{formatDate(String(data.dueDate))}</span>
-            </div>
-          )}
+          {/* Due Date */}
+          <div className="flex items-center gap-2 text-sm">
+            <Calendar className="w-4 h-4 text-gray-500" />
+            <span className="text-gray-600">Due Date:</span>
+            {isEditing ? (
+              <input
+                type="date"
+                value={String(editedItem.data.dueDate || '')}
+                onChange={(e) => setEditedItem(prev => ({ 
+                  ...prev, 
+                  data: { ...prev.data, dueDate: e.target.value }
+                }))}
+                className="px-2 py-1 border rounded-md text-sm"
+              />
+            ) : (
+              <span className="font-medium">
+                {data.dueDate ? formatDate(String(data.dueDate)) : 'Not set'}
+              </span>
+            )}
+          </div>
 
-          {Boolean(data.assignedTo && String(data.assignedTo)) && (
-            <div className="flex items-center gap-2 text-sm">
-              <User className="w-4 h-4 text-gray-500" />
-              <span className="text-gray-600">Przypisane do:</span>
-              <span className="font-medium">{String(data.assignedTo)}</span>
-            </div>
-          )}
-
-          {Boolean(data.cost && Number(data.cost) > 0) && (
-            <div className="flex items-center gap-2 text-sm">
-              <DollarSign className="w-4 h-4 text-gray-500" />
-              <span className="text-gray-600">Koszt:</span>
-              <span className="font-medium">{String(data.cost)} PLN</span>
-            </div>
-          )}
-
-          {Boolean(data.tags && Array.isArray(data.tags) && data.tags.length > 0) && (
-            <div className="flex items-center gap-2 text-sm">
-              <Tag className="w-4 h-4 text-gray-500" />
-              <span className="text-gray-600">Tagi:</span>
-              <div className="flex gap-1 flex-wrap">
-                {(data.tags as string[]).map((tag: string, index: number) => (
-                  <Badge key={index} variant="outline" className="text-xs">
-                    {tag}
-                  </Badge>
+          {/* Assigned To */}
+          <div className="flex items-center gap-2 text-sm">
+            <User className="w-4 h-4 text-gray-500" />
+            <span className="text-gray-600">Assigned To:</span>
+            {isEditing ? (
+              <select
+                value={String(editedItem.data.assignedTo || '')}
+                onChange={(e) => setEditedItem(prev => ({ 
+                  ...prev, 
+                  data: { ...prev.data, assignedTo: e.target.value || null }
+                }))}
+                className="px-2 py-1 border rounded-md text-sm"
+              >
+                <option value="">Not assigned</option>
+                {teamMembers?.map((member, index) => (
+                  <option key={`${member.clerkUserId}-${index}`} value={member.clerkUserId}>
+                    {member.name || member.email}
+                  </option>
                 ))}
+              </select>
+            ) : (
+              <span className="font-medium">
+                {data.assignedTo ? 
+                  teamMembers?.find(m => m.clerkUserId === data.assignedTo)?.name || 
+                  teamMembers?.find(m => m.clerkUserId === data.assignedTo)?.email || 
+                  String(data.assignedTo)
+                  : 'Not assigned'}
+              </span>
+            )}
+          </div>
+
+          {/* Cost */}
+          <div className="flex items-center gap-2 text-sm">
+            <DollarSign className="w-4 h-4 text-gray-500" />
+            <span className="text-gray-600">Cost:</span>
+            {isEditing ? (
+              <input
+                type="number"
+                value={Number(editedItem.data.cost || 0)}
+                onChange={(e) => setEditedItem(prev => ({ 
+                  ...prev, 
+                  data: { ...prev.data, cost: parseFloat(e.target.value) || 0 }
+                }))}
+                className="px-2 py-1 border rounded-md text-sm"
+                placeholder="0.00"
+                step="0.01"
+                min="0"
+              />
+            ) : (
+              <span className="font-medium">
+                {data.cost && Number(data.cost) > 0 ? String(data.cost) : 'Not set'}
+              </span>
+            )}
+          </div>
+
+          {/* Tags */}
+          <div className="flex items-center gap-2 text-sm">
+            <Tag className="w-4 h-4 text-gray-500" />
+            <span className="text-gray-600">Tags:</span>
+            {isEditing ? (
+              <input
+                type="text"
+                value={(editedItem.data.tags as string[] || []).join(', ')}
+                onChange={(e) => setEditedItem(prev => ({ 
+                  ...prev, 
+                  data: { ...prev.data, tags: e.target.value.split(',').map(tag => tag.trim()).filter(Boolean) }
+                }))}
+                className="px-2 py-1 border rounded-md text-sm flex-1"
+                placeholder="tag1, tag2, tag3"
+              />
+            ) : (
+              <div className="flex gap-1 flex-wrap">
+                {data.tags && Array.isArray(data.tags) && data.tags.length > 0 ? (
+                  (data.tags as string[]).map((tag: string, index: number) => (
+                    <Badge key={index} variant="outline" className="text-xs">
+                      {tag}
+                    </Badge>
+                  ))
+                ) : (
+                  <span className="font-medium text-gray-400">No tags</span>
+                )}
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     );
@@ -506,11 +584,11 @@ export function UniversalConfirmationDialog({
             <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
               {contentItem.operation === 'edit' ? '✏️' : typeIcons[contentItem.type]}
             </div>
-            {contentItem.operation === 'edit' ? 'Potwierdź edycję' : 'Potwierdź utworzenie'}: {typeLabels[contentItem.type]} {totalItems > 1 && `(${itemNumber}/${totalItems})`}
+            {contentItem.operation === 'edit' ? 'Confirm Edit' : 'Confirm Creation'}: {typeLabels[contentItem.type]} {totalItems > 1 && `(${itemNumber}/${totalItems})`}
           </DialogTitle>
           <DialogDescription>
-            AI chce {contentItem.operation === 'edit' ? 'edytować' : 'utworzyć'} {typeLabels[contentItem.type]}. Sprawdź szczegóły i potwierdź{contentItem.operation !== 'edit' && ', edytuj'} lub odrzuć.
-            {totalItems > 1 && ` Zostało ${totalItems - itemNumber + 1} elementów do przejrzenia.`}
+            AI wants to {contentItem.operation === 'edit' ? 'edit' : 'create'} a {typeLabels[contentItem.type]}. Review details and confirm{contentItem.operation !== 'edit' && ', edit'} or cancel.
+            {totalItems > 1 && ` ${totalItems - itemNumber + 1} items remaining to review.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -522,7 +600,7 @@ export function UniversalConfirmationDialog({
             onClick={onCancel}
             disabled={isLoading}
           >
-            {isEditing ? "Anuluj" : "Odrzuć"}
+            {isEditing ? "Cancel" : "Reject"}
           </Button>
           
           {isEditing ? (
@@ -531,7 +609,7 @@ export function UniversalConfirmationDialog({
               disabled={isLoading}
               className="bg-green-600 hover:bg-green-700"
             >
-              💾 Zapisz zmiany
+              💾 Save Changes
             </Button>
           ) : (
             <>
@@ -541,7 +619,7 @@ export function UniversalConfirmationDialog({
                 disabled={isLoading}
                 className="border-blue-600 text-blue-600 hover:bg-blue-50"
               >
-                ✏️ Edytuj
+                ✏️ Edit
               </Button>
               <Button 
                 onClick={onConfirm}
@@ -549,8 +627,8 @@ export function UniversalConfirmationDialog({
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 {isLoading ? 
-                  (contentItem.operation === 'edit' ? "Zapisuję..." : "Tworzę...") : 
-                  (contentItem.operation === 'edit' ? `✏️ Zapisz zmiany` : `✅ Utwórz ${typeLabels[contentItem.type]}`)
+                  (contentItem.operation === 'edit' ? "Saving..." : "Creating...") : 
+                  (contentItem.operation === 'edit' ? `✏️ Save Changes` : `✅ Create ${typeLabels[contentItem.type]}`)
                 }
               </Button>
             </>

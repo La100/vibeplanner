@@ -86,6 +86,8 @@ export function formatCurrency(amount: number, currencyCode: string = 'USD'): st
     }).format(amount);
   } catch {
     // Fallback to simple format if Intl.NumberFormat fails
-    return `${currency.symbol}${amount.toFixed(2)}`;
+    // Put currency after amount for all currencies, but use $ as fallback symbol
+    const fallbackSymbol = currency.symbol || '$';
+    return `${amount.toFixed(2)} ${fallbackSymbol}`;
   }
 }

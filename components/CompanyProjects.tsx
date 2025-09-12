@@ -231,24 +231,45 @@ export default function CompanyProjects() {
 
       {/* Content */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredProjects?.map((project) => (
-          <ProjectCard 
-            key={project._id}
-            project={{
-              _id: project._id,
-              name: project.name,
-              description: project.description,
-              client: project.client,
-              location: project.location,
-              budget: project.budget,
-              taskCount: teamTasks?.filter(t => t.projectId === project._id).length || 0,
-              completedTasks: teamTasks?.filter(t => t.projectId === project._id && t.status === 'done').length || 0,
-            }}
-            onClick={() => router.push(`/${params.slug}/${project.slug}`)}
-          />
-        ))}
-        
-        {(!filteredProjects || filteredProjects.length === 0) && (
+        {projects === undefined ? (
+          // Loading skeleton
+          Array(3).fill(0).map((_, i) => (
+            <Card key={i} className="animate-pulse">
+              <CardHeader>
+                <div className="h-5 bg-muted rounded w-3/4 mb-2"></div>
+                <div className="h-4 bg-muted rounded w-1/2"></div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <div className="h-3 bg-muted rounded w-2/3"></div>
+                  <div className="h-3 bg-muted rounded w-1/2"></div>
+                  <div className="h-3 bg-muted rounded w-3/4"></div>
+                </div>
+                <div className="space-y-1">
+                  <div className="h-3 bg-muted rounded w-1/3"></div>
+                  <div className="h-2 bg-muted rounded"></div>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        ) : filteredProjects && filteredProjects.length > 0 ? (
+          filteredProjects.map((project) => (
+            <ProjectCard 
+              key={project._id}
+              project={{
+                _id: project._id,
+                name: project.name,
+                description: project.description,
+                client: project.client,
+                location: project.location,
+                budget: project.budget,
+                taskCount: teamTasks?.filter(t => t.projectId === project._id).length || 0,
+                completedTasks: teamTasks?.filter(t => t.projectId === project._id && t.status === 'done').length || 0,
+              }}
+              onClick={() => router.push(`/${params.slug}/${project.slug}`)}
+            />
+          ))
+        ) : (
           <Card className="col-span-full">
             <CardContent className="flex flex-col items-center justify-center py-8">
               <FolderOpen className="h-16 w-16 text-muted-foreground mb-4" />
@@ -292,7 +313,7 @@ function ProjectCard({ project, onClick }: {
         <div className="flex justify-between items-start">
           <CardTitle className="text-lg">{project.name}</CardTitle>
         </div>
-        <CardDescription>{project.description || 'No description'}</CardDescription>
+        {project.description && <CardDescription>{project.description}</CardDescription>}
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2 text-sm text-muted-foreground">

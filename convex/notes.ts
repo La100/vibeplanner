@@ -117,17 +117,10 @@ export const createNote = mutation({
             isArchived: false,
         });
 
-        // 🚀 AUTO-INDEX NEW NOTE IN BACKGROUND (client doesn't wait)
-        ctx.scheduler.runAfter(0, internal.aiSmart.smartAutoIndex, {
-            content: `NOTE: ${args.title}
-Content: ${args.content.replace(/<[^>]*>/g, '')}`,
-            metadata: {
-                type: "note",
-                projectId: args.projectId,
-                itemId: noteId,
-                title: args.title,
-                createdAt: now,
-            }
+        // RAG indexing trigger (old smartAutoIndex removed)
+        ctx.scheduler.runAfter(0, internal.ragActions.updateNoteIndex, {
+            noteId: noteId,
+            operation: "create",
         });
 
         return noteId;
@@ -180,6 +173,12 @@ export const updateNote = mutation({
         const project = await ctx.db.get(note.projectId);
         // No indexing needed with 1M context - data is always fresh!
 
+        // RAG indexing trigger
+        ctx.scheduler.runAfter(0, internal.ragActions.updateNoteIndex, {
+            noteId: args.noteId,
+            operation: "update",
+        });
+
         return args.noteId;
     },
 });
@@ -222,6 +221,12 @@ export const deleteNote = mutation({
         });
 
         // No indexing needed with 1M context - data is always fresh!
+
+        // RAG indexing trigger - remove from index when archived
+        ctx.scheduler.runAfter(0, internal.ragActions.updateNoteIndex, {
+            noteId: args.noteId,
+            operation: "delete",
+        });
 
         return args.noteId;
     },

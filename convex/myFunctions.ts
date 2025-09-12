@@ -332,26 +332,57 @@ export const createOrUpdateMembership = internalMutation({
             console.warn(`User not found and no valid email for clerkUserId=${args.clerkUserId}. Skipping user creation - will be created by user.created webhook.`);
         }
 
-        // Sprawdź czy to customer zaproszony do konkretnego projektu, który już zaakceptował zaproszenie
-        let customerRecord = await ctx.db
-            .query("customers")
-            .withIndex("by_org_and_user", q => q.eq("clerkOrgId", args.clerkOrgId).eq("clerkUserId", args.clerkUserId))
-            .filter(q => q.eq(q.field("status"), "active")) // Szukaj aktywnego customera
-            .first();
+        // Check for any customer records with this email or clerkUserId that need activation
+        let customerRecord = null;
+        let needsActivation = false;
 
-        // Jeśli nie znaleziono po clerkUserId, spróbuj po email (dla nowych użytkowników)
-        if (!customerRecord && args.userEmail) {
-            customerRecord = await ctx.db
+        if (args.userEmail) {
+            // First check for invited customers by email
+            const invitedCustomers = await ctx.db
                 .query("customers")
                 .withIndex("by_email", q => q.eq("email", args.userEmail!))
                 .filter(q => q.and(
                     q.eq(q.field("clerkOrgId"), args.clerkOrgId),
-                    q.or(
-                        q.eq(q.field("status"), "invited"),
-                        q.eq(q.field("status"), "active")
-                    )
+                    q.eq(q.field("status"), "invited")
                 ))
-                .first();
+                .collect();
+
+            if (invitedCustomers.length > 0) {
+                customerRecord = invitedCustomers[0]; // Use first one
+                needsActivation = true;
+            } else {
+                // Check for already active customers
+                customerRecord = await ctx.db
+                    .query("customers")
+                    .withIndex("by_email", q => q.eq("email", args.userEmail!))
+                    .filter(q => q.and(
+                        q.eq(q.field("clerkOrgId"), args.clerkOrgId),
+                        q.eq(q.field("status"), "active")
+                    ))
+                    .first();
+            }
+        }
+
+        // If we have customers that need activation, activate them
+        if (needsActivation && args.userEmail) {
+            try {
+                const result = await ctx.runMutation(internal.customers.activatePendingCustomer, {
+                    email: args.userEmail,
+                    clerkUserId: args.clerkUserId
+                });
+                console.log(`Activated ${result.activated} customers for ${args.userEmail}`);
+            } catch (error) {
+                console.error(`Failed to activate customers for ${args.userEmail}:`, error);
+            }
+        }
+
+        // Wywołaj cleanup starych zaproszeń w tle (okazjonalnie)
+        if (Math.random() < 0.1) { // 10% szansy na cleanup
+            try {
+                await ctx.runMutation(internal.teams.cleanupExpiredInvitations, {});
+            } catch (error) {
+                console.warn("Failed to cleanup expired invitations:", error);
+            }
         }
 
         const membership = await ctx.db
@@ -445,6 +476,43 @@ export const deleteMembership = internalMutation({
         if(membership){
             await ctx.db.delete(membership._id);
         }
+
+        // Also remove all customer records for this user in this organization
+        const customerRecords = await ctx.db
+            .query("customers")
+            .filter(q => q.and(
+                q.eq(q.field("clerkOrgId"), args.clerkOrgId),
+                q.eq(q.field("clerkUserId"), args.clerkUserId)
+            ))
+            .collect();
+
+        for (const customer of customerRecords) {
+            await ctx.db.delete(customer._id);
+        }
+
+        // Also clean up any pending invitations for this user's email
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", args.clerkUserId))
+            .unique();
+
+        if (user?.email) {
+            const pendingInvitations = await ctx.db
+                .query("pendingCustomerInvitations")
+                .filter(q => q.and(
+                    q.eq(q.field("email"), user.email!),
+                    q.eq(q.field("clerkOrgId"), args.clerkOrgId)
+                ))
+                .collect();
+
+            for (const invitation of pendingInvitations) {
+                await ctx.db.patch(invitation._id, {
+                    status: "expired"
+                });
+            }
+        }
+
+        console.log(`Cleaned up membership, ${customerRecords.length} customer records, and pending invitations for user ${args.clerkUserId} from org ${args.clerkOrgId}`);
     }
 });
 

@@ -1,25 +1,36 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useAction, useMutation } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUser } from "@clerk/nextjs";
 import { useProject } from '@/components/providers/ProjectProvider';
-import { Send, RotateCcw, Loader2, Paperclip, X, Sparkles, Database, Zap, DollarSign } from "lucide-react";
+import { Send, RotateCcw, Loader2, Paperclip, X, Sparkles, Database, Zap, DollarSign, Building } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { UniversalConfirmationDialog } from "@/components/UniversalConfirmationDialog";
+import InlinePromptManager from "@/components/InlinePromptManager";
+import AIToggleControl from "@/components/AIToggleControl";
+import { AITaskConfirmationGrid } from "@/components/AITaskConfirmationGrid";
 import { Id } from "@/convex/_generated/dataModel";
 
 const AIAssistantSmart = () => {
   const { user } = useUser();
   const { project } = useProject();
+  
+  // Check if AI is enabled for this project
+  const aiSettings = useQuery(
+    api.aiSettings.getAISettings, 
+    project ? { projectId: project._id } : "skip"
+  );
   const [message, setMessage] = useState("");
   const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'assistant'; content: string; mode?: string; tokenUsage?: { totalTokens: number; estimatedCostUSD: number; }; }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [, setUploadedFileId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [threadId, setThreadId] = useState<string | undefined>(undefined);
   const [currentMode, setCurrentMode] = useState<'full' | 'smart' | null>(null);
@@ -27,7 +38,11 @@ const AIAssistantSmart = () => {
   const [pendingItems, setPendingItems] = useState<{ type: 'task' | 'note' | 'shopping' | 'survey'; operation?: 'create' | 'edit'; data: Record<string, unknown>; updates?: Record<string, unknown>; originalItem?: Record<string, unknown>; }[]>([]); // New unified system
   const [currentItemIndex, setCurrentItemIndex] = useState(0);
   const [isConfirmationDialogOpen, setIsConfirmationDialogOpen] = useState(false);
+  const [showConfirmationGrid, setShowConfirmationGrid] = useState(false);
   const [isCreatingContent, setIsCreatingContent] = useState(false);
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
+  const [isReindexing, setIsReindexing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -40,19 +55,21 @@ const AIAssistantSmart = () => {
     scrollToBottom();
   }, [chatHistory, isLoading]);
 
-  // Use the new smart AI system
-  const sendMessage = useAction(api.aiSmart.chatWithSmartAgent);
+  // Use the new RAG AI system
+  const sendMessage = useAction(api.ragActions.chatWithRAGAgent);
   const createThread = useAction(api.ai.createThread);
-  const createConfirmedTask = useAction(api.aiSmart.createConfirmedTask);
-  const createConfirmedNote = useAction(api.aiSmart.createConfirmedNote);
-  const createConfirmedShoppingItem = useAction(api.aiSmart.createConfirmedShoppingItem);
-  const createConfirmedSurvey = useAction(api.aiSmart.createConfirmedSurvey);
-  const editConfirmedTask = useAction(api.aiSmart.editConfirmedTask);
-  const editConfirmedNote = useAction(api.aiSmart.editConfirmedNote);
-  const editConfirmedShoppingItem = useAction(api.aiSmart.editConfirmedShoppingItem);
-  const editConfirmedSurvey = useAction(api.aiSmart.editConfirmedSurvey);
+  const createConfirmedTask = useAction(api.ragActions.createConfirmedTask);
+  const createConfirmedNote = useAction(api.ragActions.createConfirmedNote);
+  const createConfirmedShoppingItem = useAction(api.ragActions.createConfirmedShoppingItem);
+  const createConfirmedSurvey = useAction(api.ragActions.createConfirmedSurvey);
+  const editConfirmedTask = useAction(api.ragActions.editConfirmedTask);
+  const editConfirmedNote = useAction(api.ragActions.editConfirmedNote);
+  const editConfirmedShoppingItem = useAction(api.ragActions.editConfirmedShoppingItem);
+  const editConfirmedSurvey = useAction(api.ragActions.editConfirmedSurvey);
   const generateUploadUrl = useMutation(api.files.generateUploadUrlWithCustomKey);
   const addFile = useMutation(api.files.addFile);
+  const indexAllProjectData = useAction(api.ragActions.indexAllProjectData);
+  // Note: clearThreadMessages is internal, we'll handle clearing locally
 
   const handleSendMessage = async () => {
     if (!project || (!message.trim() && !selectedFile) || !user?.id) return;
@@ -72,6 +89,8 @@ const AIAssistantSmart = () => {
         setThreadId(currentThreadId);
       }
 
+      // let attachedFileId: string | undefined;
+      
       if (selectedFile) {
         setIsUploading(true);
         const uploadData = await generateUploadUrl({
@@ -80,7 +99,7 @@ const AIAssistantSmart = () => {
         });
 
         const uploadResult = await fetch(uploadData.url, {
-          method: "POST",
+          method: "PUT",
           headers: { "Content-Type": selectedFile.type },
           body: selectedFile,
         });
@@ -89,7 +108,7 @@ const AIAssistantSmart = () => {
           throw new Error("Upload failed");
         }
 
-        await addFile({
+        const fileId = await addFile({
           projectId: project._id,
           fileKey: uploadData.key,
           fileName: selectedFile.name,
@@ -97,7 +116,11 @@ const AIAssistantSmart = () => {
           fileSize: selectedFile.size,
         });
 
-        const userContent = userMessage || `Attached: ${selectedFile.name}`;
+        // Store file ID for AI processing
+        // attachedFileId = fileId;
+        setUploadedFileId(fileId);
+
+        const userContent = userMessage || `📎 Attached: ${selectedFile.name}`;
         setChatHistory(prev => [...prev, { role: 'user', content: userContent }]);
         setSelectedFile(null);
         setMessage("");
@@ -142,22 +165,17 @@ const AIAssistantSmart = () => {
         return updated;
       });
 
-      // Handle pending items if any (new unified system)
+      // Check if AI wants to create any items and show confirmation dialog
       if (result.pendingItems && result.pendingItems.length > 0) {
         setPendingItems(result.pendingItems);
         setCurrentItemIndex(0);
-        setIsConfirmationDialogOpen(true);
-      }
-      // Legacy support for pendingTasks
-      else if (result.pendingTasks && result.pendingTasks.length > 0) {
-        // Convert old format to new format
-        const legacyItems = result.pendingTasks.map((task: unknown) => ({
-          type: 'task',
-          data: task
-        }));
-        setPendingItems(legacyItems);
-        setCurrentItemIndex(0);
-        setIsConfirmationDialogOpen(true);
+        
+        // Always show grid for multiple items, single dialog only for exactly 1 item
+        if (result.pendingItems.length > 1) {
+          setShowConfirmationGrid(true);
+        } else {
+          setIsConfirmationDialogOpen(true);
+        }
       }
       
     } catch (error) {
@@ -172,16 +190,6 @@ const AIAssistantSmart = () => {
     }
   };
 
-  const handleResetConversation = () => {
-    setChatHistory([]);
-    setThreadId(undefined);
-    setCurrentMode(null);
-    setSessionTokens({ total: 0, cost: 0 });
-    setPendingItems([]);
-    setCurrentItemIndex(0);
-    setIsConfirmationDialogOpen(false);
-    toast.info("Conversation has been reset.");
-  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -196,6 +204,7 @@ const AIAssistantSmart = () => {
 
   const handleRemoveFile = () => {
     setSelectedFile(null);
+    setUploadedFileId(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -276,7 +285,7 @@ const AIAssistantSmart = () => {
           case 'survey':
             result = await createConfirmedSurvey({
               projectId: project._id,
-              surveyData: currentItem.data as { title: string; isRequired: boolean; targetAudience: string; questions: string[]; description?: string; allowMultipleResponses?: boolean; }
+              surveyData: currentItem.data as { title: string; isRequired: boolean; targetAudience: "all_customers" | "specific_customers" | "team_members"; questions: string[]; description?: string; allowMultipleResponses?: boolean; }
             });
             break;
           default:
@@ -310,7 +319,186 @@ const AIAssistantSmart = () => {
     }
   };
 
+  // Grid confirmation handlers
+  const handleConfirmAll = async () => {
+    setIsBulkProcessing(true);
+    try {
+      let successCount = 0;
+      let failureCount = 0;
+
+      for (const item of pendingItems) {
+        try {
+          await confirmSingleItem(item);
+          successCount++;
+        } catch (error) {
+          console.error(`Failed to create ${item.type}:`, error);
+          failureCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        toast.success(`Successfully created ${successCount} items${failureCount > 0 ? `, ${failureCount} failed` : ''}`);
+        
+        // Add success message to chat
+        setChatHistory(prev => [...prev, { 
+          role: 'assistant', 
+          content: `✅ Successfully created ${successCount} items${failureCount > 0 ? ` (${failureCount} failed)` : ''}` 
+        }]);
+      }
+
+      if (failureCount > 0 && successCount === 0) {
+        toast.error(`Failed to create all ${failureCount} items`);
+      }
+
+      setPendingItems([]);
+      setShowConfirmationGrid(false);
+    } catch {
+      toast.error("Failed to process items");
+    } finally {
+      setIsBulkProcessing(false);
+    }
+  };
+
+  const handleConfirmItem = async (index: number) => {
+    const item = pendingItems[index];
+    try {
+      await confirmSingleItem(item);
+      
+      // Remove confirmed item from list
+      setPendingItems(prev => prev.filter((_, i) => i !== index));
+      
+      toast.success(`${item.type} created successfully`);
+      
+      // Close grid if no more items
+      if (pendingItems.length === 1) {
+        setShowConfirmationGrid(false);
+      }
+    } catch {
+      toast.error(`Failed to create ${item.type}`);
+    }
+  };
+
+  const handleRejectItem = (index: number) => {
+    const item = pendingItems[index];
+    setPendingItems(prev => prev.filter((_, i) => i !== index));
+    
+    // Close grid if no more items
+    if (pendingItems.length === 1) {
+      setShowConfirmationGrid(false);
+    }
+    
+    toast.info(`${item.type} creation cancelled`);
+  };
+
+  const handleRejectAll = () => {
+    setPendingItems([]);
+    setShowConfirmationGrid(false);
+    toast.info("All item creations cancelled");
+  };
+
+  const handleEditItem = (index: number) => {
+    setEditingItemIndex(index);
+    setShowConfirmationGrid(false);
+    setIsConfirmationDialogOpen(true);
+    setCurrentItemIndex(index);
+  };
+
+  // Helper function to confirm a single item
+  const confirmSingleItem = async (item: { type: 'task' | 'note' | 'shopping' | 'survey'; operation?: 'create' | 'edit'; data: Record<string, unknown>; updates?: Record<string, unknown>; originalItem?: Record<string, unknown>; }) => {
+    if (!project) throw new Error("No project available");
+
+    let result;
+
+    // Call appropriate function based on operation type
+    if (item.operation === 'edit') {
+      // Handle edit operations
+      switch (item.type) {
+        case 'task':
+          // Clean updates - remove technical fields that are only for UI display
+          const cleanUpdates = { ...(item.updates as Record<string, unknown>) };
+          delete (cleanUpdates as Record<string, unknown>).assignedToName;
+          
+          result = await editConfirmedTask({
+            taskId: item.originalItem?._id as Id<"tasks">,
+            updates: cleanUpdates
+          });
+          break;
+        case 'note':
+          result = await editConfirmedNote({
+            noteId: item.originalItem?._id as Id<"notes">,
+            updates: item.updates as Record<string, unknown>
+          });
+          break;
+        case 'shopping':
+          result = await editConfirmedShoppingItem({
+            itemId: item.originalItem?._id as Id<"shoppingListItems">,
+            updates: item.updates as Record<string, unknown>
+          });
+          break;
+        case 'survey':
+          result = await editConfirmedSurvey({
+            surveyId: item.originalItem?._id as Id<"surveys">,
+            updates: item.updates as Record<string, unknown>
+          });
+          break;
+        default:
+          throw new Error(`Unknown content type for editing: ${item.type}`);
+      }
+    } else {
+      // Handle create operations
+      switch (item.type) {
+        case 'task':
+          // Clean data - remove technical fields that are only for UI display
+          const cleanTaskData = { ...(item.data as Record<string, unknown>) };
+          delete (cleanTaskData as Record<string, unknown>).assignedToName;
+          
+          result = await createConfirmedTask({
+            projectId: project._id,
+            taskData: cleanTaskData as { title: string; status?: "todo" | "in_progress" | "review" | "done"; description?: string; assignedTo?: string | null; priority?: "low" | "medium" | "high" | "urgent"; dueDate?: string; tags?: string[]; cost?: number; }
+          });
+          break;
+        case 'note':
+          result = await createConfirmedNote({
+            projectId: project._id,
+            noteData: item.data as { title: string; content: string; }
+          });
+          break;
+        case 'shopping':
+          // Remove sectionName - it's only for UI display, not for DB
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { sectionName: _, ...shoppingItemData } = item.data as { sectionName?: string; [key: string]: unknown; };
+          result = await createConfirmedShoppingItem({
+            projectId: project._id,
+            itemData: shoppingItemData as { name: string; quantity: number; notes?: string; priority?: "low" | "medium" | "high" | "urgent"; buyBefore?: string; supplier?: string; category?: string; unitPrice?: number; sectionId?: Id<"shoppingListSections">; }
+          });
+          break;
+        case 'survey':
+          result = await createConfirmedSurvey({
+            projectId: project._id,
+            surveyData: item.data as { title: string; isRequired: boolean; targetAudience: "all_customers" | "specific_customers" | "team_members"; questions: string[]; description?: string; allowMultipleResponses?: boolean; }
+          });
+          break;
+        default:
+          throw new Error(`Unknown content type: ${item.type}`);
+      }
+    }
+
+    if (!result.success) {
+      throw new Error(result.message || "Failed to create item");
+    }
+
+    return result;
+  };
+
   const handleContentCancel = () => {
+    // If we came from grid edit, go back to grid
+    if (editingItemIndex !== null) {
+      setEditingItemIndex(null);
+      setIsConfirmationDialogOpen(false);
+      setShowConfirmationGrid(true);
+      return;
+    }
+    
     // Move to next item or close dialog
     if (currentItemIndex < pendingItems.length - 1) {
       setCurrentItemIndex(prev => prev + 1);
@@ -323,6 +511,14 @@ const AIAssistantSmart = () => {
   };
 
   const handleContentDialogClose = () => {
+    // If we came from grid edit, go back to grid
+    if (editingItemIndex !== null) {
+      setEditingItemIndex(null);
+      setIsConfirmationDialogOpen(false);
+      setShowConfirmationGrid(true);
+      return;
+    }
+    
     setIsConfirmationDialogOpen(false);
     setPendingItems([]);
     setCurrentItemIndex(0);
@@ -336,12 +532,88 @@ const AIAssistantSmart = () => {
       updated[currentItemIndex] = updatedItem;
       return updated;
     });
-    toast.info("Element został zaktualizowany");
+    
+    // If we came from grid edit, go back to grid
+    if (editingItemIndex !== null) {
+      setEditingItemIndex(null);
+      setIsConfirmationDialogOpen(false);
+      setShowConfirmationGrid(true);
+      toast.info("Item updated - returning to grid");
+    } else {
+      toast.info("Element został zaktualizowany");
+    }
   };
 
   const handleAttachmentClick = () => {
     fileInputRef.current?.click();
   };
+
+  const handleReindexData = async () => {
+    if (!project) return;
+    
+    setIsReindexing(true);
+    try {
+      await indexAllProjectData({ projectId: project._id });
+      toast.success("Project data re-indexed successfully! 🚀");
+    } catch (error) {
+      console.error("Error re-indexing data:", error);
+      toast.error(`Failed to re-index data: ${error}`);
+    } finally {
+      setIsReindexing(false);
+    }
+  };
+
+  const handleNewChat = async () => {
+    // Note: We only clear local state - thread messages are handled server-side
+    // Reset local state
+    setChatHistory([]);
+    setThreadId(undefined);
+    setPendingItems([]);
+    setCurrentItemIndex(0);
+    setShowConfirmationGrid(false);
+    setIsConfirmationDialogOpen(false);
+    setEditingItemIndex(null);
+    setSessionTokens({ total: 0, cost: 0 });
+    toast.success("Chat cleared!");
+  };
+
+  // ProjectProvider handles loading state, so project should always be available here
+
+  if (aiSettings === undefined) {
+    return (
+      <div className="flex items-center justify-center h-full bg-muted/30">
+        <div className="text-center space-y-4">
+          <div className="flex items-center justify-center gap-3 mb-6">
+            <Building className="h-8 w-8 text-black animate-pulse" />
+            <span className="text-2xl font-semibold text-foreground">VibePlanner</span>
+          </div>
+          <div className="flex items-center justify-center gap-2">
+            <div className="w-2 h-2 bg-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+            <div className="w-2 h-2 bg-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+            <div className="w-2 h-2 bg-foreground rounded-full animate-bounce"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!aiSettings?.isEnabled) {
+    return (
+      <div className="flex flex-col h-full bg-muted/30">
+        <div className="border-b bg-background px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-semibold">AI Assistant (GPT-4o)</h1>
+              <p className="text-sm text-muted-foreground">Enable AI to start chatting with your project assistant</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-6">
+          <AIToggleControl projectId={project._id} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-muted/30">
@@ -350,7 +622,7 @@ const AIAssistantSmart = () => {
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-xl font-semibold">Smart AI Assistant</h1>
+              <h1 className="text-xl font-semibold">AI Assistant (GPT-4o)</h1>
               {currentMode && (
                 <Badge variant={currentMode === 'full' ? 'default' : 'secondary'} className="text-xs">
                   {currentMode === 'full' ? (
@@ -375,23 +647,43 @@ const AIAssistantSmart = () => {
             </div>
             <p className="text-sm text-muted-foreground">
               {currentMode === 'full' 
-                ? "Complete project data (small project)"
+                ? "GPT-4o with full project context"
                 : currentMode === 'smart'
-                ? "Recent data + intelligent search (large project)"
-                : "Automatically adapts to your project size"
+                ? "GPT-4o with RAG search (smart mode)"
+                : "GPT-4o with intelligent context adaptation"
               }
             </p>
           </div>
 
-          <Button 
-            onClick={handleResetConversation}
-            variant="outline"
-            size="sm"
-            disabled={chatHistory.length === 0}
-          >
-            <RotateCcw className="h-4 w-4 mr-2" />
-            New Chat
-          </Button>
+          <div className="flex items-center gap-2">
+            <InlinePromptManager />
+            <Button 
+              onClick={handleNewChat}
+              variant="outline"
+              size="sm"
+            >
+              <RotateCcw className="h-4 w-4 mr-2" />
+              New Chat
+            </Button>
+            <Button 
+              onClick={handleReindexData}
+              variant="outline"
+              size="sm"
+              disabled={isReindexing}
+            >
+              {isReindexing ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Re-indexing...
+                </>
+              ) : (
+                <>
+                  <Database className="h-4 w-4 mr-2" />
+                  Re-index Data
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -403,9 +695,9 @@ const AIAssistantSmart = () => {
               <div className="w-12 h-12 bg-card border shadow-sm rounded-full flex items-center justify-center mx-auto mb-4">
                 <Sparkles className="h-6 w-6 text-muted-foreground" />
               </div>
-              <h3 className="font-semibold mb-2">Smart AI Ready</h3>
+              <h3 className="font-semibold mb-2">GPT-4o AI Ready</h3>
               <p className="text-sm text-muted-foreground max-w-md mx-auto mb-4">
-                Start by saying hello, or ask me about your project tasks, budget, timeline, or any specific questions.
+                Powered by GPT-4o with RAG search. Ask me about your project tasks, shopping lists, notes, surveys, or any questions about your project.
               </p>
               <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground">
                 <div className="flex items-center gap-1">
@@ -508,7 +800,7 @@ const AIAssistantSmart = () => {
             </div>
             <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
               <Sparkles className="h-3 w-3" />
-              File content will be extracted and made available to AI
+              File will be uploaded to Gemini Files API for direct AI analysis
             </div>
           </div>
         )}
@@ -550,8 +842,39 @@ const AIAssistantSmart = () => {
         </div>
       </div>
 
-      {/* Universal Confirmation Dialog */}
-      {pendingItems.length > 0 && (
+      {/* Confirmation Grid Modal for Multiple Items */}
+      {showConfirmationGrid && (
+        <Dialog open={showConfirmationGrid} onOpenChange={setShowConfirmationGrid}>
+          <DialogContent 
+            className="overflow-hidden p-8"
+            style={{
+              width: '95vw',
+              height: '95vh',
+              maxWidth: 'none',
+              maxHeight: 'none',
+              margin: 'auto'
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Review AI Suggestions</DialogTitle>
+            </DialogHeader>
+            <div className="overflow-y-auto flex-1 w-full h-full">
+              <AITaskConfirmationGrid
+                pendingItems={pendingItems}
+                onConfirmAll={handleConfirmAll}
+                onConfirmItem={handleConfirmItem}
+                onRejectItem={handleRejectItem}
+                onRejectAll={handleRejectAll}
+                onEditItem={handleEditItem}
+                isProcessing={isBulkProcessing}
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Universal Confirmation Dialog for Single Items */}
+      {pendingItems.length > 0 && !showConfirmationGrid && (
         <UniversalConfirmationDialog
           isOpen={isConfirmationDialogOpen}
           onClose={handleContentDialogClose}

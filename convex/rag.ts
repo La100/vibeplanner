@@ -1,40 +1,101 @@
-import { components } from "./_generated/api";
-import { RAG } from "@convex-dev/rag";
-import { GoogleGenAI } from "@google/genai";
+import { internalQuery } from "./_generated/server";
+import { v } from "convex/values";
 
-// Use Gemini embedding model to match our Gemini 2.5 Pro chat model
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-
-// Create Gemini embedding model compatible with Convex RAG
-const geminiEmbeddingModel = {
-  specificationVersion: "v1" as const,
-  provider: "google",
-  modelId: "text-embedding-004",
-  maxEmbeddingsPerCall: 100, // Gemini batch limit
-  supportsParallelCalls: true,
-  
-  async doEmbed({ values }: { values: string[] }) {
-    const embeddings = await Promise.all(
-      values.map(async (text) => {
-        const result = await genAI.models.embedContent({
-          model: "text-embedding-004",
-          contents: text,
-        });
-        // Gemini API returns 'embeddings' array, take first one
-        return result.embeddings?.[0]?.values || [];
-      })
-    );
-    return { embeddings };
+// Internal queries: Pobierz dane do indeksowania
+export const getProjectTasks = internalQuery({
+  args: { projectId: v.id("projects") },
+  returns: v.array(v.any()),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("tasks")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
   },
-  
-  // Legacy method for backward compatibility
-  async embed(values: string[]) {
-    const result = await this.doEmbed({ values });
-    return result;
-  },
-};
+});
 
-export const rag = new RAG(components.rag, {
-  textEmbeddingModel: geminiEmbeddingModel,
-  embeddingDimension: 768, // Gemini text-embedding-004 dimension
+export const getProjectNotes = internalQuery({
+  args: { projectId: v.id("projects") },
+  returns: v.array(v.any()),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("notes")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+  },
+});
+
+export const getProjectShoppingItems = internalQuery({
+  args: { projectId: v.id("projects") },
+  returns: v.array(v.any()),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("shoppingListItems")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+  },
+});
+
+export const getProjectContacts = internalQuery({
+  args: { projectId: v.id("projects") },
+  returns: v.array(v.any()),
+  handler: async (ctx, args) => {
+    // Pobierz kontakty przypisane do projektu
+    const projectContacts = await ctx.db
+      .query("projectContacts")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+
+    const contacts = [];
+    for (const pc of projectContacts) {
+      const contact = await ctx.db.get(pc.contactId);
+      if (contact) {
+        contacts.push(contact);
+      }
+    }
+    return contacts;
+  },
+});
+
+export const getProjectSurveys = internalQuery({
+  args: { projectId: v.id("projects") },
+  returns: v.array(v.any()),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("surveys")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+  },
+});
+
+// Helper queries
+export const getTaskById = internalQuery({
+  args: { taskId: v.id("tasks") },
+  returns: v.union(v.any(), v.null()),
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.taskId);
+  },
+});
+
+export const getNoteById = internalQuery({
+  args: { noteId: v.id("notes") },
+  returns: v.union(v.any(), v.null()),
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.noteId);
+  },
+});
+
+export const getShoppingItemById = internalQuery({
+  args: { itemId: v.id("shoppingListItems") },
+  returns: v.union(v.any(), v.null()),
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.itemId);
+  },
+});
+
+export const getSurveyById = internalQuery({
+  args: { surveyId: v.id("surveys") },
+  returns: v.union(v.any(), v.null()),
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.surveyId);
+  },
 });

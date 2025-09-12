@@ -5,7 +5,7 @@ import { api } from "@/convex/_generated/api";
 import { useProject } from "@/components/providers/ProjectProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, AlertTriangle, Calendar, TrendingUp } from "lucide-react";
+import { CheckCircle, Calendar, TrendingUp, MapPin, DollarSign, Building2, User, Target } from "lucide-react";
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -17,8 +17,8 @@ function ProjectOverviewSkeleton() {
         <Skeleton className="h-5 w-1/2" />
       </div>
 
-      <div className="grid gap-4 lg:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-6 lg:mb-8">
-        {[...Array(8)].map((_, i) => (
+      <div className="grid gap-4 lg:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6 lg:mb-8">
+        {[...Array(6)].map((_, i) => (
           <Card key={i}>
             <CardHeader className="pb-2">
               <Skeleton className="h-5 w-3/4" />
@@ -36,19 +36,10 @@ function ProjectOverviewSkeleton() {
           <Skeleton className="h-7 w-48" />
         </CardHeader>
         <CardContent className="px-4 lg:px-6">
-          <div className="space-y-3 lg:space-y-4">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="flex items-center justify-between p-3 border rounded-lg">
-                <div className="flex-1 min-w-0 space-y-2">
-                  <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-4 w-1/2" />
-                </div>
-                <div className="flex items-center gap-2">
-                  <Skeleton className="h-5 w-20" />
-                  <Skeleton className="h-6 w-16" />
-                </div>
-              </div>
-            ))}
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-4 w-5/6" />
           </div>
         </CardContent>
       </Card>
@@ -87,20 +78,9 @@ function ProjectOverviewContent() {
     return null;
   }
   
-  const progress = tasks.length > 0 ? (tasks.filter(t => t.status === "done").length / tasks.length) * 100 : 0;
-  const completedTasks = tasks.filter(t => t.status === "done").length;
-  const inProgressTasks = tasks.filter(t => t.status === "in_progress").length;
-  const overdueTasks = tasks.filter(t => t.dueDate && new Date(t.dueDate).getTime() < Date.now() && t.status !== "done").length;
-  const upcomingTasks = tasks.filter(t => {
-    if (!t.dueDate || t.status === "done") return false;
-    const endDate = new Date(t.dueDate);
-    const now = new Date();
-    const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    return endDate >= now && endDate <= nextWeek;
-  }).length;
   
-  const tasksCost = tasks.reduce((sum, task) => sum + (task.cost || 0), 0);
-  const shoppingListCost = shoppingListItems.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
+  const tasksCost = tasks.reduce((sum: number, task) => sum + (task.cost || 0), 0);
+  const shoppingListCost = shoppingListItems.reduce((sum: number, item) => sum + (item.totalPrice || 0), 0);
   const totalCost = tasksCost + shoppingListCost;
   const currencySymbol = project.currency === "EUR" ? "€" : project.currency === "PLN" ? "zł" : "$";
 
@@ -121,49 +101,68 @@ function ProjectOverviewContent() {
         </p>
       </div>
 
-      <div className="grid gap-4 lg:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-6 lg:mb-8">
+      <div className="grid gap-4 lg:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6 lg:mb-8">
+        {/* Total Project Cost */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Project Cost</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <DollarSign className="h-4 w-4" />
+              Total Project Cost
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {currencySymbol}{totalCost.toFixed(2)}
+              {totalCost.toFixed(2)} {currencySymbol}
             </div>
             <p className="text-xs text-muted-foreground">
               Tasks & Shopping List
             </p>
           </CardContent>
         </Card>
+
+        {/* Tasks Cost */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Tasks Cost</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <CheckCircle className="h-4 w-4" />
+              Tasks Cost
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {currencySymbol}{tasksCost.toFixed(2)}
+              {tasksCost.toFixed(2)} {currencySymbol}
             </div>
             <p className="text-xs text-muted-foreground">
               Cost from all tasks
             </p>
           </CardContent>
         </Card>
+
+        {/* Shopping List Cost */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Shopping List Cost</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Building2 className="h-4 w-4" />
+              Shopping List Cost
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {currencySymbol}{shoppingListCost.toFixed(2)}
+              {shoppingListCost.toFixed(2)} {currencySymbol}
             </div>
             <p className="text-xs text-muted-foreground">
               Cost from all items
             </p>
           </CardContent>
         </Card>
+
+        {/* Project Status */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Project Status</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Target className="h-4 w-4" />
+              Project Status
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <Badge className={statusColors[project.status as keyof typeof statusColors]}>
@@ -171,123 +170,140 @@ function ProjectOverviewContent() {
             </Badge>
           </CardContent>
         </Card>
-        
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Progress</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-primary" />
-              <div className="flex-1">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-2xl font-bold">{Math.round(progress)}%</span>
+
+        {/* Client */}
+        {project.customer && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <User className="h-4 w-4" />
+                Client
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-lg font-semibold">{project.customer}</div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Location */}
+        {project.location && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <MapPin className="h-4 w-4" />
+                Location
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-lg font-semibold">{project.location}</div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Budget */}
+        {project.budget && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <DollarSign className="h-4 w-4" />
+                Budget
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-lg font-semibold">
+                {project.budget.toLocaleString()} {currencySymbol}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Allocated budget
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Project Dates */}
+        {(project.startDate || project.endDate) && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Calendar className="h-4 w-4" />
+                Timeline
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-1">
+                {project.startDate && (
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">Start: </span>
+                    <span className="font-medium">
+                      {new Date(project.startDate).toLocaleDateString()}
+                    </span>
+                  </div>
+                )}
+                {project.endDate && (
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">End: </span>
+                    <span className="font-medium">
+                      {new Date(project.endDate).toLocaleDateString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Project Cost vs Budget */}
+        {project.budget && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <TrendingUp className="h-4 w-4" />
+                Cost vs Budget
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>Spent:</span>
+                  <span className="font-semibold">{totalCost.toFixed(2)} {currencySymbol}</span>
                 </div>
-                <div className="w-full bg-muted rounded-full h-2">
-                  <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${progress}%` }}></div>
+                <div className="flex justify-between text-sm">
+                  <span>Budget:</span>
+                  <span className="font-semibold">{project.budget.toLocaleString()} {currencySymbol}</span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-2 mt-2">
+                  <div 
+                    className={`h-2 rounded-full transition-all ${
+                      (totalCost / project.budget) > 1 ? 'bg-red-500' : 
+                      (totalCost / project.budget) > 0.8 ? 'bg-yellow-500' : 'bg-green-500'
+                    }`}
+                    style={{ width: `${Math.min((totalCost / project.budget) * 100, 100)}%` }}
+                  ></div>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {((totalCost / project.budget) * 100).toFixed(1)}% of budget used
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Tasks</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-primary" />
-              <span className="text-2xl font-bold">{tasks.length}</span>
-              <span className="text-sm text-muted-foreground">tasks</span>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
-      <div className="grid gap-4 lg:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-6 lg:mb-8">
+      {/* Project Description */}
+      {project.description && (
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Completed</CardTitle>
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg lg:text-xl">Project Description</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{completedTasks}</div>
+          <CardContent className="px-4 lg:px-6">
+            <p className="text-muted-foreground leading-relaxed">
+              {project.description}
+            </p>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">In Progress</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{inProgressTasks}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Overdue</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-red-500" />
-              <span className="text-2xl font-bold text-red-600">{overdueTasks}</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Due This Week</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-orange-500" />
-              <span className="text-2xl font-bold text-orange-600">{upcomingTasks}</span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Recent Tasks */}
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg lg:text-xl">Recent Tasks</CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 lg:px-6">
-          <div className="space-y-3 lg:space-y-4">
-            {tasks
-              .sort((a, b) => (b._creationTime || 0) - (a._creationTime || 0))
-              .slice(0, 5)
-              .map(task => (
-                <div key={task._id} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-medium text-sm lg:text-base truncate">{task.title}</h4>
-                    {task.description && (
-                      <p className="text-xs lg:text-sm text-muted-foreground truncate hidden sm:block">{task.description}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1 lg:gap-2 flex-shrink-0">
-                    {task.dueDate && (
-                      <span className="text-xs text-muted-foreground hidden md:inline">
-                        {new Date(task.dueDate).toLocaleDateString()}
-                      </span>
-                    )}
-                    <Badge variant="outline" className="text-xs">
-                      {task.status.replace("_", " ")}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
-            
-            {tasks.length === 0 && (
-              <p className="text-muted-foreground text-center py-6 lg:py-8 text-sm lg:text-base">
-                No tasks yet. Create your first task to get started.
-              </p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+      )}
     </div>
   );
 }

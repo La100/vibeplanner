@@ -227,9 +227,17 @@ export const createTask = mutation({
     await ctx.runMutation(internal.activityLog.logActivity, {
       teamId: args.teamId,
       projectId: args.projectId,
+      taskId: taskId,
       actionType: "task.create",
       details: { title: args.title },
       entityId: taskId,
+      entityType: "task",
+    });
+
+    // RAG indexing trigger
+    await ctx.scheduler.runAfter(0, internal.ragActions.updateTaskIndex, {
+      taskId: taskId,
+      operation: "create",
     });
     
     return taskId;
@@ -264,9 +272,17 @@ export const updateTask = mutation({
     await ctx.runMutation(internal.activityLog.logActivity, {
       teamId: task.teamId,
       projectId: task.projectId,
+      taskId: args.taskId,
       actionType: "task.update",
       details: { title: task.title, updatedFields: Object.keys(updatePayload) },
       entityId: args.taskId,
+      entityType: "task",
+    });
+
+    // RAG indexing trigger
+    await ctx.scheduler.runAfter(0, internal.ragActions.updateTaskIndex, {
+      taskId: args.taskId,
+      operation: "update",
     });
   },
 });
@@ -287,9 +303,11 @@ export const updateTaskStatus = mutation({
     await ctx.runMutation(internal.activityLog.logActivity, {
       teamId: task.teamId,
       projectId: task.projectId,
+      taskId: args.taskId,
       actionType: "task.status.change",
       details: { title: task.title, from: originalStatus, to: args.status },
       entityId: args.taskId,
+      entityType: "task",
     });
   },
 });
@@ -304,9 +322,17 @@ export const deleteTask = mutation({
     await ctx.runMutation(internal.activityLog.logActivity, {
       teamId: task.teamId,
       projectId: task.projectId,
+      taskId: args.taskId,
       actionType: "task.delete",
       details: { title: task.title },
       entityId: args.taskId,
+      entityType: "task",
+    });
+
+    // RAG indexing trigger - delete before removing from DB
+    await ctx.scheduler.runAfter(0, internal.ragActions.updateTaskIndex, {
+      taskId: args.taskId,
+      operation: "delete",
     });
     
     await ctx.db.delete(args.taskId);
@@ -326,9 +352,11 @@ export const assignTask = mutation({
     await ctx.runMutation(internal.activityLog.logActivity, {
       teamId: task.teamId,
       projectId: task.projectId,
+      taskId: args.taskId,
       actionType: "task.assign",
       details: { title: task.title, from: originalAssignee || "unassigned", to: args.userId || "unassigned" },
       entityId: args.taskId,
+      entityType: "task",
     });
   },
 });
@@ -344,9 +372,11 @@ export const updateTaskContent = mutation({
         await ctx.runMutation(internal.activityLog.logActivity, {
           teamId: task.teamId,
           projectId: task.projectId,
+          taskId: args.taskId,
           actionType: "task.content.update",
           details: { title: task.title },
           entityId: args.taskId,
+          entityType: "task",
         });
     }
 });

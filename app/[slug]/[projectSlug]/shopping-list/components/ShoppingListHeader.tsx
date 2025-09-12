@@ -21,7 +21,7 @@ export function ShoppingListHeader({
       <div className="mb-4 sm:mb-0">
         <h1 className="text-2xl font-bold">Shopping List</h1>
         <p className="text-gray-600">
-          {projectName} • Total: {currencySymbol}{grandTotal.toFixed(2)}
+          {projectName} • Total: {grandTotal.toFixed(2)} {currencySymbol}
         </p>
       </div>
       <div className="flex gap-2">

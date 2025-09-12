@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 
 // ====== SHOPPING LIST SECTIONS ======
 
@@ -101,7 +102,7 @@ export const createShoppingListItem = mutation({
         quantity: v.number(),
         unitPrice: v.optional(v.number()),
         realizationStatus: v.union(v.literal("PLANNED"), v.literal("ORDERED"), v.literal("IN_TRANSIT"), v.literal("DELIVERED"), v.literal("COMPLETED"), v.literal("CANCELLED")),
-        sectionId: v.optional(v.id("shoppingListSections")),
+        sectionId: v.optional(v.union(v.id("shoppingListSections"), v.null())),
         assignedTo: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
@@ -135,6 +136,12 @@ export const createShoppingListItem = mutation({
             createdBy: identity.subject,
             assignedTo: args.assignedTo,
         });
+
+        // RAG indexing trigger
+        await ctx.scheduler.runAfter(0, internal.ragActions.updateShoppingItemIndex, {
+            itemId: itemId,
+            operation: "create",
+        });
         
         return itemId;
     },
@@ -156,7 +163,7 @@ export const updateShoppingListItem = mutation({
         quantity: v.optional(v.number()),
         unitPrice: v.optional(v.number()),
         realizationStatus: v.optional(v.union(v.literal("PLANNED"), v.literal("ORDERED"), v.literal("IN_TRANSIT"), v.literal("DELIVERED"), v.literal("COMPLETED"), v.literal("CANCELLED"))),
-        sectionId: v.optional(v.id("shoppingListSections")),
+        sectionId: v.optional(v.union(v.id("shoppingListSections"), v.null())),
         assignedTo: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
@@ -177,6 +184,12 @@ export const updateShoppingListItem = mutation({
         }
 
         await ctx.db.patch(itemId, {...updates, totalPrice, updatedAt: Date.now() });
+
+        // RAG indexing trigger
+        await ctx.scheduler.runAfter(0, internal.ragActions.updateShoppingItemIndex, {
+            itemId: itemId,
+            operation: "update",
+        });
     },
 });
 
@@ -185,6 +198,13 @@ export const deleteShoppingListItem = mutation({
     handler: async (ctx, args) => {
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Not authenticated");
+
+        // RAG indexing trigger - delete before removing from DB
+        await ctx.scheduler.runAfter(0, internal.ragActions.updateShoppingItemIndex, {
+            itemId: args.itemId,
+            operation: "delete",
+        });
+
         await ctx.db.delete(args.itemId);
     },
 });

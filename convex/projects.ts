@@ -148,6 +148,36 @@ export const listProjectsByClerkOrg = query({
   },
 });
 
+export const listProjectsByTeam = query({
+  args: { teamId: v.id("teams") },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // Check if user has access to this team
+    const teamMember = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", (q) =>
+        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!teamMember || !teamMember.isActive) {
+      return [];
+    }
+
+    // Get all projects for this team
+    const projects = await ctx.db
+      .query("projects")
+      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+      .collect();
+
+    return projects;
+  },
+});
+
 export const createProjectInOrg = mutation({
   args: {
     name: v.string(),

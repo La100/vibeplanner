@@ -199,7 +199,7 @@ export function ShoppingListSection({
             <span>{sectionName}</span>
             <Badge variant="secondary">{items.length} items</Badge>
             {sectionTotal > 0 && (
-              <Badge variant="outline">{currencySymbol}{sectionTotal.toFixed(2)}</Badge>
+              <Badge variant="outline">{sectionTotal.toFixed(2)} {currencySymbol}</Badge>
             )}
           </div>
           <Button
@@ -473,12 +473,12 @@ export function ShoppingListSection({
                           <span>Qty: {item.quantity}</span>
                           {item.unitPrice && (
                             <span>
-                              {currencySymbol}{item.unitPrice.toFixed(2)} each
+                              {item.unitPrice.toFixed(2)} {currencySymbol} each
                             </span>
                           )}
                           {item.totalPrice && (
                             <span className="font-medium">
-                              Total: {currencySymbol}{item.totalPrice.toFixed(2)}
+                              Total: {item.totalPrice.toFixed(2)} {currencySymbol}
                             </span>
                           )}
                         </div>

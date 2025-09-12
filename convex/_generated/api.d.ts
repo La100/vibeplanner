@@ -11,7 +11,9 @@
 import type * as activityLog from "../activityLog.js";
 import type * as adminFunctions from "../adminFunctions.js";
 import type * as ai from "../ai.js";
-import type * as aiSmart from "../aiSmart.js";
+import type * as aiPrompts from "../aiPrompts.js";
+import type * as aiSettings from "../aiSettings.js";
+import type * as aiThreads from "../aiThreads.js";
 import type * as aiTokenHelpers from "../aiTokenHelpers.js";
 import type * as aiTokenUsage from "../aiTokenUsage.js";
 import type * as ai_database from "../ai_database.js";
@@ -32,6 +34,7 @@ import type * as productLibrary from "../productLibrary.js";
 import type * as projects from "../projects.js";
 import type * as quickAdmin from "../quickAdmin.js";
 import type * as rag from "../rag.js";
+import type * as ragActions from "../ragActions.js";
 import type * as seedDummyData from "../seedDummyData.js";
 import type * as shopping from "../shopping.js";
 import type * as stripe from "../stripe.js";
@@ -60,7 +63,9 @@ declare const fullApi: ApiFromModules<{
   activityLog: typeof activityLog;
   adminFunctions: typeof adminFunctions;
   ai: typeof ai;
-  aiSmart: typeof aiSmart;
+  aiPrompts: typeof aiPrompts;
+  aiSettings: typeof aiSettings;
+  aiThreads: typeof aiThreads;
   aiTokenHelpers: typeof aiTokenHelpers;
   aiTokenUsage: typeof aiTokenUsage;
   ai_database: typeof ai_database;
@@ -81,6 +86,7 @@ declare const fullApi: ApiFromModules<{
   projects: typeof projects;
   quickAdmin: typeof quickAdmin;
   rag: typeof rag;
+  ragActions: typeof ragActions;
   seedDummyData: typeof seedDummyData;
   shopping: typeof shopping;
   stripe: typeof stripe;
@@ -324,6 +330,7 @@ export declare const components: {
         "internal",
         {
           entryId: string;
+          order: "desc" | "asc";
           paginationOpts: {
             cursor: string | null;
             endCursor?: string | null;
@@ -377,17 +384,6 @@ export declare const components: {
         {
           created: boolean;
           entryId: string;
-          replacedEntry: {
-            contentHash?: string;
-            entryId: string;
-            filterValues: Array<{ name: string; value: any }>;
-            importance: number;
-            key?: string;
-            metadata?: Record<string, any>;
-            replacedAt?: number;
-            status: "pending" | "ready" | "replaced";
-            title?: string;
-          } | null;
           status: "pending" | "ready" | "replaced";
         }
       >;
@@ -413,6 +409,24 @@ export declare const components: {
         "mutation",
         "internal",
         { entryId: string; startOrder: number },
+        null
+      >;
+      deleteByKeyAsync: FunctionReference<
+        "mutation",
+        "internal",
+        { beforeVersion?: number; key: string; namespaceId: string },
+        null
+      >;
+      deleteByKeySync: FunctionReference<
+        "action",
+        "internal",
+        { key: string; namespaceId: string },
+        null
+      >;
+      deleteSync: FunctionReference<
+        "action",
+        "internal",
+        { entryId: string },
         null
       >;
       findByContentHash: FunctionReference<
@@ -508,6 +522,29 @@ export declare const components: {
       >;
     };
     namespaces: {
+      deleteNamespace: FunctionReference<
+        "mutation",
+        "internal",
+        { namespaceId: string },
+        {
+          deletedNamespace: null | {
+            createdAt: number;
+            dimension: number;
+            filterNames: Array<string>;
+            modelId: string;
+            namespace: string;
+            namespaceId: string;
+            status: "pending" | "ready" | "replaced";
+            version: number;
+          };
+        }
+      >;
+      deleteNamespaceSync: FunctionReference<
+        "action",
+        "internal",
+        { namespaceId: string },
+        null
+      >;
       get: FunctionReference<
         "query",
         "internal",
@@ -554,6 +591,37 @@ export declare const components: {
             numItems: number;
           };
           status: "pending" | "ready" | "replaced";
+        },
+        {
+          continueCursor: string;
+          isDone: boolean;
+          page: Array<{
+            createdAt: number;
+            dimension: number;
+            filterNames: Array<string>;
+            modelId: string;
+            namespace: string;
+            namespaceId: string;
+            status: "pending" | "ready" | "replaced";
+            version: number;
+          }>;
+          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+          splitCursor?: string | null;
+        }
+      >;
+      listNamespaceVersions: FunctionReference<
+        "query",
+        "internal",
+        {
+          namespace: string;
+          paginationOpts: {
+            cursor: string | null;
+            endCursor?: string | null;
+            id?: number;
+            maximumBytesRead?: number;
+            maximumRowsRead?: number;
+            numItems: number;
+          };
         },
         {
           continueCursor: string;

@@ -102,7 +102,7 @@ export default function CompanyReports() {
                   <DollarSign className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">${totalCost.toFixed(2)}</div>
+                  <div className="text-2xl font-bold">{totalCost.toFixed(2)} $</div>
                   <p className="text-xs text-muted-foreground">
                     <span className="text-green-600">+12%</span> from last month
                   </p>
@@ -288,7 +288,7 @@ export default function CompanyReports() {
                   <DollarSign className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">${totalCost.toFixed(2)}</div>
+                  <div className="text-2xl font-bold">{totalCost.toFixed(2)} $</div>
                   <p className="text-xs text-muted-foreground">
                     Across {totalProjects} projects
                   </p>
@@ -302,7 +302,7 @@ export default function CompanyReports() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    ${totalProjects > 0 ? (totalCost / totalProjects).toFixed(2) : "0.00"}
+                    {totalProjects > 0 ? (totalCost / totalProjects).toFixed(2) : "0.00"} $
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Per project
@@ -317,7 +317,7 @@ export default function CompanyReports() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    ${totalTasks > 0 ? (totalCost / totalTasks).toFixed(2) : "0.00"}
+                    {totalTasks > 0 ? (totalCost / totalTasks).toFixed(2) : "0.00"} $
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Average per task

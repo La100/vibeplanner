@@ -16,6 +16,7 @@ import TaskDetailSidebar from './TaskDetailSidebar';
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
+import ActivityLog from "@/components/ActivityLog";
 
 type TaskPriority = "low" | "medium" | "high" | "urgent" | null;
 
@@ -298,6 +299,14 @@ export default function TaskDetail() {
                 {/* {comments?.length === 0 && (
                   <p className="text-center text-muted-foreground py-4">Brak komentarzy. Bądź pierwszy!</p>
                 )} */}
+              </div>
+            </div>
+
+            {/* Activity Log Section */}
+            <div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">Activity Log</h2>
+              <div className="bg-background rounded-lg border p-4">
+                <ActivityLog taskId={task._id} />
               </div>
             </div>
           </div>

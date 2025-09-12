@@ -7,6 +7,7 @@ import { useQuery } from "convex/react";
 
 import { Users, Mail, Search, Crown, Trash2, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,7 +23,7 @@ import { useMutation } from "convex/react";
 import { toast } from "sonner";
 import { Id } from "@/convex/_generated/dataModel";
 import { OrganizationProfile } from "@clerk/nextjs";
-import ProjectMemberMatrix from "./ProjectMemberMatrix";
+import CustomerProjectMatrix from "./CustomerProjectMatrix";
 
 type TeamMemberRole = "admin" | "member" | "customer";
 
@@ -103,13 +104,9 @@ export default function CompanyTeam() {
     return (nameMatch || emailMatch) && roleMatch;
   });
 
-  // Separate members and customers
+  // Only internal team members (no more organizational customers)
   const teamMembersOnly = filteredMembers.filter((member: TeamMember) => 
     member.role === 'admin' || member.role === 'member'
-  );
-  
-  const customersOnly = filteredMembers.filter((member: TeamMember) => 
-    member.role === 'customer'
   );
 
   return (
@@ -161,23 +158,19 @@ export default function CompanyTeam() {
 
       {/* Content */}
       <div className="flex-1 p-6">
-        <Tabs defaultValue="matrix" className="w-full">
+        <Tabs defaultValue="overview" className="w-full">
           <TabsList>
-            <TabsTrigger value="matrix">Project Access</TabsTrigger>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="team">Team Members</TabsTrigger>
             <TabsTrigger value="customers">Customers</TabsTrigger>
-            <TabsTrigger value="invitations">Pending Invitations</TabsTrigger>
-            <TabsTrigger value="clerk">Clerk Management (Temp)</TabsTrigger>
+            <TabsTrigger value="invitations">Invitations</TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="matrix" className="mt-6">
-            <ProjectMemberMatrix teamId={team._id} />
-          </TabsContent>
-
-          <TabsContent value="team" className="mt-6">
+          <TabsContent value="overview" className="mt-6">
             <div className="space-y-6">
-              {/* Team Stats */}
-              <div className="grid gap-4 md:grid-cols-2">
+              {/* Team Overview Stats */}
+              <div className="grid gap-4 md:grid-cols-4">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Team Members</CardTitle>
@@ -198,166 +191,194 @@ export default function CompanyTeam() {
                     <p className="text-xs text-muted-foreground">Admin users</p>
                   </CardContent>
                 </Card>
-              </div>
-
-              {/* Members List */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Internal Team Members</h3>
-                
                 <Card>
-                  <CardContent className="p-0">
-                    <div className="space-y-4">
-                      {teamMembersOnly.map((member: TeamMember) => (
-                        <div key={member.clerkUserId} className="flex items-center justify-between p-4 border-b last:border-b-0">
-                          <div className="flex items-center gap-4">
-                            <Avatar>
-                              {member.imageUrl && <AvatarImage src={member.imageUrl} />}
-                              <AvatarFallback>{member.name ? member.name[0].toUpperCase() : 'U'}</AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <p className="font-semibold">{member.name}</p>
-                              <p className="text-sm text-muted-foreground">{member.email}</p>
-                            </div>
-                          </div>
-                          <Select 
-                            value={member.role} 
-                            onValueChange={(newRole) => handleRoleChange(member.clerkUserId, member.teamId, newRole as TeamMemberRole)}
-                            disabled={member.clerkUserId === currentUserMember?.clerkUserId || currentUserMember?.role !== 'admin'}
-                          >
-                            <SelectTrigger className="w-32">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="admin">Admin</SelectItem>
-                              <SelectItem value="member">Member</SelectItem>
-                              <SelectItem value="customer">Customer</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ))}
-                      {teamMembersOnly.length === 0 && (
-                        <div className="text-center py-8 text-muted-foreground">
-                          No team members found
-                        </div>
-                      )}
-                    </div>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Projects</CardTitle>
+                    <Building2 className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">-</div>
+                    <p className="text-xs text-muted-foreground">Active projects</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Pending Invites</CardTitle>
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{pendingInvitations.length}</div>
+                    <p className="text-xs text-muted-foreground">Awaiting response</p>
                   </CardContent>
                 </Card>
               </div>
+
+              {/* Quick Actions */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Quick Actions</CardTitle>
+                  <CardDescription>Common team management tasks</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex gap-4">
+                    <InviteMemberDialog teamId={team._id}>
+                      <Button>
+                        <Mail className="mr-2 h-4 w-4" />
+                        Invite Team Member
+                      </Button>
+                    </InviteMemberDialog>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Recent Activity (placeholder) */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Recent Activity</CardTitle>
+                  <CardDescription>Latest team management changes</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p>Activity tracking will be available soon</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+
+          <TabsContent value="team" className="mt-6">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-semibold">Internal Team Members</h3>
+                  <p className="text-muted-foreground">Manage core team member roles and permissions</p>
+                </div>
+                <InviteMemberDialog teamId={team._id}>
+                  <Button>
+                    <Mail className="mr-2 h-4 w-4" />
+                    Invite Member
+                  </Button>
+                </InviteMemberDialog>
+              </div>
+                
+              <Card>
+                <CardContent className="p-0">
+                  <div className="space-y-0">
+                    {teamMembersOnly.map((member: TeamMember) => (
+                      <div key={member.clerkUserId} className="flex items-center justify-between p-4 border-b last:border-b-0">
+                        <div className="flex items-center gap-4">
+                          <Avatar>
+                            {member.imageUrl && <AvatarImage src={member.imageUrl} />}
+                            <AvatarFallback>{member.name ? member.name[0].toUpperCase() : 'U'}</AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-semibold">{member.name}</p>
+                            <p className="text-sm text-muted-foreground">{member.email}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant={member.role === 'admin' ? 'default' : 'secondary'} className="text-xs">
+                                {member.role === 'admin' ? 'Administrator' : 'Member'}
+                              </Badge>
+                              {member.clerkUserId === currentUserMember?.clerkUserId && (
+                                <Badge variant="outline" className="text-xs">You</Badge>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <Select 
+                          value={member.role} 
+                          onValueChange={(newRole) => handleRoleChange(member.clerkUserId, member.teamId, newRole as TeamMemberRole)}
+                          disabled={member.clerkUserId === currentUserMember?.clerkUserId || currentUserMember?.role !== 'admin'}
+                        >
+                          <SelectTrigger className="w-32">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="admin">Admin</SelectItem>
+                            <SelectItem value="member">Member</SelectItem>
+                            <SelectItem value="customer">Customer</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ))}
+                    {teamMembersOnly.length === 0 && (
+                      <div className="text-center py-12 text-muted-foreground">
+                        <Users className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                        <h3 className="text-lg font-semibold mb-2">No team members yet</h3>
+                        <p className="mb-4">Start by inviting your first team member.</p>
+                        <InviteMemberDialog teamId={team._id}>
+                          <Button>
+                            <Mail className="mr-2 h-4 w-4" />
+                            Invite Team Member
+                          </Button>
+                        </InviteMemberDialog>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
 
           <TabsContent value="customers" className="mt-6">
-            <div className="space-y-6">
-              {/* Customer Stats */}
-              <div className="grid gap-4 md:grid-cols-2">
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Total Customers</CardTitle>
-                    <Building2 className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{customersOnly.length}</div>
-                    <p className="text-xs text-muted-foreground">Client accounts</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Active Projects</CardTitle>
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">-</div>
-                    <p className="text-xs text-muted-foreground">With customer access</p>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Customers List */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Customer Accounts</h3>
-                
-                <Card>
-                  <CardContent className="p-0">
-                    <div className="space-y-4">
-                      {customersOnly.map((customer: TeamMember) => (
-                        <div key={customer.clerkUserId} className="flex items-center justify-between p-4 border-b last:border-b-0">
-                          <div className="flex items-center gap-4">
-                            <Avatar>
-                              {customer.imageUrl && <AvatarImage src={customer.imageUrl} />}
-                              <AvatarFallback>{customer.name ? customer.name[0].toUpperCase() : 'C'}</AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <p className="font-semibold">{customer.name}</p>
-                              <p className="text-sm text-muted-foreground">{customer.email}</p>
-                              <p className="text-xs text-muted-foreground">Customer</p>
-                            </div>
-                          </div>
-                          <Select 
-                            value={customer.role} 
-                            onValueChange={(newRole) => handleRoleChange(customer.clerkUserId, customer.teamId, newRole as TeamMemberRole)}
-                            disabled={currentUserMember?.role !== 'admin'}
-                          >
-                            <SelectTrigger className="w-32">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="admin">Admin</SelectItem>
-                              <SelectItem value="member">Member</SelectItem>
-                              <SelectItem value="customer">Customer</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ))}
-                      {customersOnly.length === 0 && (
-                        <div className="text-center py-8 text-muted-foreground">
-                          <Building2 className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                          <h3 className="text-lg font-semibold mb-2">No customers yet</h3>
-                          <p className="text-muted-foreground">
-                            Invite customers to give them access to specific projects.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
+            <CustomerProjectMatrix teamId={team._id} />
           </TabsContent>
 
           <TabsContent value="invitations" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle>Pending Invitations</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <Mail className="h-5 w-5" />
+                  Pending Invitations
+                </CardTitle>
                 <CardDescription>
-                  Manage pending team invitations
+                  Manage pending team invitations and track their status
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {pendingInvitations.length > 0 ? (
                   <div className="space-y-4">
                     {pendingInvitations.map((inv: PendingInvitation) => (
-                      <div key={inv._id} className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium">{inv.email}</p>
-                          <p className="text-sm text-muted-foreground">Role: {inv.role}</p>
+                      <div key={inv._id} className="flex items-center justify-between p-4 border rounded-lg">
+                        <div className="flex items-center gap-4">
+                          <Avatar>
+                            <AvatarFallback>{inv.email[0].toUpperCase()}</AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-medium">{inv.email}</p>
+                            <p className="text-sm text-muted-foreground">Role: {inv.role}</p>
+                            <p className="text-xs text-muted-foreground">Status: {inv.status}</p>
+                          </div>
                         </div>
                         {currentUserMember?.role === 'admin' && (
-                           <Button variant="ghost" size="icon" onClick={() => handleRevoke(inv._id)}>
-                            <Trash2 className="h-4 w-4" />
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => handleRevoke(inv._id)}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Revoke
                           </Button>
                         )}
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center py-8">
+                  <div className="flex items-center justify-center py-12">
                     <div className="text-center">
                       <Mail className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                      <h3 className="text-lg font-semibold mb-2">No pending invitations</h3>
-                      <p className="text-muted-foreground mb-4">
-                        All team invitations have been accepted.
+                      <h3 className="text-xl font-semibold mb-2">No pending invitations</h3>
+                      <p className="text-muted-foreground mb-6">
+                        All team invitations have been accepted or there are no pending invites.
                       </p>
+                      <InviteMemberDialog teamId={team._id}>
+                        <Button>
+                          <Mail className="mr-2 h-4 w-4" />
+                          Send New Invitation
+                        </Button>
+                      </InviteMemberDialog>
                     </div>
                   </div>
                 )}
@@ -365,10 +386,39 @@ export default function CompanyTeam() {
             </Card>
           </TabsContent>
 
-
-
-          <TabsContent value="clerk" className="mt-6">
-            <OrganizationProfile />
+          <TabsContent value="settings" className="mt-6">
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Building2 className="h-5 w-5" />
+                    Team Settings
+                  </CardTitle>
+                  <CardDescription>
+                    Configure team-wide settings and preferences
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p>Team settings configuration will be available here soon.</p>
+                    <p className="text-sm mt-2">Use the main Settings page for now.</p>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardHeader>
+                  <CardTitle>Organization Management</CardTitle>
+                  <CardDescription>
+                    Advanced organization settings via Clerk
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <OrganizationProfile />
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </div>

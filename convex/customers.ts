@@ -1,8 +1,8 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalMutation } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 
-// Utility function to check admin access
+// Utility function to check admin or member access
 const hasAdminAccess = async (ctx: any, teamId: Id<"teams">): Promise<boolean> => {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) return false;
@@ -12,10 +12,11 @@ const hasAdminAccess = async (ctx: any, teamId: Id<"teams">): Promise<boolean> =
     .withIndex("by_team_and_user", (q: any) =>
       q.eq("teamId", teamId).eq("clerkUserId", identity.subject)
     )
-    .filter((q: any) => q.eq(q.field("isActive"), true))
     .unique();
 
-  return membership?.role === "admin";
+  if (!membership || !membership.isActive) return false;
+
+  return membership.role === "admin" || membership.role === "member";
 };
 
 // LIST TEAM CUSTOMERS
@@ -209,10 +210,9 @@ export const getProjectCustomers = query({
       .withIndex("by_team_and_user", (q) =>
         q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
       )
-      .filter((q) => q.eq(q.field("isActive"), true))
       .unique();
 
-    if (!teamMember) return [];
+    if (!teamMember || !teamMember.isActive) return [];
 
     const customers = await ctx.db
       .query("customers")
@@ -240,4 +240,168 @@ export const getProjectCustomers = query({
 
     return enrichedCustomers;
   },
-}); 
+});
+
+// Activate pending customers who have joined the organization
+export const activatePendingCustomer = internalMutation({
+  args: { email: v.string(), clerkUserId: v.string() },
+  async handler(ctx, args) {
+    // Find all invited customers with this email
+    const invitedCustomers = await ctx.db
+      .query("customers")
+      .withIndex("by_email", q => q.eq("email", args.email))
+      .filter(q => q.eq(q.field("status"), "invited"))
+      .collect();
+    
+    if (invitedCustomers.length === 0) {
+      return { activated: 0 };
+    }
+    
+    // Activate all invited customers for this email
+    let activatedCount = 0;
+    for (const customer of invitedCustomers) {
+      await ctx.db.patch(customer._id, {
+        status: "active",
+        clerkUserId: args.clerkUserId,
+        joinedAt: Date.now()
+      });
+      activatedCount++;
+    }
+    
+    // Mark pending invitations as accepted
+    const pendingInvitations = await ctx.db
+      .query("pendingCustomerInvitations")
+      .filter(q => q.and(
+        q.eq(q.field("email"), args.email),
+        q.eq(q.field("status"), "pending")
+      ))
+      .collect();
+    
+    for (const invitation of pendingInvitations) {
+      await ctx.db.patch(invitation._id, {
+        status: "accepted"
+      });
+    }
+    
+    return { activated: activatedCount };
+  }
+});
+
+// One-time fix for stuck customers (can be called manually)
+export const fixStuckCustomer = internalMutation({
+  args: { email: v.string() },
+  async handler(ctx, args) {
+
+    // Find the customer first to get the clerkOrgId
+    const customer = await ctx.db
+      .query("customers")
+      .withIndex("by_email", q => q.eq("email", args.email))
+      .filter(q => q.eq(q.field("status"), "invited"))
+      .first();
+
+    if (!customer) {
+      return { message: "No invited customers found for this email", activated: 0 };
+    }
+
+    // Check if there's a team member in the same org that joined
+    const teamMembers = await ctx.db
+      .query("teamMembers") 
+      .filter(q => q.eq(q.field("clerkOrgId"), customer.clerkOrgId))
+      .collect();
+
+    // Find user by email first  
+    let user = await ctx.db
+      .query("users")
+      .withIndex("by_email", q => q.eq("email", args.email))
+      .unique();
+
+    // If no user record but there are team members, try to find by clerkUserId pattern
+    if (!user && teamMembers.length > 0) {
+      // Try to find the user by clerkUserId among team members
+      const possibleUsers = await ctx.db
+        .query("users")
+        .collect();
+      
+      // Find user that matches one of the team members
+      for (const member of teamMembers) {
+        const matchingUser = possibleUsers.find(u => u.clerkUserId === member.clerkUserId);
+        if (matchingUser) {
+          // Create user record with the correct email if email matches pattern
+          const emailPrefix = args.email.split('@')[0].toLowerCase();
+          if (matchingUser.name?.toLowerCase().includes(emailPrefix) || 
+              matchingUser.email?.toLowerCase() === args.email) {
+            user = matchingUser;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!user) {
+      return { message: `No user record found for ${args.email}. Available team members: ${teamMembers.length}`, activated: 0 };
+    }
+
+
+    // Find invited customers with this email
+    const invitedCustomers = await ctx.db
+      .query("customers")
+      .withIndex("by_email", q => q.eq("email", args.email))
+      .filter(q => q.eq(q.field("status"), "invited"))
+      .collect();
+
+    if (invitedCustomers.length === 0) {
+      return { message: "No invited customers found for this email", activated: 0 };
+    }
+
+    // Activate all invited customers
+    let activatedCount = 0;
+    for (const customerToActivate of invitedCustomers) {
+      await ctx.db.patch(customerToActivate._id, {
+        status: "active",
+        clerkUserId: user!.clerkUserId,
+        joinedAt: Date.now()
+      });
+      activatedCount++;
+    }
+
+    // Mark pending invitations as accepted
+    const pendingInvitations = await ctx.db
+      .query("pendingCustomerInvitations")
+      .filter(q => q.and(
+        q.eq(q.field("email"), args.email),
+        q.eq(q.field("status"), "pending")
+      ))
+      .collect();
+
+    for (const invitation of pendingInvitations) {
+      await ctx.db.patch(invitation._id, {
+        status: "accepted"
+      });
+    }
+
+    return { 
+      message: `Successfully activated ${activatedCount} customers for ${args.email}`,
+      activated: activatedCount 
+    };
+  }
+});
+
+// Simple manual activation for debugging
+export const manualActivateCustomer = mutation({
+  args: { 
+    customerId: v.id("customers"),
+    clerkUserId: v.string()
+  },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    await ctx.db.patch(args.customerId, {
+      status: "active",
+      clerkUserId: args.clerkUserId,
+      joinedAt: Date.now()
+    });
+
+    return { success: true };
+  }
+});

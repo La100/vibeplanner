@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 
@@ -36,6 +36,17 @@ export const addComment = mutation({
             content: args.content,
             parentCommentId: args.parentId,
             isEdited: false,
+        });
+
+        // Log activity for task comment
+        await ctx.runMutation(internal.activityLog.logActivity, {
+            teamId: task.teamId,
+            projectId: task.projectId,
+            taskId: args.taskId,
+            actionType: "task.comment.add",
+            details: { taskTitle: task.title, commentPreview: args.content.substring(0, 100) },
+            entityId: commentId,
+            entityType: "comment",
         });
 
         return commentId;

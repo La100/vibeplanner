@@ -1,5 +1,5 @@
 import { R2 } from "@convex-dev/r2";
-import { api, components } from "./_generated/api";
+import { api, components, internal } from "./_generated/api";
 import { mutation, query, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 
@@ -70,16 +70,11 @@ export const generateUploadUrlWithCustomKey = mutation({
     const customKey = `${path}/${uuid}-${baseName}${fileExtension ? '.' + fileExtension : ''}`;
 
     const uploadData = await r2.generateUploadUrl(customKey);
-    const publicUrl = process.env.R2_PUBLIC_URL ? `${process.env.R2_PUBLIC_URL}/${customKey}` : "";
-
-    if (!publicUrl) {
-      console.warn("R2_PUBLIC_URL environment variable is not set. File analysis will not work.");
-    }
     
     return {
       url: uploadData.url,
       key: customKey,
-      publicUrl: publicUrl,
+      publicUrl: "", // Not needed - we use signed URLs
     };
   },
 });
@@ -228,7 +223,7 @@ export const addFile = mutation({
     };
 
     // Utwórz rekord pliku
-    return await ctx.db.insert("files", {
+    const fileId = await ctx.db.insert("files", {
       name: args.fileName,
       teamId: project.teamId,
       projectId: args.projectId,
@@ -243,6 +238,22 @@ export const addFile = mutation({
       isLatest: true,
       moodboardSection: args.moodboardSection,
     });
+
+    // Log activity if file is attached to a task
+    if (args.taskId) {
+      const task = await ctx.db.get(args.taskId);
+      await ctx.runMutation(internal.activityLog.logActivity, {
+        teamId: project.teamId,
+        projectId: args.projectId,
+        taskId: args.taskId,
+        actionType: "task.file.add",
+        details: { taskTitle: task?.title, fileName: args.fileName, fileType: getFileType(args.fileType) },
+        entityId: fileId,
+        entityType: "file",
+      });
+    }
+
+    return fileId;
   },
 });
 

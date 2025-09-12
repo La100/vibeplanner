@@ -189,8 +189,7 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_team", ["teamId"])
     .index("by_status", ["status"])
-    .index("by_assigned_to", ["assignedTo"])
-    .index("by_due_date", ["dueDate"]),
+    .index("by_assigned_to", ["assignedTo"]),
 
   // Folders for file organization
   folders: defineTable({
@@ -460,7 +459,7 @@ export default defineSchema({
       v.literal("COMPLETED"),
       v.literal("CANCELLED")
     ),
-    sectionId: v.optional(v.id("shoppingListSections")),
+    sectionId: v.optional(v.union(v.id("shoppingListSections"), v.null())),
     projectId: v.id("projects"),
     teamId: v.id("teams"),
     createdBy: v.string(), // Clerk user ID
@@ -475,14 +474,18 @@ export default defineSchema({
   activityLog: defineTable({
     teamId: v.id("teams"),
     projectId: v.id("projects"),
+    taskId: v.optional(v.id("tasks")), // Task-specific activity
     userId: v.string(), // Clerk User ID
-    actionType: v.string(), // e.g. "task.create", "file.upload", "comment.add"
+    actionType: v.string(), // e.g. "task.create", "task.update", "task.status_change", "file.upload", "comment.add"
     details: v.any(), // e.g. { taskTitle: "...", fromStatus: "...", toStatus: "..." }
     entityId: v.string(), // ID of related object (e.g. taskId)
+    entityType: v.optional(v.string()), // Type of entity (e.g. "task", "file", "comment")
   })
     .index("by_project", ["projectId"])
     .index("by_team", ["teamId"])
-    .index("by_user", ["userId"]),
+    .index("by_user", ["userId"])
+    .index("by_task", ["taskId"])
+    .index("by_entity", ["entityId", "entityType"]),
 
   // Surveys
   surveys: defineTable({
@@ -619,61 +622,6 @@ export default defineSchema({
     .index("by_thread_and_order", ["threadId", "order"])
     .index("by_project", ["projectId"]),
 
-  // AI Token Usage Tracking
-  aiTokenUsage: defineTable({
-    projectId: v.id("projects"),
-    teamId: v.id("teams"),
-    userClerkId: v.string(),
-    threadId: v.optional(v.string()),
-    
-    model: v.string(),
-    requestType: v.union(v.literal("chat"), v.literal("embedding"), v.literal("other")),
-    
-    inputTokens: v.number(),
-    outputTokens: v.number(),
-    totalTokens: v.number(),
-    
-    contextSize: v.optional(v.number()),
-    mode: v.optional(v.string()),
-    estimatedCostCents: v.optional(v.number()),
-    responseTimeMs: v.optional(v.number()),
-    success: v.boolean(),
-    errorMessage: v.optional(v.string()),
-  })
-    .index("by_project", ["projectId"])
-    .index("by_team", ["teamId"])
-    .index("by_user", ["userClerkId"])
-    .index("by_thread", ["threadId"]),
-
-  // Product Library
-  productLibrary: defineTable({
-    name: v.string(),
-    description: v.optional(v.string()),
-    category: v.optional(v.string()),
-    brand: v.optional(v.string()),
-    model: v.optional(v.string()),
-    sku: v.optional(v.string()),
-    imageUrl: v.optional(v.string()),
-    productLink: v.optional(v.string()),
-    supplier: v.optional(v.string()),
-    supplierSku: v.optional(v.string()),
-    dimensions: v.optional(v.string()),
-    weight: v.optional(v.number()),
-    material: v.optional(v.string()),
-    color: v.optional(v.string()),
-    unitPrice: v.optional(v.number()),
-    tags: v.array(v.string()),
-    notes: v.optional(v.string()),
-    teamId: v.id("teams"),
-    createdBy: v.string(), // Clerk user ID
-    isActive: v.boolean(),
-  })
-    .index("by_team", ["teamId"])
-    .index("by_category", ["category"])
-    .index("by_brand", ["brand"])
-    .index("by_supplier", ["supplier"])
-    .index("by_created_by", ["createdBy"]),
-
   // Contacts/Address Book
   contacts: defineTable({
     name: v.string(),
@@ -733,4 +681,118 @@ export default defineSchema({
     .index("by_team", ["teamId"])
     .index("by_created_by", ["createdBy"])
     .index("by_project_and_archived", ["projectId", "isArchived"]),
+
+  // AI Token Usage Tracking
+  aiTokenUsage: defineTable({
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    userClerkId: v.string(),
+    threadId: v.optional(v.string()),
+    model: v.string(),
+    requestType: v.union(
+      v.literal("chat"), 
+      v.literal("embedding"), 
+      v.literal("other")
+    ),
+    inputTokens: v.number(),
+    outputTokens: v.number(),
+    totalTokens: v.number(),
+    contextSize: v.optional(v.number()),
+    mode: v.optional(v.string()),
+    estimatedCostCents: v.optional(v.number()),
+    responseTimeMs: v.optional(v.number()),
+    success: v.boolean(),
+    errorMessage: v.optional(v.string()),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_team", ["teamId"])
+    .index("by_user", ["userClerkId"])
+    .index("by_thread", ["threadId"]),
+
+  // Product Library
+  productLibrary: defineTable({
+    name: v.string(),
+    description: v.optional(v.string()),
+    category: v.optional(v.string()),
+    brand: v.optional(v.string()),
+    model: v.optional(v.string()),
+    sku: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+    productLink: v.optional(v.string()),
+    supplier: v.optional(v.string()),
+    supplierSku: v.optional(v.string()),
+    dimensions: v.optional(v.string()),
+    weight: v.optional(v.number()),
+    material: v.optional(v.string()),
+    color: v.optional(v.string()),
+    unitPrice: v.optional(v.number()),
+    tags: v.array(v.string()),
+    notes: v.optional(v.string()),
+    teamId: v.id("teams"),
+    createdBy: v.string(), // Clerk user ID
+    isActive: v.boolean(),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_category", ["category"])
+    .index("by_supplier", ["supplier"])
+    .index("by_brand", ["brand"])
+    .index("by_created_by", ["createdBy"]),
+
+  // AI Custom Prompts
+  aiCustomPrompts: defineTable({
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    customPrompt: v.string(), // Custom system prompt text
+    createdBy: v.string(), // Clerk user ID who created the custom prompt
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    isActive: v.boolean(), // Whether this custom prompt is currently being used
+  })
+    .index("by_project", ["projectId"])
+    .index("by_team", ["teamId"])
+    .index("by_project_and_active", ["projectId", "isActive"]),
+
+  // AI Settings per project
+  aiSettings: defineTable({
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    isEnabled: v.boolean(), // Whether AI RAG is enabled for this project
+    createdBy: v.string(), // Clerk user ID who enabled AI
+    enabledAt: v.optional(v.number()),
+    disabledAt: v.optional(v.number()),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_team", ["teamId"])
+    .index("by_enabled", ["isEnabled"]),
+
+  // AI Chat Threads - conversation sessions
+  aiThreads: defineTable({
+    threadId: v.string(), // Unique thread identifier
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    userClerkId: v.string(), // User who started the thread
+    title: v.optional(v.string()), // Optional thread title
+    lastMessageAt: v.number(), // Timestamp of last message
+  })
+    .index("by_thread_id", ["threadId"])
+    .index("by_project", ["projectId"])
+    .index("by_user", ["userClerkId"]),
+
+  // AI Chat Messages - individual messages in threads
+  aiMessages: defineTable({
+    threadId: v.string(), // Reference to aiThreads
+    projectId: v.id("projects"),
+    role: v.union(v.literal("user"), v.literal("assistant")), // Message sender
+    content: v.string(), // Message content
+    tokenUsage: v.optional(v.object({
+      inputTokens: v.number(),
+      outputTokens: v.number(),
+      totalTokens: v.number(),
+      estimatedCostUSD: v.number(),
+    })),
+    ragContext: v.optional(v.string()), // RAG context used for this message
+    messageIndex: v.number(), // Order of message in thread (0, 1, 2, ...)
+  })
+    .index("by_thread", ["threadId"])
+    .index("by_thread_and_index", ["threadId", "messageIndex"]),
 });

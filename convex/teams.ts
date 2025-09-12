@@ -183,7 +183,7 @@ export const inviteCustomerToProject = mutation({
     email: v.string(),
     projectId: v.id("projects"),
   },
-  async handler(ctx, args): Promise<{ invitationId: any }> {
+  async handler(ctx, args): Promise<{ invitationId: any; customerId: any }> {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       throw new Error("Not authenticated");
@@ -210,6 +210,7 @@ export const inviteCustomerToProject = mutation({
       throw new Error("Insufficient permissions to invite a customer");
     }
 
+    // Najpierw stwórz pending invitation
     const invitationId = await ctx.runMutation(internal.teams.createPendingCustomerInvitation, {
       email: args.email,
       projectId: args.projectId,
@@ -217,7 +218,14 @@ export const inviteCustomerToProject = mutation({
       invitedBy: identity.subject,
     });
 
-    return { invitationId };
+    // Następnie dodaj klienta do projektu (utworzy rekord w customers)
+    const customerId = await ctx.runMutation(internal.teams.addCustomerToProject, {
+      email: args.email,
+      projectId: args.projectId,
+      clerkOrgId: team.clerkOrgId,
+    });
+
+    return { invitationId, customerId };
   }
 });
 
@@ -413,6 +421,31 @@ export const createPendingCustomerInvitation = internalMutation({
   }
 });
 
+export const cleanupExpiredInvitations = internalMutation({
+  args: {},
+  async handler(ctx) {
+    const now = Date.now();
+    
+    // Znajdź wygasłe zaproszenia
+    const expiredInvitations = await ctx.db
+      .query("pendingCustomerInvitations")
+      .filter(q => q.and(
+        q.eq(q.field("status"), "pending"),
+        q.lt(q.field("expiresAt"), now)
+      ))
+      .collect();
+
+    // Oznacz jako wygasłe zamiast usuwać
+    for (const invitation of expiredInvitations) {
+      await ctx.db.patch(invitation._id, {
+        status: "expired"
+      });
+    }
+
+    return { cleanedUp: expiredInvitations.length };
+  }
+});
+
 export const getTeamMembersForIndexing = internalQuery({
   args: {
     projectId: v.id("projects"),
@@ -429,6 +462,39 @@ export const getTeamMembersForIndexing = internalQuery({
     // This is not efficient, but for indexing it's fine.
     // It filters members who have the projectId in their projectIds array, or who are not customers (admins, members).
     return members.filter(m => m.projectIds?.includes(args.projectId) || m.role !== 'customer');
+  },
+});
+
+export const getTeamMembersWithUserDetails = internalQuery({
+  args: {
+    projectId: v.id("projects"),
+  },
+  handler: async (ctx, args) => {
+    const project = await ctx.db.get(args.projectId);
+    if (!project || !project.teamId) return [];
+    
+    const members = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team", (q) => q.eq("teamId", project.teamId!))
+      .collect();
+    
+    // Get user details for each member
+    return await Promise.all(
+      members
+        .filter(m => m.projectIds?.includes(args.projectId) || m.role !== 'customer')
+        .map(async (member) => {
+          const user = await ctx.db
+            .query("users")
+            .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", member.clerkUserId))
+            .unique();
+          return {
+            ...member,
+            name: user?.name ?? "Unknown User",
+            email: user?.email ?? "No Email",
+            imageUrl: user?.imageUrl,
+          };
+        })
+    );
   },
 });
 
@@ -906,21 +972,45 @@ export const getAvailableOrgMembersForProject = query({
       .filter(q => q.eq(q.field("isActive"), true))
       .collect();
 
-    // Pobierz już istniejących project customers
+    // Pobierz już istniejących project customers (wszystkich - active i invited)
     const existingProjectCustomers = await ctx.db
       .query("customers")
       .filter(q => q.and(
         q.eq(q.field("projectId"), args.projectId),
-        q.eq(q.field("status"), "active")
+        q.or(
+          q.eq(q.field("status"), "active"),
+          q.eq(q.field("status"), "invited")
+        )
       ))
       .collect();
 
     const existingProjectCustomerUserIds = new Set(
       existingProjectCustomers.map(customer => customer.clerkUserId).filter(Boolean)
     );
+    
+    const existingProjectCustomerEmails = new Set(
+      existingProjectCustomers.map(customer => customer.email)
+    );
+
+    // Pobierz wszystkich użytkowników zespołu, żeby sprawdzić emaile
+    const allMembersWithUsers = await Promise.all(
+      allMembers.map(async (member) => {
+        const user = await ctx.db
+          .query("users")
+          .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", member.clerkUserId))
+          .unique();
+        
+        return {
+          ...member,
+          user: user,
+        };
+      })
+    );
 
     // POPRAWIONA LOGIKA: Pokaż tylko tych którzy mogą skorzystać z dodania jako project customer
-    const availableMembers = allMembers.filter(member => {
+    const availableMembers = allMembersWithUsers.filter(memberWithUser => {
+      const { user, ...member } = memberWithUser;
+      
       // Admin i Member już mają pełny dostęp do wszystkich projektów - nie trzeba ich dodawać jako project customers
       if (member.role === "admin" || member.role === "member") {
         return false;
@@ -928,6 +1018,11 @@ export const getAvailableOrgMembersForProject = query({
 
       // Nie pokazuj tych którzy już są project customers dla tego projektu
       if (existingProjectCustomerUserIds.has(member.clerkUserId)) {
+        return false;
+      }
+      
+      // Sprawdź też po email (dla przypadków gdy klient nie ma jeszcze clerkUserId)
+      if (user && existingProjectCustomerEmails.has(user.email)) {
         return false;
       }
 
@@ -940,22 +1035,17 @@ export const getAvailableOrgMembersForProject = query({
       return true;
     });
 
-    // Dodaj dane użytkowników
-    const membersWithUserData = await Promise.all(
-      availableMembers.map(async (member) => {
-        const user = await ctx.db
-          .query("users")
-          .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", member.clerkUserId))
-          .unique();
-        
-        return {
-          ...member,
-          name: user?.name ?? "Unknown User",
-          email: user?.email ?? "No email",
-          imageUrl: user?.imageUrl,
-        };
-      })
-    );
+    // Formatuj wynik z danymi użytkowników
+    const membersWithUserData = availableMembers.map(memberWithUser => {
+      const { user, ...member } = memberWithUser;
+      
+      return {
+        ...member,
+        name: user?.name ?? "Unknown User",
+        email: user?.email ?? "No email",
+        imageUrl: user?.imageUrl,
+      };
+    });
 
     return membersWithUserData;
   }

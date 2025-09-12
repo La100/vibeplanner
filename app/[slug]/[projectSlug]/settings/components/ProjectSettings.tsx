@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { z } from "zod";
@@ -33,6 +34,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 const settingsFormSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
+  description: z.string().optional(),
+  customer: z.string().optional(),
+  budget: z.coerce.number().positive("Budget must be positive").optional().or(z.literal("")),
+  location: z.string().optional(),
+  status: z.enum([
+    "planning",
+    "active", 
+    "on_hold",
+    "completed",
+    "cancelled"
+  ]).optional(),
   currency: z.enum([
     "USD", "EUR", "PLN", "GBP", "CAD", "AUD", "JPY", "CHF", "SEK", "NOK", 
     "DKK", "CZK", "HUF", "CNY", "INR", "BRL", "MXN", "KRW", "SGD", "HKD"
@@ -107,8 +119,13 @@ function ProjectSettingsContent() {
     resolver: zodResolver(settingsFormSchema),
     values: project ? { 
       name: project.name,
+      description: project.description || "",
+      customer: project.customer || "",
+      budget: project.budget || "",
+      location: project.location || "",
+      status: project.status || "planning",
       currency: project.currency || "PLN",
-    } : { name: "", currency: "PLN" },
+    } : { name: "", description: "", customer: "", budget: "", location: "", status: "planning", currency: "PLN" },
   });
 
   const deleteForm = useForm<z.infer<typeof deleteFormSchema>>({
@@ -145,6 +162,11 @@ function ProjectSettingsContent() {
       const result = await updateProject({ 
         projectId: project!._id, 
         name: values.name,
+        description: values.description || undefined,
+        customer: values.customer || undefined,
+        budget: values.budget ? Number(values.budget) : undefined,
+        location: values.location || undefined,
+        status: values.status,
         currency: values.currency,
       });
       toast.success("Project settings updated");
@@ -293,6 +315,106 @@ function GeneralTab({
                 </FormItem>
               )}
             />
+            
+            <FormField
+              control={settingsForm.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem className="space-y-2">
+                  <FormLabel className="text-sm font-medium">Description</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="Project description"
+                      {...field}
+                      className="w-full min-h-[80px] text-base resize-none"
+                      rows={3}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <FormField
+              control={settingsForm.control}
+              name="status"
+              render={({ field }) => (
+                <FormItem className="space-y-2">
+                  <FormLabel className="text-sm font-medium">Project Status</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger className="w-full h-10">
+                        <SelectValue placeholder="Select project status" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="planning">Planning</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="on_hold">On Hold</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <FormField
+              control={settingsForm.control}
+              name="customer"
+              render={({ field }) => (
+                <FormItem className="space-y-2">
+                  <FormLabel className="text-sm font-medium">Client</FormLabel>
+                  <FormControl>
+                    <Input 
+                      placeholder="Client name" 
+                      {...field} 
+                      className="w-full h-10 text-base" 
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <FormField
+              control={settingsForm.control}
+              name="location"
+              render={({ field }) => (
+                <FormItem className="space-y-2">
+                  <FormLabel className="text-sm font-medium">Location</FormLabel>
+                  <FormControl>
+                    <Input 
+                      placeholder="Project location" 
+                      {...field} 
+                      className="w-full h-10 text-base" 
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <FormField
+              control={settingsForm.control}
+              name="budget"
+              render={({ field }) => (
+                <FormItem className="space-y-2">
+                  <FormLabel className="text-sm font-medium">Budget</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="number"
+                      placeholder="Project budget" 
+                      {...field} 
+                      className="w-full h-10 text-base" 
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
             <FormField
               control={settingsForm.control}
               name="currency"

@@ -10,6 +10,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
+// Extend jsPDF type to include autoTable method
+declare module 'jspdf' {
+  interface jsPDF {
+    autoTable: (options: unknown) => void;
+    lastAutoTable: { finalY: number };
+  }
+}
+
 // Import new components
 import { ShoppingListHeader } from './ShoppingListHeader';
 import { SectionManager } from './SectionManager';
@@ -81,6 +89,7 @@ export default function ShoppingListView() {
   const items = useQuery(api.shopping.listShoppingListItems, { projectId: project._id });
   const sections = useQuery(api.shopping.listShoppingListSections, { projectId: project._id });
   const teamMembers = useQuery(api.teams.getTeamMembers, { teamId: project.teamId });
+  const team = useQuery(api.teams.getTeamById, { teamId: project.teamId });
 
   const createItem = useMutation(api.shopping.createShoppingListItem);
   const updateItem = useMutation(api.shopping.updateShoppingListItem);
@@ -99,7 +108,7 @@ export default function ShoppingListView() {
     groupBySections: true
   });
 
-  if (items === undefined || sections === undefined) {
+  if (items === undefined || sections === undefined || team === undefined) {
     return null;
   }
   
@@ -241,8 +250,8 @@ export default function ShoppingListView() {
         item.catalogNumber || '',
         item.dimensions || '',
         item.quantity,
-        item.unitPrice ? `${currencySymbol}${item.unitPrice.toFixed(2)}` : '',
-        item.totalPrice ? `${currencySymbol}${item.totalPrice.toFixed(2)}` : '',
+        item.unitPrice ? `${item.unitPrice.toFixed(2)} ${currencySymbol}` : '',
+        item.totalPrice ? `${item.totalPrice.toFixed(2)} ${currencySymbol}` : '',
         item.realizationStatus,
         item.priority || '',
         assignedMember || '',
@@ -275,19 +284,89 @@ export default function ShoppingListView() {
   const handleExportPDF = async () => {
     try {
       const jsPDF = (await import('jspdf')).default;
+      // Import and initialize the autoTable plugin
+      await import('jspdf-autotable');
+      
       const doc = new jsPDF({
         putOnlyUsedFonts: true,
-        format: 'a4'
+        format: 'a4',
+        unit: 'mm'
       });
       
-      // Header
-      doc.setFontSize(20);
-      doc.text(`Shopping List - ${project.name}`, 20, 20);
-      doc.setFontSize(12);
-      doc.text(`Generated on: ${new Date().toLocaleDateString('pl-PL')}`, 20, 30);
-      doc.text(`Total Budget: ${currencySymbol}${grandTotal.toFixed(2)}`, 20, 40);
-
-      let yPosition = 50;
+      // Add support for Polish characters by using a font that supports UTF-8
+      doc.setFont('helvetica', 'normal');
+      
+      let yPosition = 20;
+      
+      // Organization Header
+      if (team) {
+        // Organization name - properly encoded for Polish characters
+        doc.setFontSize(22);
+        doc.setFont('helvetica', 'bold');
+        const orgName = team.name || 'Organizacja';
+        doc.text(orgName, 20, yPosition);
+        yPosition += 12;
+        
+        // Add logo if available
+        if (team.imageUrl) {
+          try {
+            // Create a temporary image element to load the logo
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            
+            await new Promise((resolve) => {
+              img.onload = () => {
+                try {
+                  // Create canvas to convert image to base64
+                  const canvas = document.createElement('canvas');
+                  const ctx = canvas.getContext('2d');
+                  canvas.width = img.width;
+                  canvas.height = img.height;
+                  ctx?.drawImage(img, 0, 0);
+                  
+                  const dataURL = canvas.toDataURL('image/png');
+                  
+                  // Add logo to PDF (positioned at top right)
+                  const logoWidth = 30;
+                  const logoHeight = (img.height / img.width) * logoWidth;
+                  const pageWidth = doc.internal.pageSize.getWidth();
+                  
+                  doc.addImage(dataURL, 'PNG', pageWidth - logoWidth - 20, 10, logoWidth, logoHeight);
+                  resolve(true);
+                } catch (error) {
+                  console.warn('Error adding logo to PDF:', error);
+                  resolve(false);
+                }
+              };
+              img.onerror = () => {
+                console.warn('Could not load organization logo');
+                resolve(false);
+              };
+              img.src = team.imageUrl!;
+            });
+          } catch (error) {
+            console.warn('Error processing organization logo:', error);
+          }
+        }
+        
+        // Add separator line
+        doc.setLineWidth(0.5);
+        doc.line(20, yPosition, doc.internal.pageSize.getWidth() - 20, yPosition);
+        yPosition += 10;
+      }
+      
+      // Document Header
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Shopping List - ${project.name}`, 20, yPosition);
+      yPosition += 10;
+      
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Generated on: ${new Date().toLocaleDateString('en-US')}`, 20, yPosition);
+      yPosition += 6;
+      doc.text(`Total Budget: ${grandTotal.toFixed(2)} ${currencySymbol}`, 20, yPosition);
+      yPosition += 15;
 
       if (exportOptions.groupBySections) {
         Object.entries(itemsBySection)
@@ -310,27 +389,51 @@ export default function ShoppingListView() {
           doc.text(sectionName, 20, yPosition);
           yPosition += 10;
 
+          const statusTranslations: Record<string, string> = {
+            'PLANNED': 'Planned',
+            'ORDERED': 'Ordered',
+            'IN_TRANSIT': 'In Transit',
+            'DELIVERED': 'Delivered',
+            'COMPLETED': 'Completed',
+            'CANCELLED': 'Cancelled'
+          };
+
           const tableData = filteredSectionItems.map(item => [
             item.name,
             item.quantity.toString(),
-            item.unitPrice ? `${currencySymbol}${item.unitPrice.toFixed(2)}` : '-',
-            item.totalPrice ? `${currencySymbol}${item.totalPrice.toFixed(2)}` : '-',
-            item.realizationStatus,
+            item.unitPrice ? `${item.unitPrice.toFixed(2)} ${currencySymbol}` : '-',
+            item.totalPrice ? `${item.totalPrice.toFixed(2)} ${currencySymbol}` : '-',
+            statusTranslations[item.realizationStatus] || item.realizationStatus,
             item.supplier || '-'
           ]);
 
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (doc as any).autoTable({
+          doc.autoTable({
             startY: yPosition,
             head: [['Product', 'Qty', 'Unit Price', 'Total', 'Status', 'Supplier']],
             body: tableData,
             margin: { left: 20, right: 20 },
-            styles: { fontSize: 8, cellPadding: 3 },
-            headStyles: { fillColor: [66, 66, 66], textColor: [255, 255, 255] }
+            styles: { 
+              fontSize: 9, 
+              cellPadding: 4,
+              font: 'helvetica',
+              fontStyle: 'normal',
+              textColor: [0, 0, 0],
+              lineColor: [200, 200, 200],
+              lineWidth: 0.1
+            },
+            headStyles: { 
+              fillColor: [70, 70, 70], 
+              textColor: [255, 255, 255],
+              fontSize: 10,
+              fontStyle: 'bold'
+            },
+            alternateRowStyles: {
+              fillColor: [245, 245, 245]
+            },
+            theme: 'striped'
           });
 
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          yPosition = (doc as any).lastAutoTable.finalY + 10;
+          yPosition = doc.lastAutoTable.finalY + 10;
         });
       } else {
         const filteredItems = items.filter(item => {
@@ -338,26 +441,51 @@ export default function ShoppingListView() {
           return item.realizationStatus.toLowerCase() === exportOptions.statusFilter;
         });
 
+        const statusTranslations: Record<string, string> = {
+          'PLANNED': 'Planned',
+          'ORDERED': 'Ordered',
+          'IN_TRANSIT': 'In Transit',
+          'DELIVERED': 'Delivered',
+          'COMPLETED': 'Completed',
+          'CANCELLED': 'Cancelled'
+        };
+
         const tableData = filteredItems.map(item => {
           const sectionName = item.sectionId ? sectionMap.get(item.sectionId) || 'No Category' : 'No Category';
           return [
             sectionName,
             item.name,
             item.quantity.toString(),
-            item.unitPrice ? `${currencySymbol}${item.unitPrice.toFixed(2)}` : '',
-            item.totalPrice ? `${currencySymbol}${item.totalPrice.toFixed(2)}` : '',
-            item.realizationStatus
+            item.unitPrice ? `${item.unitPrice.toFixed(2)} ${currencySymbol}` : '',
+            item.totalPrice ? `${item.totalPrice.toFixed(2)} ${currencySymbol}` : '',
+            statusTranslations[item.realizationStatus] || item.realizationStatus
           ];
         });
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (doc as any).autoTable({
+        doc.autoTable({
           startY: yPosition,
           head: [['Section', 'Product', 'Qty', 'Unit Price', 'Total', 'Status']],
           body: tableData,
-          margin: { left: 20 },
-          styles: { fontSize: 9 },
-          headStyles: { fillColor: [66, 66, 66] }
+          margin: { left: 20, right: 20 },
+          styles: { 
+            fontSize: 9, 
+            cellPadding: 4,
+            font: 'helvetica',
+            fontStyle: 'normal',
+            textColor: [0, 0, 0],
+            lineColor: [200, 200, 200],
+            lineWidth: 0.1
+          },
+          headStyles: { 
+            fillColor: [70, 70, 70], 
+            textColor: [255, 255, 255],
+            fontSize: 10,
+            fontStyle: 'bold'
+          },
+          alternateRowStyles: {
+            fillColor: [245, 245, 245]
+          },
+          theme: 'striped'
         });
       }
 
@@ -475,12 +603,12 @@ export default function ShoppingListView() {
             {sectionTotals.map(({ section, total }) => (
               <div key={section} className="flex justify-between items-center text-sm">
                 <span className="font-medium">{section}</span>
-                <span>{currencySymbol}{total.toFixed(2)}</span>
+                <span>{total.toFixed(2)} {currencySymbol}</span>
               </div>
             ))}
             <div className="border-t pt-2 flex justify-between items-center font-bold text-lg">
               <span>Grand Total:</span>
-              <span>{currencySymbol}{grandTotal.toFixed(2)}</span>
+              <span>{grandTotal.toFixed(2)} {currencySymbol}</span>
             </div>
           </div>
         </div>
