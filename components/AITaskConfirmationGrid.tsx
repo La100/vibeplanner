@@ -4,9 +4,11 @@ import { ItemPreviewCard } from "./ItemPreviewCard";
 import { Loader2 } from "lucide-react";
 
 interface PendingTask {
-  type: 'task' | 'note' | 'shopping' | 'survey';
-  operation?: 'create' | 'edit';
+  type: 'task' | 'note' | 'shopping' | 'survey' | 'contact';
+  operation?: 'create' | 'edit' | 'delete';
   data: Record<string, unknown>;
+  updates?: Record<string, unknown>;
+  originalItem?: Record<string, unknown>;
 }
 
 interface AITaskConfirmationGridProps {

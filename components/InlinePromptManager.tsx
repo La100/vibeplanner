@@ -35,15 +35,15 @@ export default function InlinePromptManager() {
   const [copied, setCopied] = useState(false);
 
   // Queries
-  const activePrompt = useQuery(api.aiPrompts.getActiveCustomPrompt, 
+  const activePrompt = useQuery(api.ai.promptDb.getActiveCustomPrompt, 
     project ? { projectId: project._id } : "skip"
   );
-  const defaultTemplate = useQuery(api.aiPrompts.getDefaultPromptTemplate, {});
+  const defaultTemplate = useQuery(api.ai.promptDb.getDefaultPromptTemplate, {});
 
   // Mutations
-  const saveCustomPrompt = useMutation(api.aiPrompts.saveCustomPrompt);
-  const updateCustomPrompt = useMutation(api.aiPrompts.updateCustomPrompt);
-  const resetToDefault = useMutation(api.aiPrompts.resetToDefaultPrompt);
+  const saveCustomPrompt = useMutation(api.ai.promptDb.saveCustomPrompt);
+  const updateCustomPrompt = useMutation(api.ai.promptDb.updateCustomPrompt);
+  const resetToDefault = useMutation(api.ai.promptDb.resetToDefaultPrompt);
 
   // Initialize custom prompt when dialog opens
   const handleOpenChange = (open: boolean) => {

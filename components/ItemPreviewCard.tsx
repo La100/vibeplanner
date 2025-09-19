@@ -1,20 +1,23 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { 
-  CheckSquare, 
-  FileText, 
-  ShoppingCart, 
-  MessageSquare, 
+import {
+  CheckSquare,
+  FileText,
+  ShoppingCart,
+  MessageSquare,
+  User,
   Plus,
   X,
   Check
 } from "lucide-react";
 
 interface PendingTask {
-  type: 'task' | 'note' | 'shopping' | 'survey';
-  operation?: 'create' | 'edit';
+  type: 'task' | 'note' | 'shopping' | 'survey' | 'contact';
+  operation?: 'create' | 'edit' | 'delete';
   data: Record<string, unknown>;
+  updates?: Record<string, unknown>;
+  originalItem?: Record<string, unknown>;
 }
 
 interface ItemPreviewCardProps {
@@ -32,6 +35,7 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
       case 'note': return <FileText className="h-4 w-4" />;
       case 'shopping': return <ShoppingCart className="h-4 w-4" />;
       case 'survey': return <MessageSquare className="h-4 w-4" />;
+      case 'contact': return <User className="h-4 w-4" />;
       default: return <Plus className="h-4 w-4" />;
     }
   };
@@ -42,6 +46,7 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
       case 'note': return typeof item.data.title === 'string' ? item.data.title : 'Untitled Note';
       case 'shopping': return typeof item.data.name === 'string' ? item.data.name : 'Untitled Item';
       case 'survey': return typeof item.data.title === 'string' ? item.data.title : 'Untitled Survey';
+      case 'contact': return typeof item.data.name === 'string' ? item.data.name : 'Untitled Contact';
       default: return 'Unknown Item';
     }
   };
@@ -66,9 +71,15 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
           item.data.supplier && `Supplier: ${item.data.supplier}`
         ].filter(Boolean).join(' • ');
       case 'survey':
-        return (typeof item.data.description === 'string' ? item.data.description : '') || 
+        return (typeof item.data.description === 'string' ? item.data.description : '') ||
                `Target: ${item.data.targetAudience || 'Unknown'}`;
-      default: 
+      case 'contact':
+        return [
+          item.data.email && `Email: ${item.data.email}`,
+          item.data.phone && `Phone: ${item.data.phone}`,
+          item.data.role && `Role: ${item.data.role}`
+        ].filter(Boolean).join(' • ');
+      default:
         return '';
     }
   };
@@ -79,6 +90,7 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
       case 'note': return 'bg-green-100 text-green-700';
       case 'shopping': return 'bg-purple-100 text-purple-700';
       case 'survey': return 'bg-orange-100 text-orange-700';
+      case 'contact': return 'bg-indigo-100 text-indigo-700';
       default: return 'bg-gray-100 text-gray-700';
     }
   };

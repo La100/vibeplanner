@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
 // Get all contacts for a team
@@ -183,6 +184,10 @@ export const createContact = mutation({
       isActive: true,
     });
 
+    // Auto-indexing trigger - trigger for all projects that might use this contact
+    // Since we don't know which projects will use this contact yet, we can't trigger specific projects
+    // This contact will be indexed when it's assigned to a project
+
     return contactId;
   },
 });
@@ -253,6 +258,23 @@ export const updateContact = mutation({
       notes: args.notes,
     });
 
+    // Auto-indexing trigger - trigger re-index for all projects using this contact
+    const projectContacts = await ctx.db
+      .query("projectContacts")
+      .withIndex("by_contact", (q) => q.eq("contactId", args.contactId))
+      .filter(q => q.eq(q.field("isActive"), true))
+      .collect();
+
+    // Trigger auto-indexing for each project that uses this contact
+    for (const projectContact of projectContacts) {
+      ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+        projectId: projectContact.projectId,
+        entityType: "contact",
+        entityId: args.contactId,
+        operation: "update",
+      });
+    }
+
     return args.contactId;
   },
 });
@@ -288,6 +310,23 @@ export const deleteContact = mutation({
 
     if (!teamMember) {
       throw new Error("Access denied");
+    }
+
+    // Auto-indexing trigger BEFORE deletion - trigger for all projects using this contact
+    const projectContacts = await ctx.db
+      .query("projectContacts")
+      .withIndex("by_contact", (q) => q.eq("contactId", args.contactId))
+      .filter(q => q.eq(q.field("isActive"), true))
+      .collect();
+
+    // Trigger auto-indexing for each project that uses this contact
+    for (const projectContact of projectContacts) {
+      ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+        projectId: projectContact.projectId,
+        entityType: "contact",
+        entityId: args.contactId,
+        operation: "delete",
+      });
     }
 
     // Soft delete

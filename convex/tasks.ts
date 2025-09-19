@@ -234,12 +234,14 @@ export const createTask = mutation({
       entityType: "task",
     });
 
-    // RAG indexing trigger
-    await ctx.scheduler.runAfter(0, internal.ragActions.updateTaskIndex, {
-      taskId: taskId,
+    // Auto-indexing trigger
+    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+      projectId: args.projectId,
+      entityType: "task",
+      entityId: taskId,
       operation: "create",
     });
-    
+
     return taskId;
   },
 });
@@ -279,11 +281,14 @@ export const updateTask = mutation({
       entityType: "task",
     });
 
-    // RAG indexing trigger
-    await ctx.scheduler.runAfter(0, internal.ragActions.updateTaskIndex, {
-      taskId: args.taskId,
+    // Auto-indexing trigger
+    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+      projectId: task.projectId,
+      entityType: "task",
+      entityId: args.taskId,
       operation: "update",
     });
+
   },
 });
 
@@ -309,6 +314,15 @@ export const updateTaskStatus = mutation({
       entityId: args.taskId,
       entityType: "task",
     });
+
+    // Auto-indexing trigger
+    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+      projectId: task.projectId,
+      entityType: "task",
+      entityId: args.taskId,
+      operation: "update",
+    });
+
   },
 });
 
@@ -329,9 +343,11 @@ export const deleteTask = mutation({
       entityType: "task",
     });
 
-    // RAG indexing trigger - delete before removing from DB
-    await ctx.scheduler.runAfter(0, internal.ragActions.updateTaskIndex, {
-      taskId: args.taskId,
+    // Auto-indexing trigger - delete before removing from DB
+    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+      projectId: task.projectId,
+      entityType: "task",
+      entityId: args.taskId,
       operation: "delete",
     });
     
@@ -358,6 +374,14 @@ export const assignTask = mutation({
       entityId: args.taskId,
       entityType: "task",
     });
+
+    // Auto-indexing trigger for assignment change
+    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+      projectId: task.projectId,
+      entityType: "task",
+      entityId: args.taskId,
+      operation: "update",
+    });
   },
 });
 
@@ -377,6 +401,14 @@ export const updateTaskContent = mutation({
           details: { title: task.title },
           entityId: args.taskId,
           entityType: "task",
+        });
+
+        // Auto-indexing trigger for content update
+        ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+          projectId: task.projectId,
+          entityType: "task",
+          entityId: args.taskId,
+          operation: "update",
         });
     }
 });
@@ -459,7 +491,7 @@ Prompt: "${args.prompt}"
 `;
         try {
             const response = await openai.chat.completions.create({
-                model: "gpt-4o",
+                model: "gpt-5",
                 messages: [{ role: "system", content: systemPrompt }],
                 response_format: { type: "json_object" },
             });

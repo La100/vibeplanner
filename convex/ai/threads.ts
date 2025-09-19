@@ -1,6 +1,6 @@
 import { v } from "convex/values";
-import { internalQuery, internalMutation } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { internalQuery, internalMutation } from "../_generated/server";
+import { Id } from "../_generated/dataModel";
 
 // Get or create thread
 export const getOrCreateThread = internalMutation({
@@ -143,6 +143,10 @@ export const clearThreadMessages = internalMutation({
     return null;
   },
 });
+
+
+
+
 
 
 

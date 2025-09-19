@@ -10,13 +10,12 @@
 
 import type * as activityLog from "../activityLog.js";
 import type * as adminFunctions from "../adminFunctions.js";
-import type * as ai from "../ai.js";
-import type * as aiPrompts from "../aiPrompts.js";
-import type * as aiSettings from "../aiSettings.js";
-import type * as aiThreads from "../aiThreads.js";
-import type * as aiTokenHelpers from "../aiTokenHelpers.js";
-import type * as aiTokenUsage from "../aiTokenUsage.js";
-import type * as ai_database from "../ai_database.js";
+import type * as ai_prompt from "../ai/prompt.js";
+import type * as ai_promptDb from "../ai/promptDb.js";
+import type * as ai_rag from "../ai/rag.js";
+import type * as ai_settings from "../ai/settings.js";
+import type * as ai_threads from "../ai/threads.js";
+import type * as ai_usage from "../ai/usage.js";
 import type * as calendar from "../calendar.js";
 import type * as chatChannels from "../chatChannels.js";
 import type * as chatMessages from "../chatMessages.js";
@@ -34,7 +33,6 @@ import type * as productLibrary from "../productLibrary.js";
 import type * as projects from "../projects.js";
 import type * as quickAdmin from "../quickAdmin.js";
 import type * as rag from "../rag.js";
-import type * as ragActions from "../ragActions.js";
 import type * as seedDummyData from "../seedDummyData.js";
 import type * as shopping from "../shopping.js";
 import type * as stripe from "../stripe.js";
@@ -62,13 +60,12 @@ import type {
 declare const fullApi: ApiFromModules<{
   activityLog: typeof activityLog;
   adminFunctions: typeof adminFunctions;
-  ai: typeof ai;
-  aiPrompts: typeof aiPrompts;
-  aiSettings: typeof aiSettings;
-  aiThreads: typeof aiThreads;
-  aiTokenHelpers: typeof aiTokenHelpers;
-  aiTokenUsage: typeof aiTokenUsage;
-  ai_database: typeof ai_database;
+  "ai/prompt": typeof ai_prompt;
+  "ai/promptDb": typeof ai_promptDb;
+  "ai/rag": typeof ai_rag;
+  "ai/settings": typeof ai_settings;
+  "ai/threads": typeof ai_threads;
+  "ai/usage": typeof ai_usage;
   calendar: typeof calendar;
   chatChannels: typeof chatChannels;
   chatMessages: typeof chatMessages;
@@ -86,7 +83,6 @@ declare const fullApi: ApiFromModules<{
   projects: typeof projects;
   quickAdmin: typeof quickAdmin;
   rag: typeof rag;
-  ragActions: typeof ragActions;
   seedDummyData: typeof seedDummyData;
   shopping: typeof shopping;
   stripe: typeof stripe;

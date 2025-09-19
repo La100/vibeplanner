@@ -882,6 +882,42 @@ export const getFileById = query({
   },
 });
 
+// Get file with URL for thumbnails
+export const getFileWithURL = query({
+  args: { fileId: v.id("files") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const file = await ctx.db.get(args.fileId);
+    if (!file || !file.projectId) return null;
+
+    // Check project access
+    const project = await ctx.db.get(file.projectId);
+    if (!project) return null;
+
+    const hasAccess = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q =>
+        q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!hasAccess || !hasAccess.isActive) return null;
+
+    // Generate URL
+    try {
+      const url = await r2.getUrl(file.storageId as string, {
+        expiresIn: 60 * 60 * 2, // 2 hours
+      });
+      return { ...file, url };
+    } catch (error) {
+      console.error(`Error generating URL for file ${file._id}:`, error);
+      return { ...file, url: null };
+    }
+  },
+});
+
 // Update file with PDF analysis results
 export const updateFileAnalysis = internalMutation({
   args: {

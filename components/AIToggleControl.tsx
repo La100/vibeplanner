@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, Bot, CheckCircle, Loader2, Sparkles, Database } from "lucide-react";
+import { AlertCircle, Bot, CheckCircle, Loader2, Database } from "lucide-react";
 import { toast } from "sonner";
 import { Id } from "@/convex/_generated/dataModel";
 
@@ -20,39 +20,55 @@ export default function AIToggleControl({ projectId }: AIToggleControlProps) {
   const [isIndexing, setIsIndexing] = useState(false);
 
   // Get current AI settings
-  const aiSettings = useQuery(api.aiSettings.getAISettings, { projectId });
-  const enableAI = useMutation(api.aiSettings.enableAI);
-  const disableAI = useMutation(api.aiSettings.disableAI);
-  const indexAllProjectData = useAction(api.ragActions.indexAllProjectData);
+  const aiSettings = useQuery(api.ai.settings.getAISettings, { projectId });
+  const enableAI = useMutation(api.ai.settings.enableAI);
+  const disableAI = useMutation(api.ai.settings.disableAI);
+  const indexAllProjectData = useAction(api.ai.rag.indexAllProjectData);
+  const toggleIndexing = useMutation(api.ai.settings.toggleIndexing);
 
   const handleToggleAI = async (enabled: boolean) => {
     setIsToggling(true);
     try {
       if (enabled) {
         await enableAI({ projectId });
-        toast.success("AI RAG system enabled! 🎉");
-        
-        // Start indexing all project data
-        setIsIndexing(true);
-        await indexAllProjectData({ projectId });
-        toast.success("Project data indexed successfully! 🚀");
-        setIsIndexing(false);
+        toast.success("AI Assistant enabled! 🎉");
       } else {
         await disableAI({ projectId });
-        toast.success("AI RAG system disabled");
+        toast.success("AI Assistant disabled");
       }
     } catch (error) {
       console.error("Error toggling AI:", error);
       toast.error(`Failed to ${enabled ? 'enable' : 'disable'} AI: ${error}`);
-      setIsIndexing(false);
     } finally {
       setIsToggling(false);
     }
   };
 
-  const handleReindexData = async () => {
+  const handleToggleIndexing = async () => {
     if (!aiSettings?.isEnabled) {
-      toast.error("AI must be enabled before indexing data");
+      toast.error("AI must be enabled before indexing can be turned on");
+      return;
+    }
+
+    setIsIndexing(true);
+    try {
+      const result = await toggleIndexing({ projectId });
+      if (result.success) {
+        toast.success(result.message);
+      } else {
+        toast.error("Failed to toggle indexing");
+      }
+    } catch (error) {
+      console.error("Error toggling indexing:", error);
+      toast.error(`Failed to toggle indexing: ${error}`);
+    } finally {
+      setIsIndexing(false);
+    }
+  };
+
+  const handleReindexData = async () => {
+    if (!aiSettings?.isEnabled || !aiSettings?.indexingEnabled) {
+      toast.error("Both AI and indexing must be enabled to re-index data");
       return;
     }
 
@@ -92,7 +108,7 @@ export default function AIToggleControl({ projectId }: AIToggleControlProps) {
           </CardTitle>
         </div>
         <CardDescription>
-          Enable AI-powered assistance with automatic indexing of your project data (tasks, notes, shopping lists, surveys)
+          Enable AI-powered assistance for your project data (tasks, notes, shopping lists, surveys)
         </CardDescription>
       </CardHeader>
       
@@ -112,45 +128,75 @@ export default function AIToggleControl({ projectId }: AIToggleControlProps) {
           />
         </div>
 
-        {/* Status & Actions */}
+        {/* Indexing Controls */}
         {isEnabled && (
           <div className="space-y-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Sparkles className="h-4 w-4" />
-              <span>
-                AI is actively indexing new content when you create/edit tasks, notes, shopping items, and surveys
-              </span>
-            </div>
-
+            {/* Toggle Indexing Button */}
             <div className="flex items-center justify-between p-4 border rounded-lg bg-blue-50/50">
               <div className="space-y-1">
                 <div className="font-medium flex items-center gap-2">
                   <Database className="h-4 w-4" />
-                  Data Indexing
+                  Project Indexing
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  Re-index all project data to ensure AI has the latest information
+                  {aiSettings?.indexingEnabled
+                    ? "Indexing is enabled - AI can search your project data"
+                    : "Enable indexing to allow AI to search your project data"
+                  }
                 </div>
               </div>
               <Button
-                onClick={handleReindexData}
-                disabled={isIndexing}
-                variant="outline"
+                onClick={handleToggleIndexing}
+                disabled={!canToggle}
+                variant={aiSettings?.indexingEnabled ? "destructive" : "default"}
                 size="sm"
               >
                 {isIndexing ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Indexing...
+                    Processing...
                   </>
                 ) : (
                   <>
                     <Database className="h-4 w-4 mr-2" />
-                    Re-index Data
+                    {aiSettings?.indexingEnabled ? "Turn Off Indexing" : "Turn On Indexing"}
                   </>
                 )}
               </Button>
             </div>
+
+            {/* Manual Re-index Button (only when indexing is ON) */}
+            {aiSettings?.indexingEnabled && (
+              <div className="flex items-center justify-between p-4 border rounded-lg bg-green-50/50">
+                <div className="space-y-1">
+                  <div className="font-medium flex items-center gap-2">
+                    <Database className="h-4 w-4" />
+                    Data Indexing
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    Re-index all project data to ensure AI has the latest information
+                  </div>
+                </div>
+                <Button
+                  onClick={handleReindexData}
+                  disabled={isIndexing}
+                  variant="outline"
+                  size="sm"
+                >
+                  {isIndexing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Indexing...
+                    </>
+                  ) : (
+                    <>
+                      <Database className="h-4 w-4 mr-2" />
+                      Re-index Data
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
@@ -171,7 +217,7 @@ export default function AIToggleControl({ projectId }: AIToggleControlProps) {
 
         {/* Information */}
         <div className="text-xs text-muted-foreground space-y-1">
-          <p>• When enabled, all project content gets automatically indexed for AI search</p>
+          <p>• Enable auto-indexing to keep AI assistant up-to-date with your content</p>
           <p>• AI can answer questions about your tasks, notes, shopping lists, and surveys</p>
           <p>• Data is only accessible to your team members</p>
         </div>

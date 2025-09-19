@@ -1,13 +1,31 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+
+// Helper function to safely extract survey data
+const extractSurveyData = (data: Record<string, unknown>) => ({
+  title: (data.title as string) || '',
+  description: data.description as string | undefined,
+  isRequired: data.isRequired as boolean | undefined,
+  allowMultipleResponses: data.allowMultipleResponses as boolean | undefined,
+  startDate: data.startDate as string | undefined,
+  endDate: data.endDate as string | undefined,
+  targetAudience: data.targetAudience as "all_customers" | "specific_customers" | "team_members" | undefined,
+  targetCustomerIds: data.targetCustomerIds as string[] | undefined,
+  questions: data.questions as Array<{
+    questionText: string;
+    questionType: "text_short" | "text_long" | "multiple_choice" | "single_choice" | "rating" | "yes_no" | "number" | "file";
+    options?: string[];
+    isRequired?: boolean;
+  }> | undefined,
+});
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUser } from "@clerk/nextjs";
 import { useProject } from '@/components/providers/ProjectProvider';
-import { Send, RotateCcw, Loader2, Paperclip, X, Sparkles, Database, Zap, DollarSign, Building } from "lucide-react";
+import { Send, RotateCcw, Loader2, Paperclip, X, Sparkles, Database, Zap, DollarSign, Building, FileText, Image, File } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -23,30 +41,85 @@ const AIAssistantSmart = () => {
   
   // Check if AI is enabled for this project
   const aiSettings = useQuery(
-    api.aiSettings.getAISettings, 
+    api.ai.settings.getAISettings, 
     project ? { projectId: project._id } : "skip"
   );
   const [message, setMessage] = useState("");
-  const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'assistant'; content: string; mode?: string; tokenUsage?: { totalTokens: number; estimatedCostUSD: number; }; }[]>([]);
+  const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'assistant'; content: string; mode?: string; tokenUsage?: { totalTokens: number; estimatedCostUSD: number; }; fileInfo?: { name: string; size: number; type: string; id: string; }; }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [, setUploadedFileId] = useState<string | null>(null);
+  const [uploadedFileId, setUploadedFileId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [threadId, setThreadId] = useState<string | undefined>(undefined);
-  const [currentMode, setCurrentMode] = useState<'full' | 'smart' | null>(null);
+  const [currentMode, setCurrentMode] = useState<'basic' | 'rag' | null>(null);
   const [sessionTokens, setSessionTokens] = useState({ total: 0, cost: 0 });
-  const [pendingItems, setPendingItems] = useState<{ type: 'task' | 'note' | 'shopping' | 'survey'; operation?: 'create' | 'edit'; data: Record<string, unknown>; updates?: Record<string, unknown>; originalItem?: Record<string, unknown>; }[]>([]); // New unified system
+  const [pendingItems, setPendingItems] = useState<{ type: 'task' | 'note' | 'shopping' | 'survey' | 'contact'; operation?: 'create' | 'edit' | 'delete'; data: Record<string, unknown>; updates?: Record<string, unknown>; originalItem?: Record<string, unknown>; }[]>([]); // New unified system
   const [currentItemIndex, setCurrentItemIndex] = useState(0);
   const [isConfirmationDialogOpen, setIsConfirmationDialogOpen] = useState(false);
   const [showConfirmationGrid, setShowConfirmationGrid] = useState(false);
   const [isCreatingContent, setIsCreatingContent] = useState(false);
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
-  const [isReindexing, setIsReindexing] = useState(false);
+  const [isIndexing, setIsIndexing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Helper function to get file thumbnail/preview
+  const getFileIcon = (fileType: string) => {
+    if (fileType.startsWith('image/')) return Image;
+    if (fileType === 'application/pdf') return FileText;
+    return File;
+  };
+
+  // Helper function to create thumbnail component
+  const FileThumbnail = ({ fileInfo }: { fileInfo: { name: string; size: number; type: string; id: string; } }) => {
+    const fileWithURL = useQuery(api.files.getFileWithURL, { fileId: fileInfo.id as Id<"files"> });
+    const FileIcon = getFileIcon(fileInfo.type);
+
+    return (
+      <div className="mt-2 p-2 bg-muted/50 rounded-lg border border-border/20">
+        <div className="flex items-start gap-2">
+          {fileInfo.type.startsWith('image/') && fileWithURL?.url ? (
+            <div className="flex-shrink-0">
+              <img
+                src={fileWithURL.url}
+                alt={fileInfo.name}
+                className="w-16 h-16 object-cover rounded border"
+                onError={(e) => {
+                  // Fallback to icon on error
+                  e.currentTarget.style.display = 'none';
+                  const nextElement = e.currentTarget.nextElementSibling as HTMLElement;
+                  if (nextElement) {
+                    nextElement.style.display = 'flex';
+                  }
+                }}
+              />
+              <div className="w-16 h-16 hidden bg-muted border rounded items-center justify-center">
+                <FileIcon className="h-6 w-6 text-muted-foreground" />
+              </div>
+            </div>
+          ) : (
+            <div className="flex-shrink-0 w-16 h-16 bg-muted border rounded flex items-center justify-center">
+              <FileIcon className="h-6 w-6 text-muted-foreground" />
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium truncate" title={fileInfo.name}>
+              {fileInfo.name}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {(fileInfo.size / 1024 / 1024).toFixed(1)} MB
+            </p>
+            <p className="text-xs text-muted-foreground capitalize">
+              {fileInfo.type.split('/')[1] || fileInfo.type}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -56,19 +129,26 @@ const AIAssistantSmart = () => {
   }, [chatHistory, isLoading]);
 
   // Use the new RAG AI system
-  const sendMessage = useAction(api.ragActions.chatWithRAGAgent);
-  const createThread = useAction(api.ai.createThread);
-  const createConfirmedTask = useAction(api.ragActions.createConfirmedTask);
-  const createConfirmedNote = useAction(api.ragActions.createConfirmedNote);
-  const createConfirmedShoppingItem = useAction(api.ragActions.createConfirmedShoppingItem);
-  const createConfirmedSurvey = useAction(api.ragActions.createConfirmedSurvey);
-  const editConfirmedTask = useAction(api.ragActions.editConfirmedTask);
-  const editConfirmedNote = useAction(api.ragActions.editConfirmedNote);
-  const editConfirmedShoppingItem = useAction(api.ragActions.editConfirmedShoppingItem);
-  const editConfirmedSurvey = useAction(api.ragActions.editConfirmedSurvey);
+  const sendMessage = useAction(api.ai.rag.chatWithRAGAgent);
+  const createThread = useAction(api.ai.rag.createThread);
+  const createConfirmedTask = useAction(api.ai.rag.createConfirmedTask);
+  const createConfirmedNote = useAction(api.ai.rag.createConfirmedNote);
+  const createConfirmedShoppingItem = useAction(api.ai.rag.createConfirmedShoppingItem);
+  const createConfirmedSurvey = useAction(api.ai.rag.createConfirmedSurvey);
+  const editConfirmedTask = useAction(api.ai.rag.editConfirmedTask);
+  const editConfirmedNote = useAction(api.ai.rag.editConfirmedNote);
+  const editConfirmedShoppingItem = useAction(api.ai.rag.editConfirmedShoppingItem);
+  const editConfirmedSurvey = useAction(api.ai.rag.editConfirmedSurvey);
+  // Delete mutations
+  const deleteTask = useMutation(api.tasks.deleteTask);
+  const deleteNote = useMutation(api.notes.deleteNote);
+  const deleteShoppingItem = useMutation(api.shopping.deleteShoppingListItem);
+  const deleteSurvey = useMutation(api.surveys.deleteSurvey);
+  const deleteContact = useMutation(api.contacts.deleteContact);
   const generateUploadUrl = useMutation(api.files.generateUploadUrlWithCustomKey);
   const addFile = useMutation(api.files.addFile);
-  const indexAllProjectData = useAction(api.ragActions.indexAllProjectData);
+  const toggleIndexing = useMutation(api.ai.settings.toggleIndexing);
+  const indexAllProjectData = useAction(api.ai.rag.indexAllProjectData);
   // Note: clearThreadMessages is internal, we'll handle clearing locally
 
   const handleSendMessage = async () => {
@@ -89,8 +169,8 @@ const AIAssistantSmart = () => {
         setThreadId(currentThreadId);
       }
 
-      // let attachedFileId: string | undefined;
-      
+      let currentFileId = uploadedFileId; // Use existing uploaded file if available
+
       if (selectedFile) {
         setIsUploading(true);
         const uploadData = await generateUploadUrl({
@@ -117,11 +197,20 @@ const AIAssistantSmart = () => {
         });
 
         // Store file ID for AI processing
-        // attachedFileId = fileId;
+        currentFileId = fileId;
         setUploadedFileId(fileId);
 
         const userContent = userMessage || `📎 Attached: ${selectedFile.name}`;
-        setChatHistory(prev => [...prev, { role: 'user', content: userContent }]);
+        setChatHistory(prev => [...prev, {
+          role: 'user',
+          content: userContent,
+          fileInfo: {
+            name: selectedFile.name,
+            size: selectedFile.size,
+            type: selectedFile.type,
+            id: fileId
+          }
+        }]);
         setSelectedFile(null);
         setMessage("");
         setIsUploading(false);
@@ -135,15 +224,17 @@ const AIAssistantSmart = () => {
       setChatHistory(prev => [...prev, { role: 'assistant', content: '', mode: currentMode || undefined }]);
 
       // Use the smart AI system
+      console.log("🔍 Frontend: Sending message with fileId:", currentFileId);
       const result = await sendMessage({
         threadId: currentThreadId,
         message: userMessage,
         projectId: project._id,
         userClerkId: user.id,
+        fileId: currentFileId || null, // Pass current file ID if available
       });
       
       // Update mode info
-      setCurrentMode(result.mode as 'full' | 'smart');
+      setCurrentMode(result.mode as 'basic' | 'rag');
       
       // Update session token usage
       if (result.tokenUsage) {
@@ -186,6 +277,7 @@ const AIAssistantSmart = () => {
     } finally {
       setIsLoading(false);
       setIsUploading(false);
+      setUploadedFileId(null); // Reset file after sending
       inputRef.current?.focus();
     }
   };
@@ -220,7 +312,33 @@ const AIAssistantSmart = () => {
       let result;
 
       // Call appropriate function based on operation type
-      if (currentItem.operation === 'edit') {
+      if (currentItem.operation === 'delete') {
+        // Handle delete operations
+        switch (currentItem.type) {
+          case 'task':
+            await deleteTask({ taskId: currentItem.data.taskId as Id<"tasks"> });
+            result = { success: true, message: "Task deleted successfully" };
+            break;
+          case 'note':
+            await deleteNote({ noteId: currentItem.data.noteId as Id<"notes"> });
+            result = { success: true, message: "Note deleted successfully" };
+            break;
+          case 'shopping':
+            await deleteShoppingItem({ itemId: currentItem.data.itemId as Id<"shoppingListItems"> });
+            result = { success: true, message: "Shopping item deleted successfully" };
+            break;
+          case 'survey':
+            await deleteSurvey({ surveyId: currentItem.data.surveyId as Id<"surveys"> });
+            result = { success: true, message: "Survey deleted successfully" };
+            break;
+          case 'contact':
+            await deleteContact({ contactId: currentItem.data.contactId as Id<"contacts"> });
+            result = { success: true, message: "Contact deleted successfully" };
+            break;
+          default:
+            throw new Error(`Unknown content type for deletion: ${currentItem.type}`);
+        }
+      } else if (currentItem.operation === 'edit') {
         // Handle edit operations
         switch (currentItem.type) {
           case 'task':
@@ -285,7 +403,7 @@ const AIAssistantSmart = () => {
           case 'survey':
             result = await createConfirmedSurvey({
               projectId: project._id,
-              surveyData: currentItem.data as { title: string; isRequired: boolean; targetAudience: "all_customers" | "specific_customers" | "team_members"; questions: string[]; description?: string; allowMultipleResponses?: boolean; }
+              surveyData: extractSurveyData(currentItem.data)
             });
             break;
           default:
@@ -404,13 +522,39 @@ const AIAssistantSmart = () => {
   };
 
   // Helper function to confirm a single item
-  const confirmSingleItem = async (item: { type: 'task' | 'note' | 'shopping' | 'survey'; operation?: 'create' | 'edit'; data: Record<string, unknown>; updates?: Record<string, unknown>; originalItem?: Record<string, unknown>; }) => {
+  const confirmSingleItem = async (item: { type: 'task' | 'note' | 'shopping' | 'survey' | 'contact'; operation?: 'create' | 'edit' | 'delete'; data: Record<string, unknown>; updates?: Record<string, unknown>; originalItem?: Record<string, unknown>; }) => {
     if (!project) throw new Error("No project available");
 
     let result;
 
     // Call appropriate function based on operation type
-    if (item.operation === 'edit') {
+    if (item.operation === 'delete') {
+      // Handle delete operations
+      switch (item.type) {
+        case 'task':
+          await deleteTask({ taskId: item.data.taskId as Id<"tasks"> });
+          result = { success: true, message: "Task deleted successfully" };
+          break;
+        case 'note':
+          await deleteNote({ noteId: item.data.noteId as Id<"notes"> });
+          result = { success: true, message: "Note deleted successfully" };
+          break;
+        case 'shopping':
+          await deleteShoppingItem({ itemId: item.data.itemId as Id<"shoppingListItems"> });
+          result = { success: true, message: "Shopping item deleted successfully" };
+          break;
+        case 'survey':
+          await deleteSurvey({ surveyId: item.data.surveyId as Id<"surveys"> });
+          result = { success: true, message: "Survey deleted successfully" };
+          break;
+        case 'contact':
+          await deleteContact({ contactId: item.data.contactId as Id<"contacts"> });
+          result = { success: true, message: "Contact deleted successfully" };
+          break;
+        default:
+          throw new Error(`Unknown content type for deletion: ${item.type}`);
+      }
+    } else if (item.operation === 'edit') {
       // Handle edit operations
       switch (item.type) {
         case 'task':
@@ -475,7 +619,7 @@ const AIAssistantSmart = () => {
         case 'survey':
           result = await createConfirmedSurvey({
             projectId: project._id,
-            surveyData: item.data as { title: string; isRequired: boolean; targetAudience: "all_customers" | "specific_customers" | "team_members"; questions: string[]; description?: string; allowMultipleResponses?: boolean; }
+            surveyData: extractSurveyData(item.data)
           });
           break;
         default:
@@ -525,7 +669,7 @@ const AIAssistantSmart = () => {
     toast.info("Content creation cancelled");
   };
 
-  const handleContentEdit = (updatedItem: { type: 'task' | 'note' | 'shopping' | 'survey'; operation?: 'create' | 'edit'; data: Record<string, unknown>; updates?: Record<string, unknown>; originalItem?: Record<string, unknown>; }) => {
+  const handleContentEdit = (updatedItem: { type: 'task' | 'note' | 'shopping' | 'survey' | 'contact'; operation?: 'create' | 'edit' | 'delete'; data: Record<string, unknown>; updates?: Record<string, unknown>; originalItem?: Record<string, unknown>; }) => {
     // Update the current item in pendingItems array
     setPendingItems(prev => {
       const updated = [...prev];
@@ -548,20 +692,6 @@ const AIAssistantSmart = () => {
     fileInputRef.current?.click();
   };
 
-  const handleReindexData = async () => {
-    if (!project) return;
-    
-    setIsReindexing(true);
-    try {
-      await indexAllProjectData({ projectId: project._id });
-      toast.success("Project data re-indexed successfully! 🚀");
-    } catch (error) {
-      console.error("Error re-indexing data:", error);
-      toast.error(`Failed to re-index data: ${error}`);
-    } finally {
-      setIsReindexing(false);
-    }
-  };
 
   const handleNewChat = async () => {
     // Note: We only clear local state - thread messages are handled server-side
@@ -575,6 +705,41 @@ const AIAssistantSmart = () => {
     setEditingItemIndex(null);
     setSessionTokens({ total: 0, cost: 0 });
     toast.success("Chat cleared!");
+  };
+
+  const handleToggleIndexing = async () => {
+    if (!project) return;
+
+    if (!aiSettings?.isEnabled) {
+      toast.error("AI must be enabled before indexing can be turned on");
+      return;
+    }
+
+    setIsIndexing(true);
+    try {
+      const result = await toggleIndexing({ projectId: project._id });
+      if (result.success) {
+        toast.success(result.message);
+
+        // If we just enabled indexing, trigger initial indexing
+        if (result.indexingEnabled) {
+          try {
+            await indexAllProjectData({ projectId: project._id });
+            toast.success("Project data indexed successfully! 🚀");
+          } catch (error) {
+            console.error("Error indexing data:", error);
+            toast.error(`Failed to index data: ${error}`);
+          }
+        }
+      } else {
+        toast.error("Failed to toggle indexing");
+      }
+    } catch (error) {
+      console.error("Error toggling indexing:", error);
+      toast.error(`Failed to toggle indexing: ${error}`);
+    } finally {
+      setIsIndexing(false);
+    }
   };
 
   // ProjectProvider handles loading state, so project should always be available here
@@ -603,7 +768,7 @@ const AIAssistantSmart = () => {
         <div className="border-b bg-background px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-semibold">AI Assistant (GPT-4o)</h1>
+              <h1 className="text-xl font-semibold">AI Assistant (GPT-5)</h1>
               <p className="text-sm text-muted-foreground">Enable AI to start chatting with your project assistant</p>
             </div>
           </div>
@@ -622,10 +787,10 @@ const AIAssistantSmart = () => {
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-xl font-semibold">AI Assistant (GPT-4o)</h1>
+              <h1 className="text-xl font-semibold">AI Assistant (GPT-5)</h1>
               {currentMode && (
-                <Badge variant={currentMode === 'full' ? 'default' : 'secondary'} className="text-xs">
-                  {currentMode === 'full' ? (
+                <Badge variant={currentMode === 'rag' ? 'default' : 'secondary'} className="text-xs">
+                  {currentMode === 'rag' ? (
                     <>
                       <Database className="h-3 w-3 mr-1" />
                       Full Mode
@@ -646,11 +811,11 @@ const AIAssistantSmart = () => {
               )}
             </div>
             <p className="text-sm text-muted-foreground">
-              {currentMode === 'full' 
-                ? "GPT-4o with full project context"
-                : currentMode === 'smart'
-                ? "GPT-4o with RAG search (smart mode)"
-                : "GPT-4o with intelligent context adaptation"
+              {currentMode === 'rag'
+                ? "GPT-5 with RAG search (indexing enabled)"
+                : currentMode === 'basic'
+                ? "GPT-5 basic chat (no indexing)"
+                : "GPT-5 AI Assistant"
               }
             </p>
           </div>
@@ -665,21 +830,22 @@ const AIAssistantSmart = () => {
               <RotateCcw className="h-4 w-4 mr-2" />
               New Chat
             </Button>
-            <Button 
-              onClick={handleReindexData}
-              variant="outline"
+            {/* Indexing controls */}
+            <Button
+              onClick={handleToggleIndexing}
+              variant={aiSettings?.indexingEnabled ? "destructive" : "default"}
               size="sm"
-              disabled={isReindexing}
+              disabled={isIndexing}
             >
-              {isReindexing ? (
+              {isIndexing ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Re-indexing...
+                  Processing...
                 </>
               ) : (
                 <>
                   <Database className="h-4 w-4 mr-2" />
-                  Re-index Data
+                  {aiSettings?.indexingEnabled ? "Turn Off Indexing" : "Turn On Indexing"}
                 </>
               )}
             </Button>
@@ -695,9 +861,9 @@ const AIAssistantSmart = () => {
               <div className="w-12 h-12 bg-card border shadow-sm rounded-full flex items-center justify-center mx-auto mb-4">
                 <Sparkles className="h-6 w-6 text-muted-foreground" />
               </div>
-              <h3 className="font-semibold mb-2">GPT-4o AI Ready</h3>
+              <h3 className="font-semibold mb-2">GPT-5 AI Ready</h3>
               <p className="text-sm text-muted-foreground max-w-md mx-auto mb-4">
-                Powered by GPT-4o with RAG search. Ask me about your project tasks, shopping lists, notes, surveys, or any questions about your project.
+                Powered by GPT-5 with RAG search{aiSettings?.indexingEnabled ? " (indexing enabled)" : ""}. Ask me about your project tasks, shopping lists, notes, surveys, or any questions about your project.
               </p>
               <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground">
                 <div className="flex items-center gap-1">
@@ -728,12 +894,13 @@ const AIAssistantSmart = () => {
                       <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"></div>
                     </div>
                     <span className="text-sm text-muted-foreground">
-                      {currentMode === 'smart' ? 'Smart AI analyzing...' : 'AI thinking...'}
+                      {currentMode === 'rag' ? 'AI searching & analyzing...' : 'AI thinking...'}
                     </span>
                   </div>
                 ) : (
                   <div>
                     <p className="text-sm leading-relaxed whitespace-pre-wrap">{chat.content}</p>
+                    {chat.fileInfo && <FileThumbnail fileInfo={chat.fileInfo} />}
                     {chat.role === 'assistant' && (chat.mode || chat.tokenUsage) && (
                       <div className="mt-2 pt-2 border-t border-border/50 flex items-center gap-2 flex-wrap">
                         {chat.mode && (
@@ -881,7 +1048,7 @@ const AIAssistantSmart = () => {
           onConfirm={handleContentConfirm}
           onCancel={handleContentCancel}
           onEdit={handleContentEdit}
-          contentItem={pendingItems[currentItemIndex] as { type: 'task' | 'note' | 'shopping' | 'survey'; operation?: 'create' | 'edit'; data: Record<string, unknown>; updates?: Record<string, unknown>; originalItem?: Record<string, unknown>; }}
+          contentItem={pendingItems[currentItemIndex] as { type: 'task' | 'note' | 'shopping' | 'survey' | 'contact'; operation?: 'create' | 'edit' | 'delete'; data: Record<string, unknown>; updates?: Record<string, unknown>; originalItem?: Record<string, unknown>; }}
           isLoading={isCreatingContent}
           itemNumber={currentItemIndex + 1}
           totalItems={pendingItems.length}

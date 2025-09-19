@@ -20,7 +20,6 @@ import {
   LayoutDashboard,
   Settings, 
   Calendar,
-  GanttChartSquare,
   ShoppingCart,
   ArrowLeft,
   CheckSquare,
@@ -56,19 +55,24 @@ function ProjectSidebarContent() {
     { href: `/${params.slug}/${params.projectSlug}/contacts`, label: "Contacts", icon: Contact, key: "contacts" },
     { href: `/${params.slug}/${params.projectSlug}/chat`, label: "Chat", icon: MessageSquare, key: "chat", hasUnread: totalUnreadCount > 0 },
     { href: `/${params.slug}/${params.projectSlug}/surveys`, label: "Surveys", icon: ClipboardList, key: "surveys" },
-    { href: `/${params.slug}/${params.projectSlug}/ai`, label: "AI", icon: Sparkles, key: "ai" },
     { href: `/${params.slug}/${params.projectSlug}/calendar`, label: "Calendar", icon: Calendar, key: "calendar" },
-    { href: `/${params.slug}/${params.projectSlug}/gantt`, label: "Gantt", icon: GanttChartSquare, key: "gantt" },
     { href: `/${params.slug}/${params.projectSlug}/files`, label: "Files", icon: Files, key: "files" },
     { href: `/${params.slug}/${params.projectSlug}/shopping-list`, label: "Shopping List", icon: ShoppingCart, key: "shopping_list" },
-    { href: `/${params.slug}/${params.projectSlug}/settings`, label: "Settings", icon: Settings, key: "settings" },
   ];
+
+  const aiItem = { href: `/${params.slug}/${params.projectSlug}/ai`, label: "AI Assistant", icon: Sparkles, key: "ai" };
+  const settingsItem = { href: `/${params.slug}/${params.projectSlug}/settings`, label: "Settings", icon: Settings, key: "settings" };
 
   // Filter navigation items based on permissions
   const navItems = sidebarPermissions?.permissions ? allNavItems.filter(item => {
     const permission = sidebarPermissions.permissions![item.key as keyof typeof sidebarPermissions.permissions];
     return permission?.visible !== false; // Show item if permission is undefined or visible is true
   }) : allNavItems;
+
+  // Check if AI and settings should be shown
+  const showAI = true;
+  const showSettings = sidebarPermissions?.permissions ? 
+    (sidebarPermissions.permissions.settings?.visible !== false) : true;
 
   const handleLinkClick = () => {
     setOpenMobile(false);
@@ -104,8 +108,8 @@ function ProjectSidebarContent() {
         </div>
       </SidebarHeader>
 
-      <SidebarContent>
-        <SidebarGroup>
+      <SidebarContent className="flex flex-col">
+        <SidebarGroup className="flex-1">
   
           <SidebarGroupContent>
             <SidebarMenu>
@@ -132,6 +136,44 @@ function ProjectSidebarContent() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {showAI && (
+          <SidebarGroup className="mt-auto">
+            <SidebarGroupContent className="px-2 pb-2">
+              <Link 
+                href={aiItem.href}
+                onClick={handleLinkClick}
+                onMouseEnter={() => handleLinkHover(aiItem.href)}
+                className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-all duration-200 shadow-sm"
+              >
+                <aiItem.icon className="h-5 w-5" />
+                <span className="font-semibold">{aiItem.label}</span>
+              </Link>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+        
+        {showSettings && (
+          <SidebarGroup className={`${showAI ? '' : 'mt-auto'} border-t border-sidebar-border`}>
+            <SidebarGroupContent className="pt-2">
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <Link 
+                      href={settingsItem.href}
+                      onClick={handleLinkClick}
+                      onMouseEnter={() => handleLinkHover(settingsItem.href)}
+                      className="flex items-center gap-2"
+                    >
+                      <settingsItem.icon className="h-4 w-4" />
+                      <span>{settingsItem.label}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
     </Sidebar>

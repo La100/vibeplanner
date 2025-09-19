@@ -6,10 +6,22 @@ export const getProjectTasks = internalQuery({
   args: { projectId: v.id("projects") },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
-    return await ctx.db
+    const tasks = await ctx.db
       .query("tasks")
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .collect();
+
+    // Add assignedToName for each task
+    return await Promise.all(
+      tasks.map(async (task) => {
+        let assignedToName: string | undefined;
+        if (task.assignedTo) {
+          const user = await ctx.db.query("users").withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.assignedTo!)).unique();
+          if (user) { assignedToName = user.name || user.email; }
+        }
+        return { ...task, assignedToName };
+      })
+    );
   },
 });
 
@@ -72,7 +84,16 @@ export const getTaskById = internalQuery({
   args: { taskId: v.id("tasks") },
   returns: v.union(v.any(), v.null()),
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.taskId);
+    const task = await ctx.db.get(args.taskId);
+    if (!task) return null;
+
+    // Add assignedToName
+    let assignedToName: string | undefined;
+    if (task.assignedTo) {
+      const user = await ctx.db.query("users").withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.assignedTo!)).unique();
+      if (user) { assignedToName = user.name || user.email; }
+    }
+    return { ...task, assignedToName };
   },
 });
 
@@ -92,10 +113,30 @@ export const getShoppingItemById = internalQuery({
   },
 });
 
+export const getContactById = internalQuery({
+  args: { contactId: v.id("contacts") },
+  returns: v.union(v.any(), v.null()),
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.contactId);
+  },
+});
+
 export const getSurveyById = internalQuery({
   args: { surveyId: v.id("surveys") },
   returns: v.union(v.any(), v.null()),
   handler: async (ctx, args) => {
     return await ctx.db.get(args.surveyId);
+  },
+});
+
+export const getSurveyQuestionsById = internalQuery({
+  args: { surveyId: v.id("surveys") },
+  returns: v.array(v.any()),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("surveyQuestions")
+      .withIndex("by_survey", (q) => q.eq("surveyId", args.surveyId))
+      .order("asc")
+      .collect();
   },
 });

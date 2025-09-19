@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
 // ====== SURVEY MANAGEMENT ======
@@ -56,6 +57,14 @@ export const createSurvey = mutation({
       endDate: args.endDate,
       targetAudience: args.targetAudience,
       targetCustomerIds: args.targetCustomerIds,
+    });
+
+    // Auto-indexing trigger
+    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+      projectId: args.projectId,
+      entityType: "survey",
+      entityId: surveyId,
+      operation: "create",
     });
 
     return surveyId;
@@ -216,6 +225,14 @@ export const updateSurvey = mutation({
     const { surveyId, ...updates } = args;
     await ctx.db.patch(surveyId, { ...updates, updatedAt: Date.now() });
 
+    // Auto-indexing trigger
+    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+      projectId: survey.projectId,
+      entityType: "survey",
+      entityId: surveyId,
+      operation: "update",
+    });
+
     return { success: true };
   },
 });
@@ -260,6 +277,24 @@ export const deleteSurvey = mutation({
       .query("surveyAnswers")
       .withIndex("by_survey", q => q.eq("surveyId", args.surveyId))
       .collect();
+
+    // Auto-indexing trigger BEFORE deletion
+    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+      projectId: survey.projectId,
+      entityType: "survey",
+      entityId: args.surveyId,
+      operation: "delete",
+    });
+
+    // Auto-indexing trigger BEFORE deletion for survey responses
+    for (const response of responses) {
+      ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+        projectId: survey.projectId,
+        entityType: "survey_response",
+        entityId: response._id,
+        operation: "delete",
+      });
+    }
 
     // Delete in correct order
     await Promise.all(answers.map(answer => ctx.db.delete(answer._id)));
@@ -586,6 +621,14 @@ export const submitSurveyResponse = mutation({
     await ctx.db.patch(args.responseId, {
       isComplete: true,
       submittedAt: Date.now(),
+    });
+
+    // Auto-indexing trigger for completed survey response
+    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+      projectId: response.projectId,
+      entityType: "survey_response",
+      entityId: args.responseId,
+      operation: "create", // Treat as create since it's now complete and searchable
     });
 
     return { success: true };

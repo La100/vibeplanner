@@ -591,36 +591,7 @@ export default defineSchema({
     .index("by_question", ["questionId"])
     .index("by_survey", ["surveyId"]),
 
-  // AI Chat Threads
-  aiChatThreads: defineTable({
-    threadId: v.string(), // unique thread identifier
-    projectId: v.id("projects"),
-    teamId: v.id("teams"),
-    userClerkId: v.string(),
-    title: v.optional(v.string()),
-    isActive: v.boolean(),
-  })
-    .index("by_thread_id", ["threadId"])
-    .index("by_project", ["projectId"])
-    .index("by_user", ["userClerkId"])
-    .index("by_project_and_user", ["projectId", "userClerkId"]),
-
-  // AI Chat Messages
-  aiChatMessages: defineTable({
-    threadId: v.string(),
-    role: v.union(
-      v.literal("system"),
-      v.literal("user"),
-      v.literal("assistant")
-    ),
-    content: v.string(),
-    order: v.number(), // message order in thread
-    projectId: v.id("projects"),
-    userClerkId: v.string(),
-  })
-    .index("by_thread", ["threadId"])
-    .index("by_thread_and_order", ["threadId", "order"])
-    .index("by_project", ["projectId"]),
+  
 
   // Contacts/Address Book
   contacts: defineTable({
@@ -757,13 +728,16 @@ export default defineSchema({
     projectId: v.id("projects"),
     teamId: v.id("teams"),
     isEnabled: v.boolean(), // Whether AI RAG is enabled for this project
+    indexingEnabled: v.optional(v.boolean()), // Whether indexing is enabled for this project
     createdBy: v.string(), // Clerk user ID who enabled AI
     enabledAt: v.optional(v.number()),
     disabledAt: v.optional(v.number()),
+    lastAutoIndexAt: v.optional(v.number()), // Timestamp of last auto-index operation
   })
     .index("by_project", ["projectId"])
     .index("by_team", ["teamId"])
-    .index("by_enabled", ["isEnabled"]),
+    .index("by_enabled", ["isEnabled"])
+    .index("by_indexing_enabled", ["indexingEnabled"]),
 
   // AI Chat Threads - conversation sessions
   aiThreads: defineTable({

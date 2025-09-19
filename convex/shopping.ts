@@ -137,9 +137,11 @@ export const createShoppingListItem = mutation({
             assignedTo: args.assignedTo,
         });
 
-        // RAG indexing trigger
-        await ctx.scheduler.runAfter(0, internal.ragActions.updateShoppingItemIndex, {
-            itemId: itemId,
+        // Auto-indexing trigger
+        ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+            projectId: args.projectId,
+            entityType: "shopping_item",
+            entityId: itemId,
             operation: "create",
         });
         
@@ -185,9 +187,11 @@ export const updateShoppingListItem = mutation({
 
         await ctx.db.patch(itemId, {...updates, totalPrice, updatedAt: Date.now() });
 
-        // RAG indexing trigger
-        await ctx.scheduler.runAfter(0, internal.ragActions.updateShoppingItemIndex, {
-            itemId: itemId,
+        // Auto-indexing trigger
+        ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+            projectId: item.projectId,
+            entityType: "shopping_item",
+            entityId: args.itemId,
             operation: "update",
         });
     },
@@ -199,9 +203,15 @@ export const deleteShoppingListItem = mutation({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Not authenticated");
 
-        // RAG indexing trigger - delete before removing from DB
-        await ctx.scheduler.runAfter(0, internal.ragActions.updateShoppingItemIndex, {
-            itemId: args.itemId,
+        // Get item before deleting for auto-indexing
+        const item = await ctx.db.get(args.itemId);
+        if (!item) throw new Error("Item not found");
+
+        // Auto-indexing trigger - delete before removing from DB
+        ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+            projectId: item.projectId,
+            entityType: "shopping_item",
+            entityId: args.itemId,
             operation: "delete",
         });
 

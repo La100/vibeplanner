@@ -20,7 +20,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
-import { Plus, MoreHorizontal, Edit, Trash2, StickyNote } from "lucide-react";
+import { Plus, MoreHorizontal, Edit, Trash2, StickyNote, Eye } from "lucide-react";
 import { format } from "date-fns";
 
 type Note = {
@@ -123,23 +123,33 @@ function NoteForm({ isOpen, onClose, onSubmit, note, isSubmitting }: NoteFormPro
   );
 }
 
-function NoteCard({ note, onEdit, onDelete }: { 
+function NoteCard({ note, onEdit, onDelete, onView }: { 
   note: Note; 
   onEdit: (note: Note) => void; 
   onDelete: (noteId: Id<"notes">) => void; 
+  onView: (note: Note) => void;
 }) {
   return (
-    <Card className="h-fit">
+    <Card className="h-fit cursor-pointer hover:shadow-md transition-shadow" onClick={() => onView(note)}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <CardTitle className="text-lg line-clamp-2">{note.title}</CardTitle>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-8 w-8 p-0"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onView(note)}>
+                <Eye className="mr-2 h-4 w-4" />
+                View
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onEdit(note)}>
                 <Edit className="mr-2 h-4 w-4" />
                 Edit
@@ -183,6 +193,7 @@ export default function NotesView() {
   const { project } = useProject();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [viewingNote, setViewingNote] = useState<Note | null>(null);
 
   const notes = useQuery(api.notes.getProjectNotes, { 
     projectId: project._id 
@@ -246,9 +257,17 @@ export default function NotesView() {
     setEditingNote(note);
   };
 
+  const handleViewNote = (note: Note) => {
+    setViewingNote(note);
+  };
+
   const closeForm = () => {
     setIsFormOpen(false);
     setEditingNote(null);
+  };
+
+  const closeView = () => {
+    setViewingNote(null);
   };
 
   if (notes === undefined) {
@@ -290,6 +309,7 @@ export default function NotesView() {
               note={note}
               onEdit={handleEditNote}
               onDelete={handleDeleteNote}
+              onView={handleViewNote}
             />
           ))}
         </div>
@@ -302,6 +322,51 @@ export default function NotesView() {
         note={editingNote || undefined}
         isSubmitting={isSubmitting}
       />
+
+      {/* Note Viewer Modal */}
+      <Dialog open={!!viewingNote} onOpenChange={closeView}>
+        <DialogContent className="sm:max-w-[700px] max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl">{viewingNote?.title}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="whitespace-pre-wrap text-sm leading-relaxed">
+              {viewingNote?.content}
+            </div>
+            <div className="flex items-center justify-between pt-4 border-t text-xs text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <Avatar className="h-5 w-5">
+                  <AvatarImage src={viewingNote?.createdByUser.imageUrl} />
+                  <AvatarFallback className="text-xs">
+                    {viewingNote?.createdByUser.name.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <span>{viewingNote?.createdByUser.name}</span>
+              </div>
+              <div className="flex gap-4">
+                <span>Created: {viewingNote && format(new Date(viewingNote.createdAt), "MMM d, yyyy 'at' HH:mm")}</span>
+                {viewingNote && viewingNote.updatedAt !== viewingNote.createdAt && (
+                  <span>Updated: {format(new Date(viewingNote.updatedAt), "MMM d, yyyy 'at' HH:mm")}</span>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={closeView}>
+                Close
+              </Button>
+              <Button 
+                onClick={() => {
+                  setViewingNote(null);
+                  setEditingNote(viewingNote);
+                }}
+              >
+                <Edit className="mr-2 h-4 w-4" />
+                Edit
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

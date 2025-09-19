@@ -16,10 +16,17 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useProject } from '@/components/providers/ProjectProvider';
 
+interface SurveyQuestion {
+  questionText: string;
+  questionType: 'text_short' | 'text_long' | 'single_choice' | 'multiple_choice' | 'rating' | 'yes_no' | 'number';
+  isRequired: boolean;
+  options?: string[];
+}
+
 interface ContentItem {
-  type: 'task' | 'note' | 'shopping' | 'survey';
+  type: 'task' | 'note' | 'shopping' | 'survey' | 'contact';
   data: Record<string, unknown>;
-  operation?: 'create' | 'edit';
+  operation?: 'create' | 'edit' | 'delete';
   originalItem?: Record<string, unknown>;
   updates?: Record<string, unknown>;
 }
@@ -52,16 +59,18 @@ const statusColors = {
 
 const typeIcons = {
   task: "📝",
-  note: "📄", 
+  note: "📄",
   shopping: "🛒",
-  survey: "📊"
+  survey: "📊",
+  contact: "👤"
 };
 
 const typeLabels = {
   task: "task",
   note: "note",
   shopping: "shopping item",
-  survey: "survey"
+  survey: "survey",
+  contact: "contact"
 };
 
 export function UniversalConfirmationDialog({
@@ -438,6 +447,13 @@ export function UniversalConfirmationDialog({
 
   const renderSurveyContent = () => {
     const data = contentItem.data as Record<string, unknown>;
+
+    // Provide fallback values for undefined data
+    const title = data.title || 'Untitled Survey';
+    const description = data.description || '';
+    const isRequired = data.isRequired ?? false;
+    const targetAudience = data.targetAudience || 'all_customers';
+
     return (
       <div className="space-y-4">
         <div className="space-y-2">
@@ -446,52 +462,205 @@ export function UniversalConfirmationDialog({
               <input
                 type="text"
                 value={String(editedItem.data.title || '')}
-                onChange={(e) => setEditedItem(prev => ({ 
-                  ...prev, 
+                onChange={(e) => setEditedItem(prev => ({
+                  ...prev,
                   data: { ...prev.data, title: e.target.value }
                 }))}
                 className="w-full p-2 border rounded-md font-semibold text-lg"
-                placeholder="Tytuł ankiety"
+                placeholder="Survey title"
               />
               <textarea
                 value={String(editedItem.data.description || '')}
-                onChange={(e) => setEditedItem(prev => ({ 
-                  ...prev, 
+                onChange={(e) => setEditedItem(prev => ({
+                  ...prev,
                   data: { ...prev.data, description: e.target.value }
                 }))}
                 className="w-full p-2 border rounded-md text-sm resize-none"
                 rows={2}
-                placeholder="Opis ankiety"
+                placeholder="Survey description"
               />
             </>
           ) : (
             <>
-              <h3 className="font-semibold text-lg">{String(data.title)}</h3>
-              {Boolean(data.description && String(data.description)) && (
-                <p className="text-sm text-gray-600">{String(data.description)}</p>
+              <h3 className="font-semibold text-lg">{String(title)}</h3>
+              {Boolean(description && String(description)) && (
+                <p className="text-sm text-gray-600">{String(description)}</p>
               )}
             </>
           )}
         </div>
 
         <div className="flex gap-2 flex-wrap">
-          <Badge variant={data.isRequired ? "default" : "outline"}>
-            {data.isRequired ? "Wymagana" : "Opcjonalna"}
+          <Badge variant={isRequired ? "default" : "outline"}>
+            {isRequired ? "Required" : "Optional"}
           </Badge>
           <Badge variant="outline">
-            Grupa docelowa: {data.targetAudience === 'all_customers' ? 'Wszyscy klienci' : 
-                              data.targetAudience === 'team_members' ? 'Zespół' : 'Wybrani klienci'}
+            Target: {targetAudience === 'all_customers' ? 'All customers' :
+                     targetAudience === 'team_members' ? 'Team members' : 'Specific customers'}
           </Badge>
+          {data.startDate && typeof data.startDate !== 'undefined' ? (
+            <Badge variant="outline">
+              Start: {new Date(String(data.startDate)).toLocaleDateString()}
+            </Badge>
+          ) : null}
+          {data.endDate && typeof data.endDate !== 'undefined' ? (
+            <Badge variant="outline">
+              End: {new Date(String(data.endDate)).toLocaleDateString()}
+            </Badge>
+          ) : null}
         </div>
 
         {Boolean(data.questions && Array.isArray(data.questions) && data.questions.length > 0) && (
           <div className="border-t pt-3">
-            <h4 className="font-medium text-sm text-gray-700 mb-2">Pytania ({(data.questions as string[]).length}):</h4>
-            <div className="space-y-2">
-              {(data.questions as string[]).map((question: string, index: number) => (
-                <div key={index} className="flex items-start gap-2 text-sm">
-                  <span className="text-gray-500 font-medium">{index + 1}.</span>
-                  <span>{question}</span>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-medium text-sm text-gray-700">Questions ({(data.questions as unknown[]).length}):</h4>
+              {isEditing && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const newQuestion = {
+                      questionText: '',
+                      questionType: 'text_short',
+                      isRequired: true,
+                      options: []
+                    };
+                    setEditedItem(prev => ({
+                      ...prev,
+                      data: {
+                        ...prev.data,
+                        questions: [...(prev.data.questions as SurveyQuestion[] || []), newQuestion]
+                      }
+                    }));
+                  }}
+                  className="text-xs h-6"
+                >
+                  + Add Question
+                </Button>
+              )}
+            </div>
+            <div className="space-y-3">
+              {(isEditing ? (editedItem.data.questions as SurveyQuestion[]) : (data.questions as SurveyQuestion[])).map((question: SurveyQuestion, index: number) => (
+                <div key={index} className={`border rounded-lg p-3 ${isEditing ? 'bg-blue-50 border-blue-200' : 'bg-gray-50'}`}>
+                  <div className="flex items-start gap-2">
+                    <span className="text-gray-500 font-medium text-sm mt-1">{index + 1}.</span>
+                    <div className="flex-1">
+                      {isEditing ? (
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={question?.questionText || ''}
+                            onChange={(e) => {
+                              const newQuestions = [...(editedItem.data.questions as SurveyQuestion[])];
+                              newQuestions[index] = { ...question, questionText: e.target.value };
+                              setEditedItem(prev => ({
+                                ...prev,
+                                data: { ...prev.data, questions: newQuestions }
+                              }));
+                            }}
+                            placeholder="Question text"
+                            className="w-full text-sm p-2 border rounded"
+                          />
+                          <div className="flex gap-2">
+                            <select
+                              value={(question as SurveyQuestion)?.questionType || 'text_short'}
+                              onChange={(e) => {
+                                const newQuestions = [...(editedItem.data.questions as SurveyQuestion[])];
+                                newQuestions[index] = { ...question, questionType: e.target.value as SurveyQuestion['questionType'] };
+                                setEditedItem(prev => ({
+                                  ...prev,
+                                  data: { ...prev.data, questions: newQuestions }
+                                }));
+                              }}
+                              className="text-xs p-1 border rounded"
+                            >
+                              <option value="text_short">Short Text</option>
+                              <option value="text_long">Long Text</option>
+                              <option value="single_choice">Single Choice</option>
+                              <option value="multiple_choice">Multiple Choice</option>
+                              <option value="rating">Rating</option>
+                              <option value="yes_no">Yes/No</option>
+                              <option value="number">Number</option>
+                            </select>
+                            <label className="flex items-center text-xs">
+                              <input
+                                type="checkbox"
+                                checked={(question as SurveyQuestion)?.isRequired ?? true}
+                                onChange={(e) => {
+                                  const newQuestions = [...(editedItem.data.questions as SurveyQuestion[])];
+                                  newQuestions[index] = { ...question, isRequired: e.target.checked };
+                                  setEditedItem(prev => ({
+                                    ...prev,
+                                    data: { ...prev.data, questions: newQuestions }
+                                  }));
+                                }}
+                                className="mr-1"
+                              />
+                              Required
+                            </label>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const newQuestions = (editedItem.data.questions as SurveyQuestion[]).filter((_, i) => i !== index);
+                                setEditedItem(prev => ({
+                                  ...prev,
+                                  data: { ...prev.data, questions: newQuestions }
+                                }));
+                              }}
+                              className="text-xs h-6 px-2 text-red-600 hover:text-red-700"
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                          {((question as SurveyQuestion)?.questionType === 'single_choice' || (question as SurveyQuestion)?.questionType === 'multiple_choice') && (
+                            <div>
+                              <p className="text-xs text-gray-600 mb-1">Options (one per line):</p>
+                              <textarea
+                                value={((question as SurveyQuestion)?.options || []).join('\n')}
+                                onChange={(e) => {
+                                  const options = e.target.value.split('\n').filter(opt => opt.trim());
+                                  const newQuestions = [...(editedItem.data.questions as SurveyQuestion[])];
+                                  newQuestions[index] = { ...question, options };
+                                  setEditedItem(prev => ({
+                                    ...prev,
+                                    data: { ...prev.data, questions: newQuestions }
+                                  }));
+                                }}
+                                rows={3}
+                                className="w-full text-xs p-2 border rounded resize-none"
+                                placeholder="Option 1&#10;Option 2&#10;Option 3"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-sm font-medium">{(question as SurveyQuestion)?.questionText}</p>
+                          <div className="flex gap-2 mt-1">
+                            <Badge variant="outline" className="text-xs">
+                              {(question as SurveyQuestion)?.questionType?.replace('_', ' ')}
+                            </Badge>
+                            {(question as SurveyQuestion)?.isRequired && (
+                              <Badge variant="secondary" className="text-xs">Required</Badge>
+                            )}
+                          </div>
+                          {(question as SurveyQuestion)?.options && (question as SurveyQuestion).options!.length > 0 && (
+                            <div className="mt-2">
+                              <p className="text-xs text-gray-600 mb-1">Options:</p>
+                              <ul className="text-xs text-gray-600 list-disc list-inside">
+                                {((question as SurveyQuestion)?.options || []).map((option: string, optIndex: number) => (
+                                  <li key={optIndex}>{option}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -501,20 +670,102 @@ export function UniversalConfirmationDialog({
     );
   };
 
+  const renderDeleteContent = () => {
+    const data = contentItem.data as Record<string, unknown>;
+
+    return (
+      <div className="space-y-4">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-6 h-6 bg-red-600 rounded-full flex items-center justify-center text-white text-xs">
+              🗑️
+            </div>
+            <span className="font-medium text-red-800">Delete: {typeLabels[contentItem.type]}</span>
+          </div>
+          <p className="text-sm text-red-700 mb-3">
+            This action cannot be undone. The item will be permanently removed.
+          </p>
+
+          {/* Show basic item info */}
+          <div className="bg-white rounded-md p-3 border border-red-200">
+            <div className="text-sm">
+              <strong>Item:</strong> {String(data.title || data.name || data.subject || data.companyName || 'Selected item')}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderContactContent = () => {
+    const data = contentItem.data as Record<string, unknown>;
+    return (
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <h3 className="font-semibold text-lg">{String(data.name || 'Unnamed Contact')}</h3>
+          {Boolean(data.companyName) && (
+            <p className="text-sm text-gray-600">Company: {String(data.companyName)}</p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          {Boolean(data.email) && (
+            <div className="flex items-center gap-2">
+              <span className="font-medium">Email:</span>
+              <span className="text-blue-600">{String(data.email)}</span>
+            </div>
+          )}
+          {Boolean(data.phone) && (
+            <div className="flex items-center gap-2">
+              <span className="font-medium">Phone:</span>
+              <span>{String(data.phone)}</span>
+            </div>
+          )}
+          {Boolean(data.type) && (
+            <div className="flex items-center gap-2">
+              <span className="font-medium">Type:</span>
+              <Badge variant="outline">{String(data.type)}</Badge>
+            </div>
+          )}
+        </div>
+
+        {Boolean(data.address) && (
+          <div className="text-sm">
+            <span className="font-medium">Address:</span>
+            <p className="text-gray-600 mt-1">{String(data.address)}</p>
+          </div>
+        )}
+
+        {Boolean(data.notes) && (
+          <div className="text-sm">
+            <span className="font-medium">Notes:</span>
+            <p className="text-gray-600 mt-1">{String(data.notes)}</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderContent = () => {
     // For edit operations, show original data with changes highlighted
     const isEditing = contentItem.operation === 'edit';
-    
+    const isDeleting = contentItem.operation === 'delete';
+
     if (isEditing) {
       return renderEditContent();
     }
-    
+
+    if (isDeleting) {
+      return renderDeleteContent();
+    }
+
     switch (contentItem.type) {
       case 'task': return renderTaskContent();
       case 'note': return renderNoteContent();
       case 'shopping': return renderShoppingContent();
       case 'survey': return renderSurveyContent();
-      default: return <div>Nieznany typ zawartości</div>;
+      case 'contact': return renderContactContent();
+      default: return <div>Unknown content type</div>;
     }
   };
 
@@ -578,42 +829,59 @@ export function UniversalConfirmationDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-              {contentItem.operation === 'edit' ? '✏️' : typeIcons[contentItem.type]}
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+              contentItem.operation === 'delete' ? 'bg-red-100' : 'bg-blue-100'
+            }`}>
+              {contentItem.operation === 'edit' ? '✏️' :
+               contentItem.operation === 'delete' ? '🗑️' : typeIcons[contentItem.type]}
             </div>
-            {contentItem.operation === 'edit' ? 'Confirm Edit' : 'Confirm Creation'}: {typeLabels[contentItem.type]} {totalItems > 1 && `(${itemNumber}/${totalItems})`}
+            {contentItem.operation === 'edit' ? 'Confirm Edit' :
+             contentItem.operation === 'delete' ? 'Confirm Deletion' : 'Confirm Creation'}: {typeLabels[contentItem.type]} {totalItems > 1 && `(${itemNumber}/${totalItems})`}
           </DialogTitle>
           <DialogDescription>
-            AI wants to {contentItem.operation === 'edit' ? 'edit' : 'create'} a {typeLabels[contentItem.type]}. Review details and confirm{contentItem.operation !== 'edit' && ', edit'} or cancel.
+            AI wants to {contentItem.operation === 'edit' ? 'edit' :
+                         contentItem.operation === 'delete' ? 'delete' : 'create'} a {typeLabels[contentItem.type]}.
+            {contentItem.operation === 'delete' ? 'Are you sure you want to delete this item?' :
+             `Review details and confirm${contentItem.operation !== 'edit' && ', edit'} or cancel.`}
             {totalItems > 1 && ` ${totalItems - itemNumber + 1} items remaining to review.`}
           </DialogDescription>
         </DialogHeader>
 
-        {renderContent()}
+        <div className="flex-1 overflow-y-auto py-4 px-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+          {renderContent()}
+        </div>
 
-        <DialogFooter className="gap-2">
-          <Button 
-            variant="outline" 
+        <DialogFooter className="gap-2 flex-shrink-0 pt-4 border-t">
+          <Button
+            variant="outline"
             onClick={onCancel}
             disabled={isLoading}
           >
-            {isEditing ? "Cancel" : "Reject"}
+            {contentItem.operation === 'delete' ? "Cancel" : isEditing ? "Cancel" : "Reject"}
           </Button>
-          
+
           {isEditing ? (
-            <Button 
+            <Button
               onClick={handleSaveEdit}
               disabled={isLoading}
               className="bg-green-600 hover:bg-green-700"
             >
               💾 Save Changes
             </Button>
+          ) : contentItem.operation === 'delete' ? (
+            <Button
+              onClick={onConfirm}
+              disabled={isLoading}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isLoading ? "Deleting..." : `🗑️ Delete ${typeLabels[contentItem.type]}`}
+            </Button>
           ) : (
             <>
-              <Button 
+              <Button
                 variant="outline"
                 onClick={() => setIsEditing(true)}
                 disabled={isLoading}
@@ -621,15 +889,12 @@ export function UniversalConfirmationDialog({
               >
                 ✏️ Edit
               </Button>
-              <Button 
+              <Button
                 onClick={onConfirm}
                 disabled={isLoading}
                 className="bg-blue-600 hover:bg-blue-700"
               >
-                {isLoading ? 
-                  (contentItem.operation === 'edit' ? "Saving..." : "Creating...") : 
-                  (contentItem.operation === 'edit' ? `✏️ Save Changes` : `✅ Create ${typeLabels[contentItem.type]}`)
-                }
+                {isLoading ? "Creating..." : `✅ Create ${typeLabels[contentItem.type]}`}
               </Button>
             </>
           )}

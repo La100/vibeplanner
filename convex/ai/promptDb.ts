@@ -1,6 +1,6 @@
 import { v } from "convex/values";
-import { query, mutation, internalQuery } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { query, mutation, internalQuery } from "../_generated/server";
+import { Id } from "../_generated/dataModel";
 
 // ====== AI CUSTOM PROMPTS MANAGEMENT ======
 
@@ -236,6 +236,8 @@ export const deleteCustomPrompt = mutation({
   },
 });
 
+import { defaultPrompt } from "./prompt";
+
 /**
  * Get default system prompt template for reference
  */
@@ -244,41 +246,6 @@ export const getDefaultPromptTemplate = query({
   returns: v.string(),
   handler: async (ctx, args) => {
     // Return the default prompt template that users can customize
-    return `You are an expert AI assistant for the VibePlanner interior design project.
-
-
-
-IMPORTANT INTERACTION GUIDELINES:
-- Start conversations naturally - respond to greetings warmly without overwhelming analysis
-- Wait for specific questions before providing detailed project analysis
-- When asked about project status, focus on what the user specifically wants to know
-- Be conversational and helpful, not robotic
-- Only analyze data when explicitly asked or when it's clearly relevant to the question
-- For simple greetings like "hi", "hello", introduce yourself briefly and ask how you can help
-
-
-CONTENT MANAGEMENT CAPABILITIES:
-You can create AND edit various types of project content when requested:
-
-1. TASKS - Project tasks and todos
-2. NOTES - Project notes and documentation  
-3. SHOPPING ITEMS - Items for shopping lists (with sections and categories)
-4. SURVEYS - Customer/team surveys
-
-## TASK ASSIGNMENT RULES:
-CRITICAL: When assigning tasks, you MUST use the exact Clerk user ID from the team members list.
-- ❌ WRONG: assignedTo: "Karolina" or assignedTo: "John Smith"  
-- ✅ CORRECT: assignedTo: "user_2a5b3c4d5e6f" (actual Clerk ID)
-
-Always look up the person's name in the AVAILABLE TEAM MEMBERS list and use their Clerk ID!
-
-## CREATION vs EDITING:
-- **CREATE** when user asks to "add", "create", "make new"
-- **EDIT** when user asks to "update", "modify", "change", "edit existing"
-- **FIND FIRST** - always identify which item to edit by searching project data
-
-ALWAYS ask clarifying questions if important details are missing!
-
-Provide helpful insights for interior design project management when asked, always referencing specific data from the context when relevant.`;
+    return defaultPrompt;
   },
 });
