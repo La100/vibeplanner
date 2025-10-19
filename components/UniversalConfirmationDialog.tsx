@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import {
   Dialog,
   DialogContent,
@@ -11,10 +14,41 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Calendar, User, DollarSign, Tag, Package, Home } from "lucide-react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useProject } from '@/components/providers/ProjectProvider';
+
+const taskFormSchema = z.object({
+  title: z.string().min(1, "Title is required"),
+  description: z.string().optional(),
+  priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+  status: z.enum(["todo", "in_progress", "review", "done"]).optional(),
+  assignedTo: z.string().nullable().optional(),
+  dueDate: z.date().optional(),
+  cost: z.coerce.number().optional(),
+  tags: z.array(z.string()).optional(),
+});
+
+type TaskFormValues = z.infer<typeof taskFormSchema>;
 
 interface SurveyQuestion {
   questionText: string;
@@ -24,11 +58,12 @@ interface SurveyQuestion {
 }
 
 interface ContentItem {
-  type: 'task' | 'note' | 'shopping' | 'survey' | 'contact';
+  type: 'task' | 'note' | 'shopping' | 'survey' | 'contact' | 'shoppingSection';
   data: Record<string, unknown>;
-  operation?: 'create' | 'edit' | 'delete';
+  operation?: 'create' | 'edit' | 'delete' | 'bulk_edit' | 'bulk_create';
   originalItem?: Record<string, unknown>;
   updates?: Record<string, unknown>;
+  selection?: Record<string, unknown>;
 }
 
 interface UniversalConfirmationDialogProps {
@@ -62,7 +97,8 @@ const typeIcons = {
   note: "📄",
   shopping: "🛒",
   survey: "📊",
-  contact: "👤"
+  contact: "👤",
+  shoppingSection: "🏷️"
 };
 
 const typeLabels = {
@@ -70,7 +106,8 @@ const typeLabels = {
   note: "note",
   shopping: "shopping item",
   survey: "survey",
-  contact: "contact"
+  contact: "contact",
+  shoppingSection: "shopping section"
 };
 
 export function UniversalConfirmationDialog({
@@ -87,18 +124,72 @@ export function UniversalConfirmationDialog({
   const [isEditing, setIsEditing] = useState(false);
   const [editedItem, setEditedItem] = useState<ContentItem>(contentItem);
   const { project } = useProject();
-  
+
   // Get team members for assignment dropdown
   const teamMembers = useQuery(
     api.teams.getTeamMembers,
     project ? { teamId: project.teamId } : "skip"
   );
 
+  // Form for task editing
+  const taskForm = useForm<TaskFormValues>({
+    resolver: zodResolver(taskFormSchema),
+    defaultValues: {
+      title: "",
+      description: "",
+      priority: undefined,
+      status: "todo",
+      assignedTo: "",
+      dueDate: undefined,
+      cost: undefined,
+      tags: [],
+    },
+  });
+
   // Update editedItem when contentItem changes (new item in sequence)
+  const resetTaskFormValues = (item: ContentItem) => {
+    if (item.type !== 'task') {
+      return;
+    }
+
+    const source = item.operation === 'edit' && item.originalItem
+      ? item.originalItem
+      : item.data;
+
+    taskForm.reset({
+      title: String(source.title || ''),
+      description: String(source.description || ''),
+      priority: source.priority as TaskFormValues["priority"],
+      status: (source.status as TaskFormValues["status"]) || "todo",
+      assignedTo: String(source.assignedTo || ''),
+      dueDate: source.dueDate ? new Date(String(source.dueDate)) : undefined,
+      cost: source.cost !== undefined && source.cost !== null ? Number(source.cost) : undefined,
+      tags: (source.tags as string[]) || [],
+    });
+  };
+
   useEffect(() => {
     setEditedItem(contentItem);
-    setIsEditing(false);
+
+    // For edit operations, automatically enter editing mode
+    setIsEditing(contentItem.operation === 'edit');
+
+    // Reset task form if it's a task
+    resetTaskFormValues(contentItem);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contentItem]);
+
+  const handleStartEditing = () => {
+    setEditedItem(contentItem);
+    resetTaskFormValues(contentItem);
+    setIsEditing(true);
+  };
+
+  const handleCancelEdit = () => {
+    resetTaskFormValues(contentItem);
+    setEditedItem(contentItem);
+    setIsEditing(false);
+  };
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return null;
@@ -114,94 +205,239 @@ export function UniversalConfirmationDialog({
     }
   };
 
-  const handleSaveEdit = () => {
-    onEdit(editedItem);
+  const handleSaveEdit = async () => {
+    if (contentItem.type === 'task') {
+      const isValid = await taskForm.trigger();
+      if (!isValid) {
+        return;
+      }
+
+      // Get values from task form
+      const formValues = taskForm.getValues();
+      const updatedTaskData = {
+        ...formValues,
+        dueDate: formValues.dueDate?.toISOString().split('T')[0], // Convert to string
+        tags: formValues.tags || [],
+      };
+
+      onEdit({
+        ...editedItem,
+        data: updatedTaskData
+      });
+
+      setEditedItem(prev => ({
+        ...prev,
+        data: updatedTaskData
+      }));
+    } else {
+      onEdit(editedItem);
+    }
     setIsEditing(false);
   };
 
   const renderTaskContent = () => {
     const data = contentItem.data as Record<string, unknown>;
+
+    if (isEditing) {
+      return (
+        <div className="space-y-4">
+          <Form {...taskForm}>
+            <div className="space-y-4">
+              {/* Title */}
+              <FormField
+                control={taskForm.control}
+                name="title"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Title</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. Implement new feature" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Status and Priority Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <FormField
+                  control={taskForm.control}
+                  name="status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Status</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="todo">To Do</SelectItem>
+                          <SelectItem value="in_progress">In Progress</SelectItem>
+                          <SelectItem value="review">Review</SelectItem>
+                          <SelectItem value="done">Done</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={taskForm.control}
+                  name="priority"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Priority</FormLabel>
+                      <Select onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} value={field.value || "none"}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select priority" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">No priority</SelectItem>
+                          <SelectItem value="low">Low</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="high">High</SelectItem>
+                          <SelectItem value="urgent">Urgent</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {/* Assigned To */}
+              <FormField
+                control={taskForm.control}
+                name="assignedTo"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Assign to</FormLabel>
+                    <Select onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} value={field.value || "none"}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a team member" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">No assignee</SelectItem>
+                        {teamMembers?.map((member) => (
+                          <SelectItem key={member.clerkUserId} value={member.clerkUserId}>
+                            {member.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Due Date */}
+              <FormField
+                control={taskForm.control}
+                name="dueDate"
+                render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Due Date</FormLabel>
+                    <DatePicker
+                      date={field.value}
+                      onDateChange={field.onChange}
+                    />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Cost */}
+              <FormField
+                control={taskForm.control}
+                name="cost"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Cost</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        placeholder="Task cost"
+                        {...field}
+                        value={field.value ?? ""}
+                        onChange={(e) => field.onChange(e.target.valueAsNumber)}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Tags */}
+              <FormField
+                control={taskForm.control}
+                name="tags"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tags</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="tag1, tag2, tag3"
+                        value={field.value?.join(', ') || ''}
+                        onChange={(e) => field.onChange(e.target.value.split(',').map(tag => tag.trim()).filter(Boolean))}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Description */}
+              <FormField
+                control={taskForm.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Add a more detailed description..."
+                        className="resize-none"
+                        {...field}
+                        value={field.value ?? ""}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          </Form>
+        </div>
+      );
+    }
+
+    // Display mode (non-editing)
     return (
       <div className="space-y-4">
-        {/* Title and Description */}
         <div className="space-y-2">
-          {isEditing ? (
-            <>
-              <input
-                type="text"
-                value={String(editedItem.data.title || '')}
-                onChange={(e) => setEditedItem(prev => ({ 
-                  ...prev, 
-                  data: { ...prev.data, title: e.target.value }
-                }))}
-                className="w-full p-2 border rounded-md font-semibold text-lg"
-                placeholder="Task title"
-              />
-              <textarea
-                value={String(editedItem.data.description || '')}
-                onChange={(e) => setEditedItem(prev => ({ 
-                  ...prev, 
-                  data: { ...prev.data, description: e.target.value }
-                }))}
-                className="w-full p-2 border rounded-md text-sm resize-none"
-                rows={2}
-                placeholder="Task description"
-              />
-            </>
-          ) : (
-            <>
-              <h3 className="font-semibold text-lg">{String(data.title)}</h3>
-              {Boolean(data.description && String(data.description)) && (
-                <p className="text-sm text-gray-600">{String(data.description)}</p>
-              )}
-            </>
+          <h3 className="font-semibold text-lg">{String(data.title)}</h3>
+          {Boolean(data.description && String(data.description)) && (
+            <p className="text-sm text-gray-600">{String(data.description)}</p>
           )}
         </div>
 
         {/* Status and Priority */}
         <div className="flex gap-2 flex-wrap">
-          {isEditing ? (
-            <>
-              <select
-                value={String(editedItem.data.priority || 'medium')}
-                onChange={(e) => setEditedItem(prev => ({ 
-                  ...prev, 
-                  data: { ...prev.data, priority: e.target.value }
-                }))}
-                className="px-3 py-1 border rounded-md text-sm"
-              >
-                <option value="low">🟢 Low</option>
-                <option value="medium">🟡 Medium</option>
-                <option value="high">🟠 High</option>
-                <option value="urgent">🔴 Urgent</option>
-              </select>
-              <select
-                value={String(editedItem.data.status || 'todo')}
-                onChange={(e) => setEditedItem(prev => ({ 
-                  ...prev, 
-                  data: { ...prev.data, status: e.target.value }
-                }))}
-                className="px-3 py-1 border rounded-md text-sm"
-              >
-                <option value="todo">📝 To Do</option>
-                <option value="in_progress">⚡ In Progress</option>
-                <option value="review">👀 Review</option>
-                <option value="done">✅ Done</option>
-              </select>
-            </>
-          ) : (
-            <>
-              {Boolean(data.status && String(data.status)) && (
-                <Badge className={statusColors[data.status as keyof typeof statusColors]}>
-                  Status: {String(data.status)}
-                </Badge>
-              )}
-              {Boolean(data.priority && String(data.priority)) && (
-                <Badge className={priorityColors[data.priority as keyof typeof priorityColors]}>
-                  Priorytet: {String(data.priority)}
-                </Badge>
-              )}
-            </>
+          {Boolean(data.status && String(data.status)) && (
+            <Badge className={statusColors[data.status as keyof typeof statusColors]}>
+              Status: {String(data.status)}
+            </Badge>
+          )}
+          {Boolean(data.priority && String(data.priority)) && (
+            <Badge className={priorityColors[data.priority as keyof typeof priorityColors]}>
+              Priorytet: {String(data.priority)}
+            </Badge>
           )}
         </div>
 
@@ -211,106 +447,48 @@ export function UniversalConfirmationDialog({
           <div className="flex items-center gap-2 text-sm">
             <Calendar className="w-4 h-4 text-gray-500" />
             <span className="text-gray-600">Due Date:</span>
-            {isEditing ? (
-              <input
-                type="date"
-                value={String(editedItem.data.dueDate || '')}
-                onChange={(e) => setEditedItem(prev => ({ 
-                  ...prev, 
-                  data: { ...prev.data, dueDate: e.target.value }
-                }))}
-                className="px-2 py-1 border rounded-md text-sm"
-              />
-            ) : (
-              <span className="font-medium">
-                {data.dueDate ? formatDate(String(data.dueDate)) : 'Not set'}
-              </span>
-            )}
+            <span className="font-medium">
+              {data.dueDate ? formatDate(String(data.dueDate)) : 'Not set'}
+            </span>
           </div>
 
           {/* Assigned To */}
           <div className="flex items-center gap-2 text-sm">
             <User className="w-4 h-4 text-gray-500" />
             <span className="text-gray-600">Assigned To:</span>
-            {isEditing ? (
-              <select
-                value={String(editedItem.data.assignedTo || '')}
-                onChange={(e) => setEditedItem(prev => ({ 
-                  ...prev, 
-                  data: { ...prev.data, assignedTo: e.target.value || null }
-                }))}
-                className="px-2 py-1 border rounded-md text-sm"
-              >
-                <option value="">Not assigned</option>
-                {teamMembers?.map((member, index) => (
-                  <option key={`${member.clerkUserId}-${index}`} value={member.clerkUserId}>
-                    {member.name || member.email}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span className="font-medium">
-                {data.assignedTo ? 
-                  teamMembers?.find(m => m.clerkUserId === data.assignedTo)?.name || 
-                  teamMembers?.find(m => m.clerkUserId === data.assignedTo)?.email || 
-                  String(data.assignedTo)
-                  : 'Not assigned'}
-              </span>
-            )}
+            <span className="font-medium">
+              {data.assignedTo ?
+                teamMembers?.find(m => m.clerkUserId === data.assignedTo)?.name ||
+                teamMembers?.find(m => m.clerkUserId === data.assignedTo)?.email ||
+                String(data.assignedTo)
+                : 'Not assigned'}
+            </span>
           </div>
 
           {/* Cost */}
           <div className="flex items-center gap-2 text-sm">
             <DollarSign className="w-4 h-4 text-gray-500" />
             <span className="text-gray-600">Cost:</span>
-            {isEditing ? (
-              <input
-                type="number"
-                value={Number(editedItem.data.cost || 0)}
-                onChange={(e) => setEditedItem(prev => ({ 
-                  ...prev, 
-                  data: { ...prev.data, cost: parseFloat(e.target.value) || 0 }
-                }))}
-                className="px-2 py-1 border rounded-md text-sm"
-                placeholder="0.00"
-                step="0.01"
-                min="0"
-              />
-            ) : (
-              <span className="font-medium">
-                {data.cost && Number(data.cost) > 0 ? String(data.cost) : 'Not set'}
-              </span>
-            )}
+            <span className="font-medium">
+              {data.cost && Number(data.cost) > 0 ? String(data.cost) : 'Not set'}
+            </span>
           </div>
 
           {/* Tags */}
           <div className="flex items-center gap-2 text-sm">
             <Tag className="w-4 h-4 text-gray-500" />
             <span className="text-gray-600">Tags:</span>
-            {isEditing ? (
-              <input
-                type="text"
-                value={(editedItem.data.tags as string[] || []).join(', ')}
-                onChange={(e) => setEditedItem(prev => ({ 
-                  ...prev, 
-                  data: { ...prev.data, tags: e.target.value.split(',').map(tag => tag.trim()).filter(Boolean) }
-                }))}
-                className="px-2 py-1 border rounded-md text-sm flex-1"
-                placeholder="tag1, tag2, tag3"
-              />
-            ) : (
-              <div className="flex gap-1 flex-wrap">
-                {data.tags && Array.isArray(data.tags) && data.tags.length > 0 ? (
-                  (data.tags as string[]).map((tag: string, index: number) => (
-                    <Badge key={index} variant="outline" className="text-xs">
-                      {tag}
-                    </Badge>
-                  ))
-                ) : (
-                  <span className="font-medium text-gray-400">No tags</span>
-                )}
-              </div>
-            )}
+            <div className="flex gap-1 flex-wrap">
+              {data.tags && Array.isArray(data.tags) && data.tags.length > 0 ? (
+                (data.tags as string[]).map((tag: string, index: number) => (
+                  <Badge key={index} variant="outline" className="text-xs">
+                    {tag}
+                  </Badge>
+                ))
+              ) : (
+                <span className="font-medium text-gray-400">No tags</span>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -324,23 +502,22 @@ export function UniversalConfirmationDialog({
         <div className="space-y-2">
           {isEditing ? (
             <>
-              <input
-                type="text"
+              <Input
                 value={String(editedItem.data.title || '')}
                 onChange={(e) => setEditedItem(prev => ({ 
                   ...prev, 
                   data: { ...prev.data, title: e.target.value }
                 }))}
-                className="w-full p-2 border rounded-md font-semibold text-lg"
                 placeholder="Tytuł notatki"
+                className="font-semibold text-lg"
               />
-              <textarea
+              <Textarea
                 value={String(editedItem.data.content || '')}
                 onChange={(e) => setEditedItem(prev => ({ 
                   ...prev, 
                   data: { ...prev.data, content: e.target.value }
                 }))}
-                className="w-full p-2 border rounded-md text-sm resize-none"
+                className="text-sm resize-none"
                 rows={4}
                 placeholder="Treść notatki"
               />
@@ -365,23 +542,22 @@ export function UniversalConfirmationDialog({
         <div className="space-y-2">
           {isEditing ? (
             <>
-              <input
-                type="text"
+              <Input
                 value={String(editedItem.data.name || '')}
                 onChange={(e) => setEditedItem(prev => ({ 
                   ...prev, 
                   data: { ...prev.data, name: e.target.value }
                 }))}
-                className="w-full p-2 border rounded-md font-semibold text-lg"
                 placeholder="Nazwa produktu"
+                className="font-semibold text-lg"
               />
-              <textarea
+              <Textarea
                 value={String(editedItem.data.notes || '')}
                 onChange={(e) => setEditedItem(prev => ({ 
                   ...prev, 
                   data: { ...prev.data, notes: e.target.value }
                 }))}
-                className="w-full p-2 border rounded-md text-sm resize-none"
+                className="text-sm resize-none"
                 rows={2}
                 placeholder="Notatki o produkcie"
               />
@@ -746,86 +922,152 @@ export function UniversalConfirmationDialog({
     );
   };
 
-  const renderContent = () => {
-    // For edit operations, show original data with changes highlighted
-    const isEditing = contentItem.operation === 'edit';
-    const isDeleting = contentItem.operation === 'delete';
+  const renderBulkEditContent = () => {
+    const data = contentItem.data as Record<string, unknown>;
+    const updates = (contentItem.updates || data.updates || {}) as Record<string, unknown>;
+    const selection = (contentItem.selection || data) as Record<string, unknown>;
 
-    if (isEditing) {
-      return renderEditContent();
-    }
+    const taskIds = selection.taskIds as string[] | undefined;
+    const applyToAll = Boolean(selection.applyToAll);
+    const reason = (selection.reason || data.reason) as string | undefined;
 
-    if (isDeleting) {
-      return renderDeleteContent();
-    }
+  const fieldsChanged = Object.entries(updates)
+    .filter(([key, value]) => key !== '_' && value !== undefined && value !== null && value !== '')
+    .map(([field, value]) => ({ field, value }));
 
-    switch (contentItem.type) {
-      case 'task': return renderTaskContent();
-      case 'note': return renderNoteContent();
-      case 'shopping': return renderShoppingContent();
-      case 'survey': return renderSurveyContent();
-      case 'contact': return renderContactContent();
-      default: return <div>Unknown content type</div>;
-    }
-  };
-
-  const renderEditContent = () => {
-    const original = contentItem.originalItem || {};
-    const updates = contentItem.updates || {};
-    
     return (
       <div className="space-y-4">
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-2">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-3">
             <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-white text-xs">
-              ✏️
+              📝
             </div>
-            <span className="font-medium text-blue-800">Edycja: {String(original?.title || original?.name || 'Element')}</span>
+            <span className="font-medium text-blue-800">
+              Bulk Edit: {applyToAll ? 'All Tasks' : `${taskIds?.length ?? 0} Tasks`}
+            </span>
           </div>
-          <p className="text-sm text-blue-700">
-            Sprawdź zmiany poniżej i potwierdź edycję.
+          <p className="text-sm text-blue-700 mb-3">
+            {reason || 'Apply the following changes to selected tasks:'}
           </p>
-        </div>
 
-        {/* Show changes */}
-        <div className="space-y-3">
-          {Object.entries(updates).map(([key, newValue]) => {
-            const oldValue = original?.[key];
-            
-            if (newValue === oldValue || newValue === undefined) return null;
-            
-            return (
-              <div key={key} className="border rounded-lg p-3 bg-gray-50">
-                <div className="text-sm font-medium text-gray-700 mb-1 capitalize">
-                  {key === 'dueDate' ? 'Termin' : 
-                   key === 'assignedTo' ? 'Przypisane do' :
-                   key === 'unitPrice' ? 'Cena jednostkowa' :
-                   key === 'targetAudience' ? 'Grupa docelowa' :
-                   key}:
+          <div className="bg-white rounded-md p-3 border border-blue-200">
+            <div className="space-y-2 text-sm">
+              {fieldsChanged.length === 0 && (
+                <div>No changes provided.</div>
+              )}
+              {fieldsChanged.map(({ field, value }) => (
+                <div key={field} className="capitalize">
+                  <strong>{field.replace(/([A-Z])/g, ' $1').toLowerCase()}:</strong> →{' '}
+                  {Array.isArray(value) ? value.join(', ') : String(value)}
                 </div>
-                
-                <div className="flex items-center gap-2 text-sm">
-                  <div className="bg-red-100 text-red-800 px-2 py-1 rounded flex-1">
-                    <span className="font-medium">Było:</span> {
-                      Array.isArray(oldValue) ? (oldValue as string[]).join(', ') : 
-                      String(oldValue || 'brak')
-                    }
-                  </div>
-                  <span className="text-gray-400">→</span>
-                  <div className="bg-green-100 text-green-800 px-2 py-1 rounded flex-1">
-                    <span className="font-medium">Będzie:</span> {
-                      Array.isArray(newValue) ? (newValue as string[]).join(', ') : 
-                      String(newValue || 'brak')
-                    }
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     );
   };
+
+  let bodyContent: React.ReactNode;
+
+  if (contentItem.operation === 'delete') {
+    bodyContent = renderDeleteContent();
+  } else if (contentItem.operation === 'bulk_edit') {
+    bodyContent = renderBulkEditContent();
+  } else if (contentItem.operation === 'bulk_create') {
+    // For bulk_create, show summary - individual editing is done in grid
+    const tasks = (contentItem.data.tasks as Array<Record<string, unknown>>) || [];
+    bodyContent = (
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Creating {tasks.length} tasks. Use the grid view to review and edit individual tasks.
+        </p>
+        <div className="text-sm">
+          <strong>Tasks preview:</strong>
+          <ul className="list-disc list-inside mt-2 space-y-1">
+            {tasks.slice(0, 5).map((task, i) => (
+              <li key={i}>{String(task.title || 'Untitled')}</li>
+            ))}
+            {tasks.length > 5 && <li className="text-muted-foreground">...and {tasks.length - 5} more</li>}
+          </ul>
+        </div>
+      </div>
+    );
+  } else {
+    switch (contentItem.type) {
+      case 'task':
+        bodyContent = renderTaskContent();
+        break;
+      case 'note':
+        bodyContent = renderNoteContent();
+        break;
+      case 'shopping':
+        bodyContent = renderShoppingContent();
+        break;
+      case 'survey':
+        bodyContent = renderSurveyContent();
+        break;
+      case 'contact':
+        bodyContent = renderContactContent();
+        break;
+      case 'shoppingSection':
+        // Render shopping section details
+        bodyContent = (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <h3 className="font-semibold text-lg">{String(contentItem.data.name || 'Unnamed Section')}</h3>
+              <p className="text-sm text-gray-600">
+                Shopping list section for organizing items.
+              </p>
+            </div>
+          </div>
+        );
+        break;
+      default:
+        throw new Error(`Unknown content type: ${contentItem.type ?? 'undefined'}`);
+    }
+  }
+
+  const operationLabel = (() => {
+    switch (contentItem.operation) {
+      case 'edit':
+        return 'Confirm Edit';
+      case 'delete':
+        return 'Confirm Deletion';
+      case 'bulk_edit':
+        return 'Confirm Bulk Edit';
+      case 'bulk_create':
+        const tasks = (contentItem.data.tasks as Array<Record<string, unknown>>) || [];
+        return `Confirm Creation (${tasks.length} items)`;
+      case 'create':
+      default:
+        return 'Confirm Creation';
+    }
+  })();
+
+  const targetLabel = contentItem.operation === 'bulk_edit' || contentItem.operation === 'bulk_create'
+    ? 'tasks'
+    : typeLabels[contentItem.type as keyof typeof typeLabels] ?? 'item';
+
+  const actionVerb = (() => {
+    switch (contentItem.operation) {
+      case 'edit':
+        return 'edit';
+      case 'delete':
+        return 'delete';
+      case 'bulk_edit':
+        return 'bulk edit';
+      case 'bulk_create':
+        return 'create';
+      case 'create':
+      default:
+        return 'create';
+    }
+  })();
+
+  const descriptionSuffix = contentItem.operation === 'delete'
+    ? 'Are you sure you want to delete this item?'
+    : `Review details and confirm${contentItem.operation !== 'edit' ? ', edit' : ''} or cancel.`;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -838,30 +1080,46 @@ export function UniversalConfirmationDialog({
               {contentItem.operation === 'edit' ? '✏️' :
                contentItem.operation === 'delete' ? '🗑️' : typeIcons[contentItem.type]}
             </div>
-            {contentItem.operation === 'edit' ? 'Confirm Edit' :
-             contentItem.operation === 'delete' ? 'Confirm Deletion' : 'Confirm Creation'}: {typeLabels[contentItem.type]} {totalItems > 1 && `(${itemNumber}/${totalItems})`}
+            {operationLabel}: {targetLabel}
+            {totalItems > 1 && ` (${itemNumber}/${totalItems})`}
           </DialogTitle>
           <DialogDescription>
-            AI wants to {contentItem.operation === 'edit' ? 'edit' :
-                         contentItem.operation === 'delete' ? 'delete' : 'create'} a {typeLabels[contentItem.type]}.
-            {contentItem.operation === 'delete' ? 'Are you sure you want to delete this item?' :
-             `Review details and confirm${contentItem.operation !== 'edit' && ', edit'} or cancel.`}
+            AI wants to {actionVerb}{' '}
+            {contentItem.operation === 'bulk_edit'
+              ? 'multiple tasks'
+              : `a ${typeLabels[contentItem.type]}`}.
+            {descriptionSuffix}
             {totalItems > 1 && ` ${totalItems - itemNumber + 1} items remaining to review.`}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto py-4 px-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-          {renderContent()}
+          {bodyContent}
         </div>
 
         <DialogFooter className="gap-2 flex-shrink-0 pt-4 border-t">
           <Button
             variant="outline"
-            onClick={onCancel}
+            onClick={contentItem.operation === 'delete' ? onCancel : isEditing ? handleCancelEdit : onCancel}
             disabled={isLoading}
           >
-            {contentItem.operation === 'delete' ? "Cancel" : isEditing ? "Cancel" : "Reject"}
+            {contentItem.operation === 'delete'
+              ? "Cancel"
+              : isEditing
+                ? "Cancel editing"
+                : "Reject"}
           </Button>
+
+          {!isEditing && contentItem.operation !== 'delete' && contentItem.operation !== 'bulk_edit' && contentItem.operation !== 'bulk_create' && (
+            <Button
+              variant="outline"
+              onClick={handleStartEditing}
+              disabled={isLoading}
+              className="gap-2"
+            >
+              ✏️ Edit details
+            </Button>
+          )}
 
           {isEditing ? (
             <Button
@@ -879,25 +1137,23 @@ export function UniversalConfirmationDialog({
             >
               {isLoading ? "Deleting..." : `🗑️ Delete ${typeLabels[contentItem.type]}`}
             </Button>
-          ) : (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => setIsEditing(true)}
-                disabled={isLoading}
-                className="border-blue-600 text-blue-600 hover:bg-blue-50"
-              >
-                ✏️ Edit
-              </Button>
-              <Button
-                onClick={onConfirm}
-                disabled={isLoading}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                {isLoading ? "Creating..." : `✅ Create ${typeLabels[contentItem.type]}`}
-              </Button>
-            </>
-          )}
+          ) : contentItem.operation === 'edit' ? (
+            <Button
+              onClick={onConfirm}
+              disabled={isLoading}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {isLoading ? "Updating..." : "✅ Update " + (typeLabels[contentItem.type as keyof typeof typeLabels] ?? 'item')}
+            </Button>
+          ) : contentItem.operation === 'create' ? (
+            <Button
+              onClick={onConfirm}
+              disabled={isLoading}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {isLoading ? "Creating..." : `✅ Create ${typeLabels[contentItem.type as keyof typeof typeLabels]}`}
+            </Button>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>

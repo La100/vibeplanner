@@ -124,6 +124,158 @@ export const listProjectTasks = query({
   },
 });
 
+export const listProjectTasksForAI = internalQuery({
+  args: {
+    projectId: v.id("projects"),
+  },
+  returns: v.array(
+    v.object({
+      _id: v.id("tasks"),
+      projectId: v.id("projects"),
+      assignedTo: v.union(v.string(), v.null()),
+    })
+  ),
+  async handler(ctx, args) {
+    const hasAccess = await hasProjectAccess(ctx, args.projectId);
+    if (!hasAccess) return [];
+
+    const tasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+
+    return tasks.map((task) => ({
+      _id: task._id,
+      projectId: task.projectId,
+      assignedTo: task.assignedTo ?? null,
+    }));
+  },
+});
+
+export const getTaskForAI = internalQuery({
+  args: {
+    taskId: v.id("tasks"),
+  },
+  returns: v.union(
+    v.null(),
+    v.object({
+      _id: v.id("tasks"),
+      projectId: v.id("projects"),
+      assignedTo: v.union(v.string(), v.null()),
+    })
+  ),
+  async handler(ctx, args) {
+    const hasAccess = await hasTaskAccess(ctx, args.taskId);
+    if (!hasAccess) return null;
+
+    const task = await ctx.db.get(args.taskId);
+    if (!task) return null;
+
+    return {
+      _id: task._id,
+      projectId: task.projectId,
+      assignedTo: task.assignedTo ?? null,
+    };
+  },
+});
+
+export const listProjectTasksInternal = internalQuery({
+  args: {
+    projectId: v.id("projects"),
+  },
+  returns: v.array(
+    v.object({
+      _id: v.id("tasks"),
+      _creationTime: v.number(),
+      projectId: v.id("projects"),
+      teamId: v.id("teams"),
+      title: v.string(),
+      description: v.optional(v.string()),
+      content: v.optional(v.string()),
+      status: v.union(
+        v.literal("todo"),
+        v.literal("in_progress"),
+        v.literal("review"),
+        v.literal("done"),
+      ),
+      priority: v.optional(
+        v.union(
+          v.literal("low"),
+          v.literal("medium"),
+          v.literal("high"),
+          v.literal("urgent"),
+          v.null(),
+        ),
+      ),
+      assignedTo: v.optional(v.union(v.string(), v.null())),
+      createdBy: v.string(),
+      dueDate: v.optional(v.number()),
+      tags: v.array(v.string()),
+      cost: v.optional(v.number()),
+      updatedAt: v.optional(v.number()),
+    })
+  ),
+  async handler(ctx, args) {
+    const hasAccess = await hasProjectAccess(ctx, args.projectId);
+    if (!hasAccess) return [];
+
+    const tasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+
+    return tasks;
+  },
+});
+
+export const getTaskInternal = internalQuery({
+  args: {
+    taskId: v.id("tasks"),
+  },
+  returns: v.union(
+    v.null(),
+    v.object({
+      _id: v.id("tasks"),
+      _creationTime: v.number(),
+      projectId: v.id("projects"),
+      teamId: v.id("teams"),
+      title: v.string(),
+      description: v.optional(v.string()),
+      content: v.optional(v.string()),
+      status: v.union(
+        v.literal("todo"),
+        v.literal("in_progress"),
+        v.literal("review"),
+        v.literal("done"),
+      ),
+      priority: v.optional(
+        v.union(
+          v.literal("low"),
+          v.literal("medium"),
+          v.literal("high"),
+          v.literal("urgent"),
+          v.null(),
+        ),
+      ),
+      assignedTo: v.optional(v.union(v.string(), v.null())),
+      createdBy: v.string(),
+      dueDate: v.optional(v.number()),
+      tags: v.array(v.string()),
+      cost: v.optional(v.number()),
+      updatedAt: v.optional(v.number()),
+    })
+  ),
+  async handler(ctx, args) {
+    const hasAccess = await hasTaskAccess(ctx, args.taskId);
+    if (!hasAccess) return null;
+
+    const task = await ctx.db.get(args.taskId);
+    if (!task) return null;
+
+    return task;
+  },
+});
+
 export const getTask = query({
   args: { taskId: v.id("tasks") },
   async handler(ctx, args) {
@@ -217,13 +369,29 @@ export const createTask = mutation({
     dueDate: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
     cost: v.optional(v.number()),
+    content: v.optional(v.string()),
+    sectionId: v.optional(v.union(v.id("taskSections"), v.null())),
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
     const hasAccess = await hasProjectAccess(ctx, args.projectId, true);
     if (!hasAccess) throw new Error("Permission denied.");
-    const taskId = await ctx.db.insert("tasks", { ...args, createdBy: identity.subject, tags: args.tags || [] });
+    const taskId = await ctx.db.insert("tasks", {
+      projectId: args.projectId,
+      teamId: args.teamId,
+      title: args.title,
+      description: args.description,
+      status: args.status,
+      priority: args.priority,
+      assignedTo: args.assignedTo,
+      createdBy: identity.subject,
+      dueDate: args.dueDate,
+      tags: args.tags ?? [],
+      cost: args.cost,
+      updatedAt: Date.now(),
+      content: args.content ?? undefined,
+    });
     await ctx.runMutation(internal.activityLog.logActivity, {
       teamId: args.teamId,
       projectId: args.projectId,
@@ -232,14 +400,6 @@ export const createTask = mutation({
       details: { title: args.title },
       entityId: taskId,
       entityType: "task",
-    });
-
-    // Auto-indexing trigger
-    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
-      projectId: args.projectId,
-      entityType: "task",
-      entityId: taskId,
-      operation: "create",
     });
 
     return taskId;
@@ -280,15 +440,6 @@ export const updateTask = mutation({
       entityId: args.taskId,
       entityType: "task",
     });
-
-    // Auto-indexing trigger
-    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
-      projectId: task.projectId,
-      entityType: "task",
-      entityId: args.taskId,
-      operation: "update",
-    });
-
   },
 });
 
@@ -309,20 +460,11 @@ export const updateTaskStatus = mutation({
       teamId: task.teamId,
       projectId: task.projectId,
       taskId: args.taskId,
-      actionType: "task.status.change",
-      details: { title: task.title, from: originalStatus, to: args.status },
+      actionType: "task.status_change",
+      details: { title: task.title, fromStatus: originalStatus, toStatus: args.status },
       entityId: args.taskId,
       entityType: "task",
     });
-
-    // Auto-indexing trigger
-    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
-      projectId: task.projectId,
-      entityType: "task",
-      entityId: args.taskId,
-      operation: "update",
-    });
-
   },
 });
 
@@ -342,15 +484,6 @@ export const deleteTask = mutation({
       entityId: args.taskId,
       entityType: "task",
     });
-
-    // Auto-indexing trigger - delete before removing from DB
-    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
-      projectId: task.projectId,
-      entityType: "task",
-      entityId: args.taskId,
-      operation: "delete",
-    });
-    
     await ctx.db.delete(args.taskId);
   },
 });
@@ -374,14 +507,6 @@ export const assignTask = mutation({
       entityId: args.taskId,
       entityType: "task",
     });
-
-    // Auto-indexing trigger for assignment change
-    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
-      projectId: task.projectId,
-      entityType: "task",
-      entityId: args.taskId,
-      operation: "update",
-    });
   },
 });
 
@@ -401,14 +526,6 @@ export const updateTaskContent = mutation({
           details: { title: task.title },
           entityId: args.taskId,
           entityType: "task",
-        });
-
-        // Auto-indexing trigger for content update
-        ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
-          projectId: task.projectId,
-          entityType: "task",
-          entityId: args.taskId,
-          operation: "update",
         });
     }
 });

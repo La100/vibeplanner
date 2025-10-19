@@ -51,9 +51,7 @@ export const getProjectNotes = query({
 
         const notes = await ctx.db
             .query("notes")
-            .withIndex("by_project_and_archived", (q) =>
-                q.eq("projectId", args.projectId).eq("isArchived", false)
-            )
+            .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
             .order("desc")
             .collect();
 
@@ -114,15 +112,6 @@ export const createNote = mutation({
             createdBy: identity.subject,
             createdAt: now,
             updatedAt: now,
-            isArchived: false,
-        });
-
-        // Auto-indexing trigger
-        ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
-            projectId: args.projectId,
-            entityType: "note",
-            entityId: noteId,
-            operation: "create",
         });
 
         return noteId;
@@ -171,23 +160,11 @@ export const updateNote = mutation({
             updatedAt: Date.now(),
         });
 
-        // Trigger AI re-indexing for the updated note if project is indexed
-        const project = await ctx.db.get(note.projectId);
-        // No indexing needed with 1M context - data is always fresh!
-
-        // Auto-indexing trigger
-        ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
-            projectId: note.projectId,
-            entityType: "note",
-            entityId: args.noteId,
-            operation: "update",
-        });
-
         return args.noteId;
     },
 });
 
-// Delete (archive) a note
+// Delete a note
 export const deleteNote = mutation({
     args: { noteId: v.id("notes") },
     handler: async (ctx, args) => {
@@ -219,20 +196,7 @@ export const deleteNote = mutation({
             throw new Error("Permission denied");
         }
 
-        await ctx.db.patch(args.noteId, {
-            isArchived: true,
-            updatedAt: Date.now(),
-        });
-
-        // No indexing needed with 1M context - data is always fresh!
-
-        // Auto-indexing trigger - remove from index when archived
-        ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
-            projectId: note.projectId,
-            entityType: "note",
-            entityId: args.noteId,
-            operation: "delete",
-        });
+        await ctx.db.delete(args.noteId);
 
         return args.noteId;
     },
@@ -250,10 +214,6 @@ export const getNote = query({
         const hasAccess = await hasProjectAccess(ctx, note.projectId);
         if (!hasAccess) {
             throw new Error("Access denied");
-        }
-
-        if (note.isArchived) {
-            return null;
         }
 
         // Get user details
@@ -275,22 +235,18 @@ export const getNote = query({
     },
 });
 
-// Internal function for AI indexing
 export const getNotesForIndexing = internalQuery({
     args: { projectId: v.id("projects") },
     handler: async (ctx, args) => {
         const notes = await ctx.db
             .query("notes")
-            .withIndex("by_project_and_archived", (q) =>
-                q.eq("projectId", args.projectId).eq("isArchived", false)
-            )
+            .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
             .collect();
 
         return notes;
     },
 });
 
-// Get single note for AI indexing
 export const getNoteById = internalQuery({
     args: { noteId: v.id("notes") },
     handler: async (ctx, args) => {
@@ -299,18 +255,15 @@ export const getNoteById = internalQuery({
     },
 });
 
-// Get notes changed after a specific date for incremental indexing
 export const getNotesChangedAfter = internalQuery({
-    args: { 
+    args: {
         projectId: v.id("projects"),
         since: v.number()
     },
     handler: async (ctx, args) => {
         const notes = await ctx.db
             .query("notes")
-            .withIndex("by_project_and_archived", (q) =>
-                q.eq("projectId", args.projectId).eq("isArchived", false)
-            )
+            .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
             .filter((q) => q.gte(q.field("updatedAt"), args.since))
             .collect();
 

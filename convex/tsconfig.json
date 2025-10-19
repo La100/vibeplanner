@@ -11,6 +11,10 @@
     "jsx": "react-jsx",
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
+    "typeRoots": ["../types", "../node_modules/@types"],
+    "paths": {
+      "pdf-parse/lib/pdf-parse.js": ["../types/pdf-parse"]
+    },
 
     /* These compiler options are required by Convex */
     "target": "ESNext",

@@ -145,13 +145,6 @@ export default defineSchema({
       shopping_list: v.optional(v.object({ visible: v.boolean() })),
       settings: v.optional(v.object({ visible: v.boolean() })),
     })),
-    aiIndexingStatus: v.optional(v.union(
-        v.literal("idle"),
-        v.literal("indexing"),
-        v.literal("done")
-    )),
-    aiLastIndexedAt: v.optional(v.number()),
-    aiIndexedItemsCount: v.optional(v.number()),
   })
     .index("by_team", ["teamId"])
     .index("by_team_and_slug", ["teamId", "slug"])
@@ -225,6 +218,10 @@ export default defineSchema({
     uploadedBy: v.string(), // Clerk user ID
     version: v.number(),
     isLatest: v.boolean(),
+    origin: v.optional(v.union(
+      v.literal("general"),
+      v.literal("ai")
+    )),
     extractedText: v.optional(v.string()), // Text extracted from file
     textExtractionStatus: v.optional(v.union(
       v.literal("pending"),
@@ -401,6 +398,17 @@ export default defineSchema({
     .index("by_org_and_user", ["clerkOrgId", "clerkUserId"])
     .index("by_status", ["status"]),
 
+  aiSettings: defineTable({
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    isEnabled: v.boolean(),
+    indexingEnabled: v.optional(v.boolean()),
+    lastAutoIndexAt: v.optional(v.number()),
+    createdBy: v.string(),
+    enabledAt: v.optional(v.number()),
+    disabledAt: v.optional(v.number()),
+  }).index("by_project", ["projectId"]),
+
   // Users
   users: defineTable({
     clerkUserId: v.string(),
@@ -473,7 +481,7 @@ export default defineSchema({
   // Activity log (Changelog)
   activityLog: defineTable({
     teamId: v.id("teams"),
-    projectId: v.id("projects"),
+    projectId: v.optional(v.id("projects")),
     taskId: v.optional(v.id("tasks")), // Task-specific activity
     userId: v.string(), // Clerk User ID
     actionType: v.string(), // e.g. "task.create", "task.update", "task.status_change", "file.upload", "comment.add"
@@ -481,7 +489,6 @@ export default defineSchema({
     entityId: v.string(), // ID of related object (e.g. taskId)
     entityType: v.optional(v.string()), // Type of entity (e.g. "task", "file", "comment")
   })
-    .index("by_project", ["projectId"])
     .index("by_team", ["teamId"])
     .index("by_user", ["userId"])
     .index("by_task", ["taskId"])
@@ -646,12 +653,11 @@ export default defineSchema({
     createdBy: v.string(), // Clerk user ID
     createdAt: v.number(),
     updatedAt: v.number(),
-    isArchived: v.boolean(),
+    isArchived: v.optional(v.boolean()),
   })
     .index("by_project", ["projectId"])
     .index("by_team", ["teamId"])
-    .index("by_created_by", ["createdBy"])
-    .index("by_project_and_archived", ["projectId", "isArchived"]),
+    .index("by_created_by", ["createdBy"]),
 
   // AI Token Usage Tracking
   aiTokenUsage: defineTable({
@@ -723,22 +729,6 @@ export default defineSchema({
     .index("by_team", ["teamId"])
     .index("by_project_and_active", ["projectId", "isActive"]),
 
-  // AI Settings per project
-  aiSettings: defineTable({
-    projectId: v.id("projects"),
-    teamId: v.id("teams"),
-    isEnabled: v.boolean(), // Whether AI RAG is enabled for this project
-    indexingEnabled: v.optional(v.boolean()), // Whether indexing is enabled for this project
-    createdBy: v.string(), // Clerk user ID who enabled AI
-    enabledAt: v.optional(v.number()),
-    disabledAt: v.optional(v.number()),
-    lastAutoIndexAt: v.optional(v.number()), // Timestamp of last auto-index operation
-  })
-    .index("by_project", ["projectId"])
-    .index("by_team", ["teamId"])
-    .index("by_enabled", ["isEnabled"])
-    .index("by_indexing_enabled", ["indexingEnabled"]),
-
   // AI Chat Threads - conversation sessions
   aiThreads: defineTable({
     threadId: v.string(), // Unique thread identifier
@@ -747,6 +737,7 @@ export default defineSchema({
     userClerkId: v.string(), // User who started the thread
     title: v.optional(v.string()), // Optional thread title
     lastMessageAt: v.number(), // Timestamp of last message
+    lastResponseId: v.optional(v.string()), // OpenAI Response ID (not currently used)
   })
     .index("by_thread_id", ["threadId"])
     .index("by_project", ["projectId"])
@@ -769,4 +760,26 @@ export default defineSchema({
   })
     .index("by_thread", ["threadId"])
     .index("by_thread_and_index", ["threadId", "messageIndex"]),
+
+  // AI Function Calls - tracks function calls for threading continuity
+  aiFunctionCalls: defineTable({
+    threadId: v.string(), // Reference to aiThreads
+    projectId: v.id("projects"),
+    responseId: v.string(), // OpenAI Response ID that generated this call
+    callId: v.string(), // OpenAI call_id for the function call
+    functionName: v.string(), // Name of the function called
+    arguments: v.string(), // JSON stringified arguments
+    result: v.optional(v.string()), // JSON stringified result after confirmation
+    status: v.union(
+      v.literal("pending"), // Waiting for user confirmation
+      v.literal("confirmed"), // User confirmed, executed
+      v.literal("rejected"), // User rejected
+      v.literal("replayed"), // Already replayed in a subsequent message
+    ),
+    createdAt: v.number(),
+    confirmedAt: v.optional(v.number()),
+  })
+    .index("by_thread", ["threadId"])
+    .index("by_thread_and_status", ["threadId", "status"])
+    .index("by_response_id", ["responseId"]),
 });

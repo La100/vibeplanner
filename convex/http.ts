@@ -1,9 +1,56 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { internal, api } from "./_generated/api";
 import handleClerkWebhook from "./clerk";
 
 const http = httpRouter();
+
+http.route({
+  path: "/ai/stream",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await ctx.auth.getUserIdentity();
+      if (!identity) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
+      const body = await request.json();
+
+      const {
+        projectId,
+        threadId,
+        message,
+        userClerkId,
+        fileId,
+      } = body ?? {};
+
+      if (!projectId || !message || !userClerkId) {
+        return new Response("Missing required fields", { status: 400 });
+      }
+
+      // Call streaming handler action to prepare data
+      const initResult = await ctx.runAction(api.ai.longContext.chatWithLongContextAgent, {
+        projectId,
+        threadId,
+        message,
+        userClerkId,
+        fileId,
+      });
+
+      return new Response(JSON.stringify(initResult), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache",
+        },
+      });
+    } catch (error) {
+      console.error("AI stream error:", error);
+      return new Response("Internal Server Error", { status: 500 });
+    }
+  }),
+});
 
 http.route({
   path: "/clerk",

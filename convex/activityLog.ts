@@ -9,7 +9,7 @@ import { internal } from "./_generated/api";
 export const logActivity = internalMutation({
   args: {
     teamId: v.id("teams"),
-    projectId: v.id("projects"),
+    projectId: v.optional(v.id("projects")),
     taskId: v.optional(v.id("tasks")),
     actionType: v.string(),
     details: v.any(),
@@ -52,7 +52,7 @@ export const getForProject = query({
 
     const activities = await ctx.db
       .query("activityLog")
-      .withIndex("by_project", (q) => q.eq("projectId", projectId))
+      .filter((q) => q.eq(q.field("projectId"), projectId))
       .order("desc")
       .take(100); // Get the 100 most recent activities
 

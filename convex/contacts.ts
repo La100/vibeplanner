@@ -184,9 +184,14 @@ export const createContact = mutation({
       isActive: true,
     });
 
-    // Auto-indexing trigger - trigger for all projects that might use this contact
-    // Since we don't know which projects will use this contact yet, we can't trigger specific projects
-    // This contact will be indexed when it's assigned to a project
+    await ctx.runMutation(internal.activityLog.logActivity, {
+      teamId: team._id,
+      projectId: undefined,
+      actionType: "contact.create",
+      entityId: contactId,
+      entityType: "contact",
+      details: { name: args.name },
+    });
 
     return contactId;
   },
@@ -258,22 +263,14 @@ export const updateContact = mutation({
       notes: args.notes,
     });
 
-    // Auto-indexing trigger - trigger re-index for all projects using this contact
-    const projectContacts = await ctx.db
-      .query("projectContacts")
-      .withIndex("by_contact", (q) => q.eq("contactId", args.contactId))
-      .filter(q => q.eq(q.field("isActive"), true))
-      .collect();
-
-    // Trigger auto-indexing for each project that uses this contact
-    for (const projectContact of projectContacts) {
-      ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
-        projectId: projectContact.projectId,
-        entityType: "contact",
-        entityId: args.contactId,
-        operation: "update",
-      });
-    }
+    await ctx.runMutation(internal.activityLog.logActivity, {
+      teamId: contact.teamId,
+      projectId: undefined,
+      actionType: "contact.update",
+      entityId: args.contactId,
+      entityType: "contact",
+      details: { name: contact.name },
+    });
 
     return args.contactId;
   },
@@ -312,24 +309,15 @@ export const deleteContact = mutation({
       throw new Error("Access denied");
     }
 
-    // Auto-indexing trigger BEFORE deletion - trigger for all projects using this contact
-    const projectContacts = await ctx.db
-      .query("projectContacts")
-      .withIndex("by_contact", (q) => q.eq("contactId", args.contactId))
-      .filter(q => q.eq(q.field("isActive"), true))
-      .collect();
+    await ctx.runMutation(internal.activityLog.logActivity, {
+      teamId: contact.teamId,
+      projectId: undefined,
+      actionType: "contact.archive",
+      entityId: args.contactId,
+      entityType: "contact",
+      details: { name: contact.name },
+    });
 
-    // Trigger auto-indexing for each project that uses this contact
-    for (const projectContact of projectContacts) {
-      ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
-        projectId: projectContact.projectId,
-        entityType: "contact",
-        entityId: args.contactId,
-        operation: "delete",
-      });
-    }
-
-    // Soft delete
     await ctx.db.patch(args.contactId, {
       isActive: false,
     });
@@ -524,7 +512,6 @@ export const removeContactFromProject = mutation({
   },
 });
 
-// Internal function for AI indexing
 export const getContactsForIndexing = internalQuery({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {

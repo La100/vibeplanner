@@ -50,21 +50,24 @@ export const createSurvey = mutation({
       teamId: project.teamId,
       projectId: args.projectId,
       createdBy: identity.subject,
-      status: "active",
+      status: "draft",
       isRequired: args.isRequired,
       allowMultipleResponses: args.allowMultipleResponses,
       startDate: args.startDate,
       endDate: args.endDate,
       targetAudience: args.targetAudience,
       targetCustomerIds: args.targetCustomerIds,
+      updatedAt: Date.now(),
     });
 
-    // Auto-indexing trigger
-    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+    await ctx.runMutation(internal.activityLog.logActivity, {
+      teamId: project.teamId,
       projectId: args.projectId,
-      entityType: "survey",
+      
+      actionType: "survey.create",
       entityId: surveyId,
-      operation: "create",
+      entityType: "survey",
+      details: { title: args.title },
     });
 
     return surveyId;
@@ -225,15 +228,17 @@ export const updateSurvey = mutation({
     const { surveyId, ...updates } = args;
     await ctx.db.patch(surveyId, { ...updates, updatedAt: Date.now() });
 
-    // Auto-indexing trigger
-    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+    await ctx.runMutation(internal.activityLog.logActivity, {
+      teamId: survey.teamId,
       projectId: survey.projectId,
+      
+      actionType: "survey.update",
+      entityId: args.surveyId,
       entityType: "survey",
-      entityId: surveyId,
-      operation: "update",
+      details: { title: survey.title },
     });
 
-    return { success: true };
+    return args.surveyId;
   },
 });
 
@@ -262,6 +267,16 @@ export const deleteSurvey = mutation({
       throw new Error("Only admins can delete surveys");
     }
 
+    await ctx.runMutation(internal.activityLog.logActivity, {
+      teamId: survey.teamId,
+      projectId: survey.projectId,
+      
+      actionType: "survey.delete",
+      entityId: args.surveyId,
+      entityType: "survey",
+      details: { title: survey.title },
+    });
+
     // Delete all related data
     const questions = await ctx.db
       .query("surveyQuestions")
@@ -278,25 +293,6 @@ export const deleteSurvey = mutation({
       .withIndex("by_survey", q => q.eq("surveyId", args.surveyId))
       .collect();
 
-    // Auto-indexing trigger BEFORE deletion
-    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
-      projectId: survey.projectId,
-      entityType: "survey",
-      entityId: args.surveyId,
-      operation: "delete",
-    });
-
-    // Auto-indexing trigger BEFORE deletion for survey responses
-    for (const response of responses) {
-      ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
-        projectId: survey.projectId,
-        entityType: "survey_response",
-        entityId: response._id,
-        operation: "delete",
-      });
-    }
-
-    // Delete in correct order
     await Promise.all(answers.map(answer => ctx.db.delete(answer._id)));
     await Promise.all(responses.map(response => ctx.db.delete(response._id)));
     await Promise.all(questions.map(question => ctx.db.delete(question._id)));
@@ -363,6 +359,16 @@ export const addQuestion = mutation({
       order: maxOrder + 1,
     });
 
+    await ctx.runMutation(internal.activityLog.logActivity, {
+      teamId: survey.teamId,
+      projectId: survey.projectId,
+      
+      actionType: "survey.question.create",
+      entityId: questionId,
+      entityType: "survey_question",
+      details: { surveyTitle: survey.title, questionText: args.questionText },
+    });
+
     return questionId;
   },
 });
@@ -382,6 +388,8 @@ export const updateQuestion = mutation({
       v.literal("file")
     )),
     isRequired: v.optional(v.boolean()),
+    options: v.optional(v.array(v.string())),
+    order: v.optional(v.number()),
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -414,7 +422,17 @@ export const updateQuestion = mutation({
     const { questionId, ...updates } = args;
     await ctx.db.patch(questionId, updates);
 
-    return { success: true };
+    await ctx.runMutation(internal.activityLog.logActivity, {
+      teamId: survey.teamId,
+      projectId: survey.projectId,
+      
+      actionType: "survey.question.update",
+      entityId: args.questionId,
+      entityType: "survey_question",
+      details: { surveyTitle: survey.title, questionText: question.questionText },
+    });
+
+    return args.questionId;
   },
 });
 
@@ -447,6 +465,16 @@ export const deleteQuestion = mutation({
     if (!teamMember || (teamMember.role !== "admin" && teamMember.role !== "member")) {
       throw new Error("Insufficient permissions to delete question");
     }
+
+    await ctx.runMutation(internal.activityLog.logActivity, {
+      teamId: survey.teamId,
+      projectId: survey.projectId,
+      
+      actionType: "survey.question.delete",
+      entityId: args.questionId,
+      entityType: "survey_question",
+      details: { surveyTitle: survey.title, questionText: question.questionText },
+    });
 
     // Delete related answers first
     const answers = await ctx.db
@@ -621,14 +649,6 @@ export const submitSurveyResponse = mutation({
     await ctx.db.patch(args.responseId, {
       isComplete: true,
       submittedAt: Date.now(),
-    });
-
-    // Auto-indexing trigger for completed survey response
-    ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
-      projectId: response.projectId,
-      entityType: "survey_response",
-      entityId: args.responseId,
-      operation: "create", // Treat as create since it's now complete and searchable
     });
 
     return { success: true };

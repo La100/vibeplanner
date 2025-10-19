@@ -1,6 +1,7 @@
 import { v } from "convex/values";
-import { query, mutation, internalQuery } from "./_generated/server";
+import { action, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { Id } from "./_generated/dataModel";
 
 // ====== SHOPPING LIST SECTIONS ======
 
@@ -46,6 +47,21 @@ export const createShoppingListSection = mutation({
       teamId: project.teamId,
       order: existingSections.length,
       createdBy: identity.subject,
+    });
+  },
+});
+
+export const updateShoppingListSection = mutation({
+  args: {
+    sectionId: v.id("shoppingListSections"),
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    await ctx.db.patch(args.sectionId, {
+      name: args.name,
     });
   },
 });
@@ -117,34 +133,41 @@ export const createShoppingListItem = mutation({
         const itemId = await ctx.db.insert("shoppingListItems", {
             name: args.name,
             notes: args.notes,
-            completed: false,
+            quantity: args.quantity,
             buyBefore: args.buyBefore,
             priority: args.priority,
-            imageUrl: args.imageUrl,
-            productLink: args.productLink,
-            supplier: args.supplier,
-            catalogNumber: args.catalogNumber,
-            category: args.category,
-            dimensions: args.dimensions,
-            quantity: args.quantity,
-            unitPrice: args.unitPrice,
-            totalPrice,
-            realizationStatus: args.realizationStatus,
-            sectionId: args.sectionId,
             projectId: args.projectId,
             teamId: project.teamId,
             createdBy: identity.subject,
-            assignedTo: args.assignedTo,
+            assignedTo: args.assignedTo || undefined,
+            supplier: args.supplier || undefined,
+            category: args.category || undefined,
+            realizationStatus: args.realizationStatus,
+            sectionId: args.sectionId || null,
+            unitPrice: args.unitPrice || undefined,
+            totalPrice: totalPrice,
+            catalogNumber: args.catalogNumber || undefined,
+            productLink: args.productLink || undefined,
+            imageUrl: args.imageUrl || undefined,
+            updatedAt: Date.now(),
+            dimensions: args.dimensions || undefined,
+            completed: false,
         });
 
-        // Auto-indexing trigger
-        ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+        await ctx.runMutation(internal.activityLog.logActivity, {
+            teamId: project.teamId,
             projectId: args.projectId,
-            entityType: "shopping_item",
+            
+            actionType: "shopping.create",
             entityId: itemId,
-            operation: "create",
+            entityType: "shopping",
+            details: {
+                name: args.name,
+                quantity: args.quantity,
+                status: args.realizationStatus,
+            },
         });
-        
+
         return itemId;
     },
 });
@@ -173,7 +196,6 @@ export const updateShoppingListItem = mutation({
         if (!identity) throw new Error("Not authenticated");
 
         const { itemId, ...updates } = args;
-        
         const item = await ctx.db.get(itemId);
         if (!item) throw new Error("Item not found");
 
@@ -185,15 +207,28 @@ export const updateShoppingListItem = mutation({
              totalPrice = unitPrice ? quantity * unitPrice : undefined;
         }
 
-        await ctx.db.patch(itemId, {...updates, totalPrice, updatedAt: Date.now() });
+        const patch: Record<string, unknown> = {
+          ...updates,
+          totalPrice,
+          updatedAt: Date.now(),
+        };
 
-        // Auto-indexing trigger
-        ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+        await ctx.db.patch(itemId, patch);
+
+        await ctx.runMutation(internal.activityLog.logActivity, {
+            teamId: item.teamId,
             projectId: item.projectId,
-            entityType: "shopping_item",
+            
+            actionType: "shopping.update",
             entityId: args.itemId,
-            operation: "update",
+            entityType: "shopping",
+            details: {
+                name: item.name,
+                updates: patch,
+            },
         });
+
+        return args.itemId;
     },
 });
 
@@ -203,19 +238,27 @@ export const deleteShoppingListItem = mutation({
         const identity = await ctx.auth.getUserIdentity();
         if (!identity) throw new Error("Not authenticated");
 
-        // Get item before deleting for auto-indexing
         const item = await ctx.db.get(args.itemId);
         if (!item) throw new Error("Item not found");
 
-        // Auto-indexing trigger - delete before removing from DB
-        ctx.scheduler.runAfter(0, internal.ai.rag.smartIndexUpdate, {
+        await ctx.runMutation(internal.activityLog.logActivity, {
+            teamId: item.teamId,
             projectId: item.projectId,
-            entityType: "shopping_item",
+            
+            actionType: "shopping.delete",
             entityId: args.itemId,
-            operation: "delete",
+            entityType: "shopping",
+            details: {
+                name: item.name,
+            },
         });
 
-        await ctx.db.delete(args.itemId);
+        await ctx.db.patch(args.itemId, {
+            realizationStatus: "CANCELLED",
+            updatedAt: Date.now(),
+        });
+
+        return args.itemId;
     },
 });
 
@@ -230,7 +273,7 @@ export const getShoppingListItemsByProject = query({
   },
 }); 
 
-export const getShoppingListForIndexing = internalQuery({
+export const getShoppingListForIndexing = query({
   args: {
     projectId: v.id("projects"),
   },
@@ -244,7 +287,7 @@ export const getShoppingListForIndexing = internalQuery({
 
 // ====== HELPER FUNCTIONS FOR INCREMENTAL INDEXING ======
 
-export const getShoppingItemById = internalQuery({
+export const getShoppingItemById = query({
   args: { itemId: v.id("shoppingListItems") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.itemId);
@@ -258,7 +301,7 @@ export const getShoppingListItem = query({
   },
 });
 
-export const getItemsChangedAfter = internalQuery({
+export const getItemsChangedAfter = query({
   args: { 
     projectId: v.id("projects"), 
     since: v.number() 

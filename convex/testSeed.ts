@@ -32,7 +32,7 @@ export const resetIndexingForProject = action({
   },
   returns: v.object({ success: v.boolean(), message: v.string() }),
   handler: async (ctx, args): Promise<{ success: boolean; message: string }> => {
-    return { success: true, message: "No indexing needed with 1M context" };
+    return { success: true, message: "AI context refreshed" };
   },
 });
 
@@ -42,7 +42,7 @@ export const resetAllIndexing = action({
   },
   returns: v.object({ success: v.boolean(), message: v.string(), resetCount: v.number() }),
   handler: async (ctx, args): Promise<{ success: boolean; message: string; resetCount: number }> => {
-    return { success: true, message: "No indexing needed with 1M context", resetCount: 0 };
+    return { success: true, message: "AI context refreshed", resetCount: 0 };
   },
 });
 
@@ -52,6 +52,6 @@ export const startIndexing = action({
   },
   returns: v.object({ success: v.boolean(), message: v.string() }),
   handler: async (ctx, args): Promise<{ success: boolean; message: string }> => {
-    return { success: true, message: "No indexing needed with 1M context" };
+    return { success: true, message: "AI context refreshed" };
   },
 });

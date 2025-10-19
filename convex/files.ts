@@ -30,6 +30,7 @@ export const generateUploadUrlWithCustomKey = mutation({
     projectId: v.id("projects"),
     taskId: v.optional(v.id("tasks")),
     fileName: v.string(),
+    origin: v.optional(v.union(v.literal("ai"), v.literal("general"))),
   },
   returns: v.object({
     url: v.string(),
@@ -58,7 +59,11 @@ export const generateUploadUrlWithCustomKey = mutation({
       throw new Error("No access to this project");
     }
 
-    const contextFolder = args.taskId ? 'tasks' : 'files';
+    const contextFolder = args.origin === "ai"
+      ? "ai"
+      : args.taskId
+      ? "tasks"
+      : "files";
     const path = `${team.slug}/${project.slug}/${contextFolder}`;
 
     // Generate folder structure: team/project/context/uuid-filename
@@ -185,6 +190,7 @@ export const addFile = mutation({
     fileType: v.string(),
     fileSize: v.optional(v.number()),
     moodboardSection: v.optional(v.string()),
+    origin: v.optional(v.union(v.literal("ai"), v.literal("general"))),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -204,6 +210,8 @@ export const addFile = mutation({
     if (!hasAccess || !hasAccess.isActive) {
       throw new Error("No access to this project");
     }
+
+    const origin = args.origin ?? "general";
 
     // Sprawdź czy folder istnieje i należy do projektu
     if (args.folderId) {
@@ -236,6 +244,7 @@ export const addFile = mutation({
       uploadedBy: identity.subject,
       version: 1,
       isLatest: true,
+      origin,
       moodboardSection: args.moodboardSection,
     });
 
@@ -382,9 +391,11 @@ export const getProjectFiles = query({
       .filter(q => q.eq(q.field("folderId"), args.folderId))
       .collect();
 
+    const visibleFiles = files.filter((file) => file.origin !== "ai");
+
     // Generuj URLs dla plików
     const filesWithUrls = await Promise.all(
-      files.map(async (file) => {
+      visibleFiles.map(async (file) => {
         try {
           const url = await r2.getUrl(file.storageId as string, {
             expiresIn: 60 * 60 * 24, // 24 godziny
@@ -438,9 +449,11 @@ export const getProjectContent = query({
       .filter(q => q.eq(q.field("folderId"), args.folderId))
       .collect();
 
+    const visibleFiles = files.filter((file) => file.origin !== "ai");
+
     // Generuj URLs dla plików
     const filesWithUrls = await Promise.all(
-      files.map(async (file) => {
+      visibleFiles.map(async (file) => {
         try {
           const url = await r2.getUrl(file.storageId as string, {
             expiresIn: 60 * 60 * 24, // 24 godziny

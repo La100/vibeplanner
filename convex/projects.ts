@@ -870,36 +870,3 @@ export const updateProjectTaskStatusSettings = mutation({
     return { success: true };
   }
 }); 
-
-export const updateProjectIndexingStatus = internalMutation({
-    args: {
-        projectId: v.id("projects"),
-        status: v.union(
-            v.literal("idle"),
-            v.literal("indexing"),
-            v.literal("done")
-        ),
-    },
-    handler: async (ctx, args) => {
-        await ctx.db.patch(args.projectId, {
-            aiIndexingStatus: args.status,
-        });
-    },
-});
-
-
-export const updateProjectIndexingMetadata = internalMutation({
-    args: {
-        projectId: v.id("projects"),
-        lastIndexedAt: v.number(),
-        indexedItemsCount: v.number(),
-    },
-    returns: v.null(),
-    handler: async (ctx, args) => {
-        await ctx.db.patch(args.projectId, {
-            aiLastIndexedAt: args.lastIndexedAt,
-            aiIndexedItemsCount: args.indexedItemsCount,
-        });
-        return null;
-    },
-}); 

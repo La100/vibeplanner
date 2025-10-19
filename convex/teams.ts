@@ -459,7 +459,6 @@ export const getTeamMembersForIndexing = internalQuery({
       .withIndex("by_team", (q) => q.eq("teamId", project.teamId!))
       .collect();
 
-    // This is not efficient, but for indexing it's fine.
     // It filters members who have the projectId in their projectIds array, or who are not customers (admins, members).
     return members.filter(m => m.projectIds?.includes(args.projectId) || m.role !== 'customer');
   },

@@ -32,7 +32,7 @@ type Note = {
   createdBy: string;
   createdAt: number;
   updatedAt: number;
-  isArchived: boolean;
+  isArchived?: boolean;
   createdByUser: {
     name: string;
     imageUrl?: string;
