@@ -22,7 +22,7 @@ import {
   buildSystemInstructions,
   getCurrentDateTime,
 } from "./helpers/contextBuilder";
-import { getFileUrl, processFileForAI } from "./helpers/fileProcessor";
+import { prepareMessageWithFile, type FileMetadataForHistory } from "./files";
 import type { ProjectContextSnapshot } from "./types";
 import { AI_MODEL, calculateCost } from "./config";
 import { webcrypto } from "crypto";
@@ -32,41 +32,21 @@ if (!(globalThis as any).crypto) {
   (globalThis as any).crypto = webcrypto;
 }
 
-const MIN_MESSAGE_LENGTH_FOR_CONTEXT = 120;
+const normalizeDisplayMode = (mode?: string | null): "full" | "recent" | undefined => {
+  if (!mode) {
+    return undefined;
+  }
 
-const LONG_CONTEXT_KEYWORDS: string[] = [
-  "task",
-  "tasks",
-  "zadanie",
-  "zadań",
-  "note",
-  "notes",
-  "notatka",
-  "notatki",
-  "shopping",
-  "zakup",
-  "survey",
-  "ankieta",
-  "contact",
-  "kontakt",
-  "plan",
-  "project",
-  "projekt",
-  "deadline",
-  "termin",
-  "assign",
-  "przydziel",
-  "status",
-  "update",
-  "summary",
-  "podsumowanie",
-];
+  const normalized = mode.toLowerCase();
+  if (
+    normalized.includes("advanced") ||
+    normalized.includes("long") ||
+    normalized.includes("full")
+  ) {
+    return "full";
+  }
 
-const shouldIncludeLongContext = (message: string): boolean => {
-  const normalized = message.trim().toLowerCase();
-  if (normalized.length === 0) return false;
-  if (normalized.length >= MIN_MESSAGE_LENGTH_FOR_CONTEXT) return true;
-  return LONG_CONTEXT_KEYWORDS.some((keyword) => normalized.includes(keyword));
+  return "recent";
 };
 
 export const chatWithAgent = action({
@@ -111,6 +91,8 @@ export const chatWithAgent = action({
           data: v.any(),
           updates: v.optional(v.any()),
           originalItem: v.optional(v.any()),
+          selection: v.optional(v.any()),
+          titleChanges: v.optional(v.any()),
           functionCall: v.optional(
             v.object({
               callId: v.string(),
@@ -127,7 +109,11 @@ export const chatWithAgent = action({
     console.log("🚀 Convex Agent chat called with fileId:", args.fileId);
 
     const startTime = Date.now();
-    const includeLongContext = shouldIncludeLongContext(args.message);
+
+    // No longer loading all data upfront - AI uses search tools on-demand instead
+    const includeLongContext = false;
+    const agentModeIdentifier = includeLongContext ? "convex_agent_advanced" : "convex_agent";
+
     let snapshot: ProjectContextSnapshot | null = null;
 
     // Lazy snapshot loader
@@ -208,35 +194,23 @@ export const chatWithAgent = action({
     if (longContextSnapshot) {
       userMessage = `CONTEXT:\n${longContextSnapshot}\n\nUSER MESSAGE:\n${args.message}`;
     }
+    let userMessageContent: Array<
+      { type: "text"; text: string } | { type: "image"; image: string; mediaType?: string }
+    > = [{ type: "text", text: userMessage }];
+    let fileMetadata: FileMetadataForHistory | undefined;
 
     // Handle file if provided
     if (args.fileId) {
-      // Ensure this action stays in the Node runtime when using Node APIs inside try/catch.
       "use node";
       console.log(`🔍 Processing file: ${args.fileId}`);
-      const fileId = (typeof args.fileId === "string" ? args.fileId : args.fileId) as any;
-      const file = await ctx.runQuery(api.files.getFileById, { fileId });
-
-      if (file) {
-        console.log(`📁 File details: name=${file.name}, mimeType=${file.mimeType}, size=${file.size}`);
-        const fileUrl = await getFileUrl(file, ctx);
-
-        if (fileUrl) {
-          try {
-            userMessage = await processFileForAI(
-              file,
-              fileUrl,
-              userMessage,
-            );
-            console.log("📄 File processed for AI prompt");
-          } catch (fileProcessingError) {
-            console.error("Failed to process file for AI:", fileProcessingError);
-            userMessage = `${userMessage}\n\n[User attached file: ${file.name} (${file.mimeType}) - processing failed, please ask for specific content.]`;
-          }
-        } else {
-          userMessage = `${userMessage}\n\n[User attached file: ${file.name} (${file.mimeType}) - unable to generate download URL.]`;
-        }
-      }
+      const result = await prepareMessageWithFile({
+        ctx,
+        fileId: (typeof args.fileId === "string" ? args.fileId : (args.fileId as any)) as string,
+        baseMessage: userMessage,
+      });
+      userMessage = result.message;
+      userMessageContent = result.content;
+      fileMetadata = result.fileMetadata;
     }
 
     console.log("🧵 Convex Agent mode | Long context:", includeLongContext ? "enabled" : "skipped");
@@ -244,6 +218,8 @@ export const chatWithAgent = action({
     try {
       // Create the agent with system instructions and usage tracking
       const agent = createVibePlannerAgent(systemInstructions, {
+        projectId: args.projectId,
+        runAction: ctx.runAction,
         usageHandler: async (ctx, usageData) => {
           // Track token usage automatically
           const inputTokens = usageData.usage?.promptTokens || 0;
@@ -261,7 +237,7 @@ export const chatWithAgent = action({
             outputTokens,
             totalTokens,
             contextSize: longContextSnapshot.length,
-            mode: "convex_agent_advanced",
+            mode: agentModeIdentifier,
             estimatedCostCents: Math.round(calculateCost(usageData.model || AI_MODEL, inputTokens, outputTokens) * 100),
             responseTimeMs: Date.now() - startTime,
             success: true,
@@ -287,7 +263,12 @@ export const chatWithAgent = action({
         console.log("🔄 Attempting to continue thread:", actualThreadId);
         try {
           result = await agent.generateText(ctx, { threadId: actualThreadId as any }, {
-            prompt: userMessage,
+            messages: [
+              {
+                role: "user",
+                content: userMessageContent,
+              },
+            ],
           });
         } catch (e) {
           // If continuing fails (invalid or expired ID), create new thread
@@ -298,7 +279,12 @@ export const chatWithAgent = action({
           actualThreadId = threadId;
 
           result = await agent.generateText(ctx, { threadId: actualThreadId }, {
-            prompt: userMessage,
+            messages: [
+              {
+                role: "user",
+                content: userMessageContent,
+              },
+            ],
           });
         }
       } else {
@@ -310,9 +296,24 @@ export const chatWithAgent = action({
         actualThreadId = threadId;
 
         result = await agent.generateText(ctx, { threadId: actualThreadId }, {
-          prompt: userMessage,
+          messages: [
+            {
+              role: "user",
+              content: userMessageContent,
+            },
+          ],
         });
       }
+
+      if (!actualThreadId) {
+        throw new Error("Agent did not return a threadId for chat");
+      }
+
+      await ctx.runMutation(internal.ai.threads.getOrCreateThread, {
+        threadId: actualThreadId,
+        projectId: args.projectId,
+        userClerkId: args.userClerkId,
+      });
 
       const responseTime = Date.now() - startTime;
 
@@ -322,6 +323,448 @@ export const chatWithAgent = action({
 
       // Process tool calls to create pending items
       const pendingItems: any[] = [];
+      const taskCache = new Map<string, any>();
+
+      const getTaskDetails = async (taskId: string) => {
+        if (!taskCache.has(taskId)) {
+          try {
+            const taskDoc = await ctx.runQuery(internal.rag.getTaskById, {
+              taskId: taskId as any,
+            });
+            taskCache.set(taskId, taskDoc);
+          } catch (error) {
+            console.error("Failed to fetch task details for bulk edit preview:", error);
+            taskCache.set(taskId, null);
+          }
+        }
+        return taskCache.get(taskId);
+      };
+
+      const shoppingCache = new Map<string, any>();
+      const getShoppingItemDetails = async (itemId: string) => {
+        if (!shoppingCache.has(itemId)) {
+          try {
+            const itemDoc = await ctx.runQuery(internal.rag.getShoppingItemById, {
+              itemId: itemId as any,
+            });
+            shoppingCache.set(itemId, itemDoc);
+          } catch (error) {
+            console.error("Failed to fetch shopping item details for bulk edit preview:", error);
+            shoppingCache.set(itemId, null);
+          }
+        }
+        return shoppingCache.get(itemId);
+      };
+
+      const processTaskBulkEditResult = async (parsedOutput: any, toolResult: any) => {
+        const rawData = parsedOutput?.data ?? {};
+        const tasksArray = Array.isArray(rawData.tasks) ? rawData.tasks : [];
+        const baseFunctionCall = {
+          callId: toolResult.toolCallId || "",
+          functionName: toolResult.toolName || "",
+          arguments: JSON.stringify(toolResult.input || {}),
+        };
+
+        if (tasksArray.length === 0) {
+          // Fallback to original payload if tasks array missing
+          return [{
+            type: parsedOutput.type,
+            operation: parsedOutput.operation,
+            data: rawData,
+            functionCall: baseFunctionCall,
+          }];
+        }
+
+        const perTaskUpdates: Array<{ taskId: string; updates: Record<string, unknown> }> = tasksArray
+          .map((task: any) => {
+            if (!task || !task.taskId) {
+              return null;
+            }
+            const { taskId, ...updates } = task;
+            return {
+              taskId: String(taskId),
+              updates: updates as Record<string, unknown>,
+            };
+          })
+          .filter(
+            (entry: { taskId: string; updates: Record<string, unknown> } | null): entry is { taskId: string; updates: Record<string, unknown> } =>
+              entry !== null
+          );
+
+        if (perTaskUpdates.length === 0) {
+          return [{
+            type: parsedOutput.type,
+            operation: parsedOutput.operation,
+            data: rawData,
+            functionCall: baseFunctionCall,
+          }];
+        }
+
+        const allowedBulkFields = ["title", "description", "status", "priority", "assignedTo", "tags"];
+        const uniqueFields = new Set<string>();
+        perTaskUpdates.forEach(
+          ({ updates }: { updates: Record<string, unknown> }) => {
+            Object.keys(updates || {}).forEach((key) => {
+              if (updates[key] !== undefined) {
+                uniqueFields.add(key);
+              }
+            });
+          }
+        );
+
+        const aggregatedUpdates: Record<string, unknown> = {};
+        allowedBulkFields.forEach((field) => {
+          let firstValueSet = false;
+          let reference: unknown;
+          let applicable = true;
+
+          for (const { updates } of perTaskUpdates) {
+            if (!(field in updates)) {
+              applicable = false;
+              break;
+            }
+            const value = updates[field];
+            if (!firstValueSet) {
+              reference = value;
+              firstValueSet = true;
+            } else {
+              const areEqual =
+                Array.isArray(reference) && Array.isArray(value)
+                  ? JSON.stringify(reference) === JSON.stringify(value)
+                  : reference === value;
+              if (!areEqual) {
+                applicable = false;
+                break;
+              }
+            }
+          }
+
+          if (applicable && firstValueSet) {
+            aggregatedUpdates[field] = reference;
+          }
+        });
+
+        const aggregatedKeys = new Set(Object.keys(aggregatedUpdates));
+        const shouldUseBulkUpdates =
+          aggregatedKeys.size > 0 &&
+          [...uniqueFields].every((field) => aggregatedKeys.has(field));
+
+        const changeSummaries: string[] = [];
+        const detailedChanges: Array<{
+          taskId: string;
+          original: any;
+          updates: Record<string, unknown>;
+          changeSummary: string;
+        }> = [];
+        const titleChanges: Array<{ taskId?: string; currentTitle?: string; originalTitle?: string; newTitle: string }> = [];
+
+        for (const { taskId, updates } of perTaskUpdates) {
+          const taskDoc = await getTaskDetails(taskId);
+          const currentTitle = taskDoc?.title || taskDoc?.name || "Task";
+
+          const changeParts: string[] = [];
+          if (updates.title !== undefined) {
+            changeParts.push(`title → ${updates.title}`);
+            titleChanges.push({
+              taskId,
+              currentTitle,
+              originalTitle: currentTitle,
+              newTitle: updates.title as string,
+            });
+          }
+          if (updates.status !== undefined) {
+            changeParts.push(`status → ${updates.status}`);
+          }
+          if (updates.priority !== undefined) {
+            changeParts.push(`priority → ${updates.priority}`);
+          }
+          if (updates.assignedTo !== undefined) {
+            changeParts.push(`assignedTo → ${updates.assignedTo}`);
+          }
+          if (updates.tags !== undefined && Array.isArray(updates.tags)) {
+            changeParts.push(`tags → ${(updates.tags as string[]).join(", ")}`);
+          }
+          if (updates.description !== undefined) {
+            changeParts.push("description updated");
+          }
+          if (updates.content !== undefined) {
+            changeParts.push("content updated");
+          }
+          if (updates.dueDate !== undefined) {
+            changeParts.push(`dueDate → ${updates.dueDate}`);
+          }
+          if (changeParts.length > 0) {
+            const summary = `${currentTitle}: ${changeParts.join(", ")}`;
+            changeSummaries.push(summary);
+            if (taskDoc) {
+              detailedChanges.push({
+                taskId,
+                original: taskDoc,
+                updates,
+                changeSummary: summary,
+              });
+            }
+          }
+        }
+
+        if (!shouldUseBulkUpdates) {
+          // Fall back to individual edit items so we don't lose per-task differences
+          const individualItems: any[] = [];
+          for (const entry of perTaskUpdates) {
+            const { taskId, updates } = entry;
+            const taskDoc = await getTaskDetails(taskId);
+            if (!taskDoc) {
+              continue;
+            }
+            const newData = { ...updates };
+            if (!newData.title && taskDoc.title) {
+              newData.title = taskDoc.title;
+            }
+            individualItems.push({
+              type: "task",
+              operation: "edit",
+              data: newData,
+              updates,
+              originalItem: taskDoc,
+              functionCall: baseFunctionCall,
+            });
+          }
+          if (individualItems.length > 0) {
+            return individualItems;
+          }
+        }
+
+        const selectionSource = rawData.selection || {};
+        const selection = {
+          taskIds: perTaskUpdates.map(({ taskId }) => taskId),
+          applyToAll: selectionSource.applyToAll === true,
+          reason: rawData.reason || selectionSource.reason,
+        };
+
+        const changeSummary = changeSummaries;
+
+        return [{
+          type: "task",
+          operation: "bulk_edit",
+          data: {
+            ...rawData,
+            taskIds: selection.taskIds,
+            updates: aggregatedUpdates,
+            changeSummary,
+            tasks: tasksArray,
+            taskDetails: detailedChanges,
+          },
+          updates: aggregatedUpdates,
+          selection,
+          titleChanges,
+          functionCall: baseFunctionCall,
+        }];
+      };
+
+      const processShoppingBulkEditResult = async (parsedOutput: any, toolResult: any) => {
+        const rawData = parsedOutput?.data ?? {};
+        const itemsArray = Array.isArray(rawData.items) ? rawData.items : [];
+        const baseFunctionCall = {
+          callId: toolResult.toolCallId || "",
+          functionName: toolResult.toolName || "",
+          arguments: JSON.stringify(toolResult.input || {}),
+        };
+
+        if (itemsArray.length === 0) {
+          // Fallback to original payload if items array missing
+          return [{
+            type: parsedOutput.type,
+            operation: parsedOutput.operation,
+            data: rawData,
+            functionCall: baseFunctionCall,
+          }];
+        }
+
+        const perItemUpdates: Array<{ itemId: string; updates: Record<string, unknown> }> = itemsArray
+          .map((item: any) => {
+            if (!item || !item.itemId) {
+              return null;
+            }
+            const { itemId, ...updates } = item;
+            return {
+              itemId: String(itemId),
+              updates: updates as Record<string, unknown>,
+            };
+          })
+          .filter(
+            (entry: { itemId: string; updates: Record<string, unknown> } | null): entry is { itemId: string; updates: Record<string, unknown> } =>
+              entry !== null
+          );
+
+        if (perItemUpdates.length === 0) {
+          return [{
+            type: parsedOutput.type,
+            operation: parsedOutput.operation,
+            data: rawData,
+            functionCall: baseFunctionCall,
+          }];
+        }
+
+        const allowedBulkFields = ["name", "notes", "quantity", "priority", "buyBefore", "supplier", "category", "unitPrice"];
+        const uniqueFields = new Set<string>();
+        perItemUpdates.forEach(
+          ({ updates }: { updates: Record<string, unknown> }) => {
+            Object.keys(updates || {}).forEach((key) => {
+              if (updates[key] !== undefined) {
+                uniqueFields.add(key);
+              }
+            });
+          }
+        );
+
+        const aggregatedUpdates: Record<string, unknown> = {};
+        allowedBulkFields.forEach((field) => {
+          let firstValueSet = false;
+          let reference: unknown;
+          let applicable = true;
+
+          for (const { updates } of perItemUpdates) {
+            if (!(field in updates)) {
+              applicable = false;
+              break;
+            }
+            const value = updates[field];
+            if (!firstValueSet) {
+              reference = value;
+              firstValueSet = true;
+            } else {
+              const areEqual =
+                Array.isArray(reference) && Array.isArray(value)
+                  ? JSON.stringify(reference) === JSON.stringify(value)
+                  : reference === value;
+              if (!areEqual) {
+                applicable = false;
+                break;
+              }
+            }
+          }
+
+          if (applicable && firstValueSet) {
+            aggregatedUpdates[field] = reference;
+          }
+        });
+
+        const aggregatedKeys = new Set(Object.keys(aggregatedUpdates));
+        const shouldUseBulkUpdates =
+          aggregatedKeys.size > 0 &&
+          [...uniqueFields].every((field) => aggregatedKeys.has(field));
+
+        const changeSummaries: string[] = [];
+        const detailedChanges: Array<{
+          itemId: string;
+          original: any;
+          updates: Record<string, unknown>;
+          changeSummary: string;
+        }> = [];
+        const nameChanges: Array<{ itemId?: string; currentName?: string; originalName?: string; newName: string }> = [];
+
+        for (const { itemId, updates } of perItemUpdates) {
+          const itemDoc = await getShoppingItemDetails(itemId);
+          const currentName = itemDoc?.name || "Shopping item";
+
+          const changeParts: string[] = [];
+          if (updates.name !== undefined) {
+            changeParts.push(`name → ${updates.name}`);
+            nameChanges.push({
+              itemId,
+              currentName,
+              originalName: currentName,
+              newName: updates.name as string,
+            });
+          }
+          if (updates.quantity !== undefined) {
+            changeParts.push(`quantity → ${updates.quantity}`);
+          }
+          if (updates.priority !== undefined) {
+            changeParts.push(`priority → ${updates.priority}`);
+          }
+          if (updates.supplier !== undefined) {
+            changeParts.push(`supplier → ${updates.supplier}`);
+          }
+          if (updates.category !== undefined) {
+            changeParts.push(`category → ${updates.category}`);
+          }
+          if (updates.unitPrice !== undefined) {
+            changeParts.push(`unitPrice → ${updates.unitPrice}`);
+          }
+          if (updates.notes !== undefined) {
+            changeParts.push("notes updated");
+          }
+          if (updates.buyBefore !== undefined) {
+            changeParts.push(`buyBefore → ${updates.buyBefore}`);
+          }
+          if (changeParts.length > 0) {
+            const summary = `${currentName}: ${changeParts.join(", ")}`;
+            changeSummaries.push(summary);
+            if (itemDoc) {
+              detailedChanges.push({
+                itemId,
+                original: itemDoc,
+                updates,
+                changeSummary: summary,
+              });
+            }
+          }
+        }
+
+        if (!shouldUseBulkUpdates) {
+          // Fall back to individual edit items so we don't lose per-item differences
+          const individualItems: any[] = [];
+          for (const entry of perItemUpdates) {
+            const { itemId, updates } = entry;
+            const itemDoc = await getShoppingItemDetails(itemId);
+            if (!itemDoc) {
+              continue;
+            }
+            const newData = { ...updates };
+            if (!newData.name && itemDoc.name) {
+              newData.name = itemDoc.name;
+            }
+            individualItems.push({
+              type: "shopping",
+              operation: "edit",
+              data: newData,
+              updates,
+              originalItem: itemDoc,
+              functionCall: baseFunctionCall,
+            });
+          }
+          if (individualItems.length > 0) {
+            return individualItems;
+          }
+        }
+
+        const selectionSource = rawData.selection || {};
+        const selection = {
+          itemIds: perItemUpdates.map(({ itemId }) => itemId),
+          applyToAll: selectionSource.applyToAll === true,
+          reason: rawData.reason || selectionSource.reason,
+        };
+
+        const changeSummary = changeSummaries;
+
+        return [{
+          type: "shopping",
+          operation: "bulk_edit",
+          data: {
+            ...rawData,
+            itemIds: selection.itemIds,
+            updates: aggregatedUpdates,
+            changeSummary,
+            items: itemsArray,
+            itemDetails: detailedChanges,
+          },
+          updates: aggregatedUpdates,
+          selection,
+          nameChanges,
+          functionCall: baseFunctionCall,
+        }];
+      };
 
       // Extract tool results from the response
       // In new Convex Agent API, tool results are in result.steps[].content[]
@@ -338,16 +781,37 @@ export const chatWithAgent = action({
 
                 console.log(`🔧 Found tool result: ${item.toolName}`, parsedOutput);
 
-                pendingItems.push({
-                  type: parsedOutput.type,
-                  operation: parsedOutput.operation,
-                  data: parsedOutput.data,
-                  functionCall: {
-                    callId: item.toolCallId || '',
-                    functionName: item.toolName || '',
-                    arguments: JSON.stringify(item.input || {}),
-                  },
-                });
+                // Search tools and other read-only utilities don't return actionable payloads
+                if (!parsedOutput.type) {
+                  continue;
+                }
+
+                if (parsedOutput.type === "task" && parsedOutput.operation === "bulk_edit") {
+                  const transformed = await processTaskBulkEditResult(parsedOutput, item);
+                  for (const transformedEntry of transformed) {
+                    pendingItems.push(transformedEntry);
+                  }
+                } else if (parsedOutput.type === "shopping" && parsedOutput.operation === "bulk_edit") {
+                  const transformed = await processShoppingBulkEditResult(parsedOutput, item);
+                  for (const transformedEntry of transformed) {
+                    pendingItems.push(transformedEntry);
+                  }
+                } else {
+                  pendingItems.push({
+                    type: parsedOutput.type,
+                    operation: parsedOutput.operation,
+                    data: parsedOutput.data,
+                    updates: parsedOutput.updates,
+                    originalItem: parsedOutput.originalItem,
+                    selection: parsedOutput.selection,
+                    titleChanges: parsedOutput.titleChanges,
+                    functionCall: {
+                      callId: item.toolCallId || '',
+                      functionName: item.toolName || '',
+                      arguments: JSON.stringify(item.input || {}),
+                    },
+                  });
+                }
               } catch (e) {
                 console.error("Failed to parse tool output:", e, item.output);
               }
@@ -379,6 +843,16 @@ export const chatWithAgent = action({
         estimatedCostUSD: calculateCost(AI_MODEL, totalInputTokens, totalOutputTokens),
       };
 
+      const trimmedUserMessage = args.message.trim();
+      const persistedUserMessage =
+        trimmedUserMessage.length > 0
+          ? trimmedUserMessage
+          : fileMetadata
+          ? `📎 Attached: ${fileMetadata.fileName ?? "file"}`
+          : "";
+      const displayMode = normalizeDisplayMode(agentModeIdentifier);
+      const responseMode = displayMode ?? agentModeIdentifier;
+
       // Save token usage to database
       await ctx.runMutation(internal.ai.usage.saveTokenUsage, {
         projectId: args.projectId,
@@ -391,17 +865,35 @@ export const chatWithAgent = action({
         outputTokens: tokenUsage.outputTokens,
         totalTokens: tokenUsage.totalTokens,
         contextSize: longContextSnapshot.length,
-        mode: "convex_agent",
+        mode: agentModeIdentifier,
         estimatedCostCents: Math.round(tokenUsage.estimatedCostUSD * 100),
         responseTimeMs: responseTime,
         success: true,
+      });
+
+      await ctx.runMutation(internal.ai.threads.saveMessagesToThread, {
+        threadId: actualThreadId,
+        projectId: args.projectId,
+        userMessage: persistedUserMessage,
+        assistantMessage: aiResponse,
+        tokenUsage,
+        ragContext: longContextSnapshot.length > 0 ? longContextSnapshot : undefined,
+        userMetadata: fileMetadata
+          ? {
+              fileId: fileMetadata.fileId,
+              fileName: fileMetadata.fileName,
+              fileType: fileMetadata.fileType,
+              fileSize: fileMetadata.fileSize,
+            }
+          : undefined,
+        assistantMetadata: displayMode ? { mode: displayMode } : undefined,
       });
 
       return {
         response: aiResponse,
         threadId: actualThreadId,
         tokenUsage,
-        mode: "convex_agent",
+        mode: responseMode,
         contextSize: longContextSnapshot.length,
         pendingItems: pendingItems.length > 0 ? pendingItems : undefined,
       };
@@ -432,7 +924,7 @@ export const chatWithAgent = action({
         response: `Error: ${(error as Error).message}`,
         threadId: args.threadId || `thread_error_${Date.now()}`,
         tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUSD: 0 },
-        mode: "convex_agent",
+        mode: agentModeIdentifier,
         contextSize: longContextSnapshot.length,
         pendingItems: [],
       };

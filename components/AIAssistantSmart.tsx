@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { formatDistanceToNow } from "date-fns";
 
 // Helper function to safely extract survey data
 const extractSurveyData = (data: Record<string, unknown>) => ({
@@ -26,9 +27,10 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { useUser } from "@clerk/nextjs";
 import { useProject } from '@/components/providers/ProjectProvider';
-import { Send, RotateCcw, Loader2, Paperclip, X, Sparkles, Database, Zap, DollarSign, Building, FileText, Image, File } from "lucide-react";
+import { Loader2, Paperclip, X, Building, FileText, Image, File, Plus, SlidersHorizontal, Clock, ArrowUpRight, Square, MessageSquare } from "lucide-react";
 import type { PendingContentItem } from "@/components/AIConfirmationGrid";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -108,6 +110,43 @@ type BulkSurveyData = {
   surveys?: Array<Record<string, unknown>>;
 };
 
+type ChatHistoryEntry = {
+  role: 'user' | 'assistant';
+  content: string;
+  messageIndex?: number;
+  mode?: "full" | "recent";
+  tokenUsage?: { totalTokens: number; estimatedCostUSD: number };
+  fileInfo?: { name: string; size: number; type: string; id: string };
+};
+
+const normalizeModeForDisplay = (mode?: string | null): "full" | "recent" | undefined => {
+  if (!mode) {
+    return undefined;
+  }
+
+  const normalized = mode.toLowerCase();
+  if (
+    normalized === "full" ||
+    normalized.includes("advanced") ||
+    normalized.includes("long") ||
+    normalized.includes("rag")
+  ) {
+    return "full";
+  }
+
+  if (normalized === "recent") {
+    return "recent";
+  }
+
+  return "recent";
+};
+
+const computeNextMessageIndex = (history: ChatHistoryEntry[]) =>
+  history.reduce(
+    (max, entry) => (typeof entry.messageIndex === "number" ? Math.max(max, entry.messageIndex) : max),
+    -1
+  ) + 1;
+
 const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
   items.map((item) => {
     if (item.type === "task") {
@@ -119,6 +158,59 @@ const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
           ...item,
           selection: { ...selection, taskIds: normalizedIds },
           data: { ...item.data, taskIds: normalizedIds },
+        };
+      }
+
+      if (item.operation === "bulk_edit") {
+        const changeSummary = Array.isArray(item.data?.changeSummary)
+          ? (item.data!.changeSummary as string[])
+          : [];
+
+        const count =
+          Array.isArray(item.selection?.taskIds)
+            ? (item.selection!.taskIds as string[]).length
+            : Array.isArray(item.data?.tasks)
+            ? (item.data!.tasks as unknown[]).length
+            : 0;
+
+        const summaryPreview =
+          changeSummary.length > 0
+            ? changeSummary.slice(0, 3).join(" • ")
+            : (() => {
+                const updatesSource = item.updates || (item.data?.updates as Record<string, unknown>) || {};
+                const updateKeys = Object.keys(updatesSource).filter((key) => updatesSource[key] !== undefined);
+                if (updateKeys.length === 0) {
+                  return "Review bulk changes before confirming.";
+                }
+                const labels = updateKeys.map((key) => {
+                  switch (key) {
+                    case "status":
+                      return `Status → ${updatesSource[key]}`;
+                    case "priority":
+                      return `Priority → ${updatesSource[key]}`;
+                    case "assignedTo":
+                      return "Assigned user updated";
+                    case "tags":
+                      return Array.isArray(updatesSource[key])
+                        ? `Tags → ${(updatesSource[key] as string[]).join(", ")}`
+                        : "Tags updated";
+                    case "title":
+                      return `Title → ${updatesSource[key]}`;
+                    case "description":
+                      return "Description updated";
+                    default:
+                      return `${key} updated`;
+                  }
+                });
+                return labels.join(" • ");
+              })();
+
+        return {
+          ...item,
+          display: {
+            title: `Bulk edit ${count || "selected"} task${count === 1 ? "" : "s"}`,
+            description: summaryPreview,
+          },
         };
       }
 
@@ -239,6 +331,56 @@ const expandBulkEditItems = (items: PendingItem[]): PendingItem[] => {
     return items;
   }
 
+  const taskDetails = Array.isArray(item.data?.taskDetails)
+    ? (item.data!.taskDetails as Array<{
+        taskId: string;
+        original?: Record<string, unknown>;
+        updates: Record<string, unknown>;
+        changeSummary?: string;
+      }>)
+    : [];
+
+  if (taskDetails.length > 0) {
+    return taskDetails.map((detail) => {
+      const taskId = detail.taskId;
+      const original = detail.original || {};
+      const updates = detail.updates || {};
+      const taskTitle =
+        (original?.title as string) ||
+        (item.data?.title as string) ||
+        (item.originalItem?.title as string) ||
+        "Task";
+      const description =
+        detail.changeSummary ||
+        Object.entries(updates)
+          .map(([key, value]) => `${key} → ${String(value)}`)
+          .join(" • ") ||
+        "Review task changes before confirming.";
+
+      return {
+        type: 'task' as const,
+        operation: 'edit' as const,
+        data: {
+          ...original,
+          ...updates,
+          taskId,
+        },
+        updates,
+        originalItem: original,
+        selection: {
+          applyToAll: false,
+          taskIds: [taskId],
+        },
+        display: {
+          title: `Update task: ${taskTitle}`,
+          description,
+        },
+        functionCall: item.functionCall,
+        responseId: item.responseId,
+      } satisfies PendingItem;
+    });
+  }
+
   const titleChanges = item.titleChanges || (Array.isArray(item.data.titleChanges)
     ? (item.data.titleChanges as PendingItem['titleChanges'])
     : []);
@@ -302,6 +444,11 @@ const extractBulkUpdates = (item: PendingItem) => {
 const AIAssistantSmart = () => {
   const { user } = useUser();
   const { project } = useProject();
+  const greetingName =
+    user?.firstName ||
+    user?.fullName?.split(" ")[0] ||
+    project?.name ||
+    "there";
   
   // Check if AI is enabled for this project
   const aiSettings = useQuery(
@@ -309,19 +456,14 @@ const AIAssistantSmart = () => {
     project ? { projectId: project._id } : "skip"
   );
   const [message, setMessage] = useState("");
-  const [chatHistory, setChatHistory] = useState<{
-    role: 'user' | 'assistant';
-    content: string;
-    mode?: string;
-    tokenUsage?: { totalTokens: number; estimatedCostUSD: number; };
-    fileInfo?: { name: string; size: number; type: string; id: string; };
-  }[]>([]);
+  const [chatHistory, setChatHistory] = useState<ChatHistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadedFileId, setUploadedFileId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [threadId, setThreadId] = useState<string | undefined>(undefined);
-  const [currentMode, setCurrentMode] = useState<'basic' | 'rag' | null>(null);
+  const [initialThreadSelectionDone, setInitialThreadSelectionDone] = useState(false);
+  const [currentMode, setCurrentMode] = useState<'full' | 'recent' | null>(null);
   const [sessionTokens, setSessionTokens] = useState({ total: 0, cost: 0 });
   const [pendingItems, setPendingItems] = useState<PendingItem[]>([]); // New unified system
   const [currentItemIndex, setCurrentItemIndex] = useState(0);
@@ -333,6 +475,233 @@ const AIAssistantSmart = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const userThreads = useQuery(
+    api.ai.threads.listThreadsForUser,
+    project && user?.id
+      ? { projectId: project._id, userClerkId: user.id }
+      : "skip"
+  );
+  const persistedMessages = useQuery(
+    api.ai.threads.listThreadMessages,
+    project && threadId && user?.id
+      ? { threadId, projectId: project._id, userClerkId: user.id }
+      : "skip"
+  );
+  const quickPrompts = [
+    {
+      label: "Plan",
+      prompt: "Sketch a focused renovation plan for this week with the key tasks and owners.",
+    },
+    {
+      label: "Budget",
+      prompt: "Review our remodeling budget and flag any cost overruns we should tackle.",
+    },
+    {
+      label: "Supplies",
+      prompt: "Prepare a materials shopping list for the upcoming work sessions.",
+    },
+    {
+      label: "Update",
+      prompt: "Draft a client update summarizing today’s progress on the remodel.",
+    },
+    {
+      label: "Risks",
+      prompt: "List potential blockers that might delay the renovation timeline.",
+    },
+  ];
+  
+  const handleQuickPromptClick = (prompt: string) => {
+    setMessage(prompt);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  const handleThreadSelect = (selectedThreadId: string) => {
+    if (selectedThreadId === threadId) {
+      return;
+    }
+    handleStopResponse();
+    setInitialThreadSelectionDone(true);
+    setThreadId(selectedThreadId);
+    setChatHistory([]);
+    setMessage("");
+    setSelectedFile(null);
+    setUploadedFileId(null);
+    setPendingItems([]);
+    setCurrentItemIndex(0);
+    setShowConfirmationGrid(false);
+    setIsConfirmationDialogOpen(false);
+    setEditingItemIndex(null);
+    setSessionTokens({ total: 0, cost: 0 });
+    setCurrentMode(null);
+    setIsUploading(false);
+  };
+
+  const handleStopResponse = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && abortControllerRef.current) {
+        event.preventDefault();
+        handleStopResponse();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleStopResponse]);
+
+  useEffect(() => {
+    if (initialThreadSelectionDone) {
+      return;
+    }
+    if (!threadId && userThreads && userThreads.length > 0) {
+      setThreadId(userThreads[0].threadId);
+      setInitialThreadSelectionDone(true);
+    }
+  }, [userThreads, threadId, initialThreadSelectionDone]);
+
+  useEffect(() => {
+    if (!persistedMessages) {
+      return;
+    }
+
+    setChatHistory((prev) => {
+      const maxPrevIndex = prev.reduce(
+        (max, entry) => (typeof entry.messageIndex === "number" ? Math.max(max, entry.messageIndex) : max),
+        -1
+      );
+      const maxServerIndex = persistedMessages.reduce(
+        (max, entry) => Math.max(max, entry.messageIndex),
+        -1
+      );
+
+      if (maxServerIndex < maxPrevIndex) {
+        return prev;
+      }
+
+      const formatted: ChatHistoryEntry[] = persistedMessages.map((entry) => {
+        const metadata = entry.metadata;
+        const fileInfo =
+          metadata?.fileId
+            ? {
+                id: metadata.fileId,
+                name: metadata.fileName ?? "Attachment",
+                type: metadata.fileType ?? "application/octet-stream",
+                size: metadata.fileSize ?? 0,
+              }
+            : undefined;
+
+        return {
+          role: entry.role,
+          content: entry.content,
+          messageIndex: entry.messageIndex,
+          mode: normalizeModeForDisplay(metadata?.mode),
+          tokenUsage: entry.tokenUsage
+            ? {
+                totalTokens: entry.tokenUsage.totalTokens,
+                estimatedCostUSD: entry.tokenUsage.estimatedCostUSD,
+              }
+            : undefined,
+          fileInfo,
+        };
+      });
+
+      const isSame =
+        prev.length === formatted.length &&
+        prev.every((current, index) => {
+          const next = formatted[index];
+          if (!next) {
+            return false;
+          }
+
+          const currentFileId = current.fileInfo?.id ?? null;
+          const nextFileId = next.fileInfo?.id ?? null;
+          const currentTokens = current.tokenUsage?.totalTokens ?? null;
+          const nextTokens = next.tokenUsage?.totalTokens ?? null;
+          const currentCost = current.tokenUsage?.estimatedCostUSD ?? null;
+          const nextCost = next.tokenUsage?.estimatedCostUSD ?? null;
+
+          return (
+            current.role === next.role &&
+            current.content === next.content &&
+            current.messageIndex === next.messageIndex &&
+            current.mode === next.mode &&
+            currentFileId === nextFileId &&
+            currentTokens === nextTokens &&
+            currentCost === nextCost
+          );
+        });
+
+      if (isSame) {
+        return prev;
+      }
+
+      return formatted;
+    });
+  }, [persistedMessages]);
+
+  useEffect(() => {
+    if (!persistedMessages) {
+      return;
+    }
+
+    const totals = persistedMessages.reduce(
+      (acc, entry) => {
+        if (entry.role === "assistant" && entry.tokenUsage) {
+          acc.total += entry.tokenUsage.totalTokens;
+          acc.cost += entry.tokenUsage.estimatedCostUSD;
+        }
+        return acc;
+      },
+      { total: 0, cost: 0 }
+    );
+
+    setSessionTokens(totals);
+  }, [persistedMessages]);
+
+  useEffect(() => {
+    if (chatHistory.length === 0) {
+      if (currentMode !== null) {
+        setCurrentMode(null);
+      }
+      return;
+    }
+
+    for (let i = chatHistory.length - 1; i >= 0; i--) {
+      const entry = chatHistory[i];
+      if (entry.role === "assistant" && entry.mode) {
+        if (entry.mode !== currentMode) {
+          setCurrentMode(entry.mode);
+        }
+        return;
+      }
+    }
+  }, [chatHistory, currentMode]);
+  const userInitial =
+    (
+      user?.firstName?.[0] ??
+      user?.fullName?.[0] ??
+      user?.emailAddresses?.[0]?.emailAddress?.[0] ??
+      project?.name?.[0] ??
+      "U"
+    )
+      ?.toUpperCase?.() ?? "U";
+  
+  const TypingIndicator = () => (
+    <div className="flex items-center justify-start">
+      <span className="sr-only">Assistant is typing</span>
+      <div className="relative flex h-4 w-4 items-center justify-center">
+        <span className="absolute h-4 w-4 animate-ping rounded-full bg-primary/30" />
+        <span className="relative h-2.5 w-2.5 rounded-full bg-primary shadow-[0_0_12px] shadow-primary/50" />
+      </div>
+    </div>
+  );
   
   // Helper function to get file thumbnail/preview
   const getFileIcon = (fileType: string) => {
@@ -347,14 +716,14 @@ const AIAssistantSmart = () => {
     const FileIcon = getFileIcon(fileInfo.type);
 
     return (
-      <div className="mt-2 p-2 bg-muted/50 rounded-lg border border-border/20">
+      <div className="mt-2 rounded-lg border border-border bg-card p-2">
         <div className="flex items-start gap-2">
           {fileInfo.type.startsWith('image/') && fileWithURL?.url ? (
             <div className="flex-shrink-0">
               <img
                 src={fileWithURL.url}
                 alt={fileInfo.name}
-                className="w-16 h-16 object-cover rounded border"
+                className="h-14 w-14 rounded-md border border-border/60 object-cover"
                 onError={(e) => {
                   // Fallback to icon on error
                   e.currentTarget.style.display = 'none';
@@ -364,23 +733,23 @@ const AIAssistantSmart = () => {
                   }
                 }}
               />
-              <div className="w-16 h-16 hidden bg-muted border rounded items-center justify-center">
-                <FileIcon className="h-6 w-6 text-muted-foreground" />
+              <div className="hidden h-14 w-14 items-center justify-center rounded-md border border-border bg-muted">
+                <FileIcon className="h-5 w-5 text-muted-foreground" />
               </div>
             </div>
           ) : (
-            <div className="flex-shrink-0 w-16 h-16 bg-muted border rounded flex items-center justify-center">
-              <FileIcon className="h-6 w-6 text-muted-foreground" />
+            <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-md border border-border bg-muted">
+              <FileIcon className="h-5 w-5 text-muted-foreground" />
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium truncate" title={fileInfo.name}>
+            <p className="truncate text-xs font-medium text-foreground" title={fileInfo.name}>
               {fileInfo.name}
             </p>
             <p className="text-xs text-muted-foreground">
               {(fileInfo.size / 1024 / 1024).toFixed(1)} MB
             </p>
-            <p className="text-xs text-muted-foreground capitalize">
+            <p className="text-xs capitalize text-muted-foreground/80">
               {fileInfo.type.split('/')[1] || fileInfo.type}
             </p>
           </div>
@@ -415,6 +784,12 @@ const AIAssistantSmart = () => {
   const deleteShoppingSection = useMutation(api.shopping.deleteShoppingListSection);
   const deleteSurvey = useMutation(api.surveys.deleteSurvey);
   const deleteContact = useMutation(api.contacts.deleteContact);
+
+  // Query for shopping sections
+  const shoppingSections = useQuery(
+    api.shopping.getShoppingListSections,
+    project?._id ? { projectId: project._id } : "skip"
+  );
   const generateUploadUrl = useMutation(api.files.generateUploadUrlWithCustomKey);
   const addFile = useMutation(api.files.addFile);
   const bulkEditConfirmedTasks = useAction(api.ai.actions.bulkEditConfirmedTasks);
@@ -423,6 +798,10 @@ const AIAssistantSmart = () => {
 
   const handleSendMessage = async () => {
     if (!project || (!message.trim() && !selectedFile) || !user?.id) return;
+    if (!aiEnabled) {
+      toast.info("Enable the AI assistant to start chatting.");
+      return;
+    }
 
     const userMessage = message.trim();
     let currentThreadId = threadId;
@@ -473,28 +852,40 @@ const AIAssistantSmart = () => {
         setUploadedFileId(fileId);
 
         const userContent = userMessage || `📎 Attached: ${selectedFile.name}`;
-        setChatHistory((prev) => [
-          ...prev,
-          {
-            role: "user",
-            content: userContent,
-            fileInfo: {
-              name: selectedFile.name,
-              size: selectedFile.size,
-              type: selectedFile.type,
-              id: fileId,
+        setChatHistory((prev) => {
+          const nextIndex = computeNextMessageIndex(prev);
+          return [
+            ...prev,
+            {
+              role: "user",
+              content: userContent,
+              messageIndex: nextIndex,
+              fileInfo: {
+                name: selectedFile.name,
+                size: selectedFile.size,
+                type: selectedFile.type,
+                id: fileId,
+              },
             },
-          },
-        ]);
+          ];
+        });
         setSelectedFile(null);
         setMessage("");
         setIsUploading(false);
       } else {
-        setChatHistory((prev) => [...prev, { role: "user", content: userMessage }]);
+        setChatHistory((prev) => {
+          const nextIndex = computeNextMessageIndex(prev);
+          return [...prev, { role: "user", content: userMessage, messageIndex: nextIndex }];
+        });
         setMessage("");
       }
 
-      setChatHistory((prev) => [...prev, { role: "assistant", content: "", mode: currentMode ?? undefined }]);
+      setChatHistory((prev) => {
+        const nextIndex = computeNextMessageIndex(prev);
+        return [...prev, { role: "assistant", content: "", mode: currentMode ?? undefined, messageIndex: nextIndex }];
+      });
+
+      abortControllerRef.current = new AbortController();
 
       const response = await fetch("/api/ai/stream", {
         method: "POST",
@@ -508,6 +899,7 @@ const AIAssistantSmart = () => {
           threadId: currentThreadId,
           fileId: hadFile ? currentFileId ?? undefined : undefined,
         }),
+        signal: abortControllerRef.current!.signal,
       });
 
       if (!response.body) {
@@ -517,21 +909,15 @@ const AIAssistantSmart = () => {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let pendingItemsFromStream: PendingItem[] = [];
-      let pendingItemsMode: string | null = null;
+      let pendingItemsMode: "full" | "recent" | null = null;
       let runningResponse = "";
       let latestTokenUsage: { totalTokens: number; estimatedCostUSD: number } | null = null;
+      let partialLine = "";
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n").filter(Boolean);
-
-        for (const line of lines) {
-          const event = JSON.parse(line);
-
-          switch (event.type) {
-            case "token": {
+      const handleStreamEvent = (event: { type?: string; [key: string]: unknown }) => {
+        switch (event.type) {
+          case "token": {
+            if (typeof event.delta === "string") {
               runningResponse += event.delta;
               setChatHistory((prev) => {
                 const updated = [...prev];
@@ -541,42 +927,85 @@ const AIAssistantSmart = () => {
                 };
                 return updated;
               });
-              break;
             }
-            case "metadata": {
-              if (event.mode) {
-                pendingItemsMode = event.mode;
-                setCurrentMode(event.mode as "basic" | "rag");
-              }
-              if (event.tokenUsage) {
-                latestTokenUsage = event.tokenUsage;
-                setSessionTokens((prev) => ({
-                  total: prev.total + event.tokenUsage.totalTokens,
-                  cost: prev.cost + event.tokenUsage.estimatedCostUSD,
-                }));
-              }
-              if (event.threadId) {
-                setThreadId(event.threadId);
-              }
-              break;
-            }
-            case "pendingItems": {
-              pendingItemsFromStream = expandBulkEditItems(normalizePendingItems(event.items));
-              break;
-            }
-            case "error": {
-              throw new Error(event.message || "Streaming error");
-            }
-            default: {
-              break;
-            }
+            break;
           }
+          case "metadata": {
+            if (typeof event.mode === "string") {
+              const normalizedMode = normalizeModeForDisplay(event.mode);
+              pendingItemsMode = normalizedMode ?? null;
+              setCurrentMode(normalizedMode ?? null);
+            } else {
+              pendingItemsMode = null;
+              setCurrentMode(null);
+            }
+            const tokenUsageData =
+              event.tokenUsage && typeof event.tokenUsage === "object"
+                ? event.tokenUsage as { totalTokens?: number; estimatedCostUSD?: number }
+                : undefined;
+            if (
+              tokenUsageData &&
+              typeof tokenUsageData.totalTokens === "number" &&
+              typeof tokenUsageData.estimatedCostUSD === "number"
+            ) {
+              const { totalTokens, estimatedCostUSD } = tokenUsageData;
+              latestTokenUsage = {
+                totalTokens,
+                estimatedCostUSD,
+              };
+              setSessionTokens((prev) => ({
+                total: prev.total + totalTokens,
+                cost: prev.cost + estimatedCostUSD,
+              }));
+            }
+            if (typeof event.threadId === "string") {
+              setThreadId(event.threadId);
+            }
+            break;
+          }
+          case "pendingItems": {
+            if (Array.isArray(event.items)) {
+              pendingItemsFromStream = expandBulkEditItems(
+                normalizePendingItems(event.items as PendingItem[])
+              );
+            }
+            break;
+          }
+          case "error": {
+            const message = typeof event.message === "string" ? event.message : "Streaming error";
+            throw new Error(message);
+          }
+          default: {
+            break;
+          }
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        const combined = partialLine + chunk;
+        const fragments = combined.split("\n");
+        partialLine = fragments.pop() ?? "";
+        const lines = fragments.filter((line) => line.trim().length > 0);
+
+        for (const line of lines) {
+          const event = JSON.parse(line);
+          handleStreamEvent(event);
         }
       }
 
-      if (pendingItemsMode) {
-        setCurrentMode(pendingItemsMode as "basic" | "rag");
+      if (partialLine.trim().length > 0) {
+        try {
+          const event = JSON.parse(partialLine);
+          handleStreamEvent(event);
+        } catch (error) {
+          console.error("Failed to parse final stream chunk", error);
+        }
       }
+
+      setCurrentMode(pendingItemsMode);
 
       setChatHistory((prev) => {
         const updated = [...prev];
@@ -590,15 +1019,73 @@ const AIAssistantSmart = () => {
       });
 
       if (pendingItemsFromStream.length > 0) {
-        setPendingItems(pendingItemsFromStream);
+        // Expand bulk_create into individual items for grid display
+        const expandedItems: PendingItem[] = [];
+        for (const item of pendingItemsFromStream) {
+          if (item.operation === 'bulk_create') {
+            // Extract individual items from bulk operation
+            if (item.type === 'task' && item.data.tasks) {
+              const tasks = item.data.tasks as Array<Record<string, unknown>>;
+              tasks.forEach((taskData) => {
+                expandedItems.push({
+                  type: 'task',
+                  operation: 'create',
+                  data: taskData,
+                  functionCall: item.functionCall,
+                  responseId: item.responseId,
+                });
+              });
+            } else if (item.type === 'shopping' && item.data.items) {
+              const items = item.data.items as Array<Record<string, unknown>>;
+              items.forEach((shoppingData) => {
+                expandedItems.push({
+                  type: 'shopping',
+                  operation: 'create',
+                  data: shoppingData,
+                  functionCall: item.functionCall,
+                  responseId: item.responseId,
+                });
+              });
+            } else if (item.type === 'note' && item.data.notes) {
+              const notes = item.data.notes as Array<Record<string, unknown>>;
+              notes.forEach((noteData) => {
+                expandedItems.push({
+                  type: 'note',
+                  operation: 'create',
+                  data: noteData,
+                  functionCall: item.functionCall,
+                  responseId: item.responseId,
+                });
+              });
+            } else if (item.type === 'survey' && item.data.surveys) {
+              const surveys = item.data.surveys as Array<Record<string, unknown>>;
+              surveys.forEach((surveyData) => {
+                expandedItems.push({
+                  type: 'survey',
+                  operation: 'create',
+                  data: surveyData,
+                  functionCall: item.functionCall,
+                  responseId: item.responseId,
+                });
+              });
+            } else {
+              // If we can't expand it, keep it as is
+              expandedItems.push(item);
+            }
+          } else {
+            // Not a bulk_create, keep as is
+            expandedItems.push(item);
+          }
+        }
+
+        setPendingItems(expandedItems);
         setCurrentItemIndex(0);
 
-        const firstItem = pendingItemsFromStream[0];
+        const firstItem = expandedItems[0];
         const initialOperation = firstItem?.operation;
         const shouldShowGrid =
-          pendingItemsFromStream.length > 1 ||
-          firstItem.operation === "bulk_edit" ||
-          firstItem.operation === "bulk_create";
+          expandedItems.length > 1 ||
+          firstItem.operation === "bulk_edit";
 
         if (shouldShowGrid) {
           setShowConfirmationGrid(true);
@@ -613,16 +1100,34 @@ const AIAssistantSmart = () => {
         }
       }
     } catch (error) {
-      console.error("Error sending message:", error);
-      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
-      setChatHistory((prev) => prev.slice(0, -1));
-      setChatHistory((prev) => [
-        ...prev,
-        { role: "assistant", content: `Sorry, I encountered an error: ${errorMessage}` },
-      ]);
-      toast.error("Failed to send message");
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setChatHistory((prev) => {
+          if (prev.length === 0) return prev;
+          const updated = [...prev];
+          const lastIndex = updated.length - 1;
+          const last = updated[lastIndex];
+          if (last?.role === "assistant") {
+            updated[lastIndex] = {
+              ...last,
+              content: last.content || "Response stopped.",
+            };
+          }
+          return updated;
+        });
+      } else {
+        console.error("Error sending message:", error);
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+        setChatHistory((prev) => prev.slice(0, -1));
+        setChatHistory((prev) => [
+          ...prev,
+          { role: "assistant", content: `Sorry, I encountered an error: ${errorMessage}` },
+        ]);
+        toast.error("Failed to send message");
+      }
     } finally {
       setIsLoading(false);
+      setIsUploading(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -705,12 +1210,28 @@ const AIAssistantSmart = () => {
               updates: currentItem.updates as Record<string, unknown>
             });
             break;
-          case 'shopping':
+          case 'shopping': {
+            const updates = { ...(currentItem.updates as Record<string, unknown>) };
+            const fallbackCategory =
+              updates["category"] ??
+              (currentItem.data ? (currentItem.data as Record<string, unknown>)["category"] : undefined);
+            const targetSectionName = resolveSectionName(updates["sectionName"], fallbackCategory);
+
+            if (targetSectionName && !updates["sectionId"]) {
+              const sectionId = await findOrCreateSection(targetSectionName);
+              if (sectionId) {
+                updates["sectionId"] = sectionId;
+              }
+            }
+
+            delete updates["sectionName"];
+
             result = await editConfirmedShoppingItem({
               itemId: currentItem.originalItem?._id as Id<"shoppingListItems">,
-              updates: currentItem.updates as Record<string, unknown>
+              updates,
             });
             break;
+          }
           case 'shoppingSection':
             await updateShoppingSection({
               sectionId: currentItem.originalItem?._id as Id<"shoppingListSections">,
@@ -727,59 +1248,9 @@ const AIAssistantSmart = () => {
         default:
           throw new Error(`Nieznany typ zawartości do edycji: ${currentItem.type}`);
         }
-      } else if (currentItem.operation === 'bulk_edit') {
-        if (currentItem.type !== 'task') {
-          throw new Error('Bulk edit currently supported only for tasks');
-        }
-
-        const selection = extractBulkSelection(currentItem);
-        const updates = extractBulkUpdates(currentItem);
-
-        result = await bulkEditConfirmedTasks({
-          projectId: project._id,
-          selection,
-          updates: updates as {
-            title?: string;
-            description?: string;
-            status?: "todo" | "in_progress" | "review" | "done";
-            priority?: "low" | "medium" | "high" | "urgent";
-            assignedTo?: string | null;
-            tags?: string[];
-          },
-          reason: selection.reason,
-        });
-      } else if (currentItem.operation === 'bulk_create') {
-        if (currentItem.type !== 'task') {
-          throw new Error('Bulk create currently supported only for tasks');
-        }
-
-        // Create all tasks from the bulk_create operation
-        const tasks = (currentItem.data.tasks as Array<Record<string, unknown>>) || [];
-        const createdIds: string[] = [];
-        const errors: string[] = [];
-
-        for (const taskData of tasks) {
-          try {
-            const cleanTaskData = { ...taskData };
-            delete cleanTaskData.assignedToName;
-
-            const taskResult = await createConfirmedTask({
-              projectId: project._id,
-              taskData: cleanTaskData as { title: string; status?: "todo" | "in_progress" | "review" | "done"; description?: string; assignedTo?: string | null; priority?: "low" | "medium" | "high" | "urgent"; dueDate?: string; tags?: string[]; cost?: number; }
-            });
-
-            if (taskResult.success && taskResult.taskId) {
-              createdIds.push(taskResult.taskId);
-            }
-          } catch (error) {
-            errors.push(`Failed to create task "${taskData.title}": ${error}`);
-          }
-        }
-
-        result = {
-          success: errors.length === 0,
-          message: `Created ${createdIds.length}/${tasks.length} tasks successfully${errors.length > 0 ? `. Errors: ${errors.slice(0, 3).join(', ')}` : ''}`
-        };
+      } else if (currentItem.operation === 'bulk_edit' || currentItem.operation === 'bulk_create') {
+        // Use the shared confirmSingleItem function for bulk operations
+        result = await confirmSingleItem(currentItem);
       } else {
         // Handle create operations
         switch (currentItem.type) {
@@ -799,14 +1270,34 @@ const AIAssistantSmart = () => {
               noteData: currentItem.data as { title: string; content: string; }
             });
             break;
-          case 'shopping':
-            const { sectionName, ...shoppingItemData } = currentItem.data as { sectionName?: string; [key: string]: unknown; };
-            void sectionName; // Mark as intentionally unused
+          case 'shopping': {
+            const rawShoppingData = currentItem.data as ShoppingItemInput;
+            const { sectionName, ...shoppingItemData } = rawShoppingData;
+            const targetSectionName = resolveSectionName(sectionName, rawShoppingData.category);
+
+            if (targetSectionName && !shoppingItemData.sectionId) {
+              const sectionId = await findOrCreateSection(targetSectionName);
+              if (sectionId) {
+                shoppingItemData.sectionId = sectionId;
+              }
+            }
+
             result = await createConfirmedShoppingItem({
               projectId: project._id,
-              itemData: shoppingItemData as { name: string; quantity: number; notes?: string; priority?: "low" | "medium" | "high" | "urgent"; buyBefore?: string; supplier?: string; category?: string; unitPrice?: number; sectionId?: Id<"shoppingListSections">; }
+              itemData: shoppingItemData as {
+                name: string;
+                quantity: number;
+                notes?: string;
+                priority?: "low" | "medium" | "high" | "urgent";
+                buyBefore?: string;
+                supplier?: string;
+                category?: string;
+                unitPrice?: number;
+                sectionId?: Id<"shoppingListSections">;
+              },
             });
             break;
+          }
           case 'shoppingSection':
             await createShoppingSection({
               projectId: project._id,
@@ -827,7 +1318,7 @@ const AIAssistantSmart = () => {
 
       if (result.success) {
         toast.success(result.message);
-        
+
         if (currentItem.functionCall && currentItem.responseId && threadId) {
           try {
             await markFunctionCallsAsConfirmed({
@@ -843,10 +1334,25 @@ const AIAssistantSmart = () => {
           }
         }
 
-        // Add success message to chat
-        setChatHistory(prev => [...prev, { 
-          role: 'assistant', 
-          content: `✅ ${result.message}` 
+        // Add success message to chat with ID for reference
+        let successMessage = `✅ ${result.message}`;
+
+        // Include ID in the message so AI can reference it later
+        if ('taskId' in result && result.taskId) {
+          successMessage += ` (Task ID: ${result.taskId})`;
+        } else if ('noteId' in result && result.noteId) {
+          successMessage += ` (Note ID: ${result.noteId})`;
+        } else if ('itemId' in result && result.itemId) {
+          successMessage += ` (Shopping Item ID: ${result.itemId})`;
+        } else if ('surveyId' in result && result.surveyId) {
+          successMessage += ` (Survey ID: ${result.surveyId})`;
+        } else if ('contactId' in result && result.contactId) {
+          successMessage += ` (Contact ID: ${result.contactId})`;
+        }
+
+        setChatHistory(prev => [...prev, {
+          role: 'assistant',
+          content: successMessage
         }]);
 
         // Move to next item or close dialog
@@ -873,11 +1379,33 @@ const AIAssistantSmart = () => {
       let successCount = 0;
       let failureCount = 0;
       const resultsByResponseId = new Map<string, { callId: string; result: string; }[]>();
+      const createdItemsDetails: string[] = [];
 
       for (const item of pendingItems) {
         try {
           const result = await confirmSingleItem(item);
           successCount++;
+
+          // Collect created item details with IDs
+          if (result.success) {
+            if ('taskId' in result && result.taskId) {
+              const title = (item.data as { title?: string }).title || 'Untitled';
+              createdItemsDetails.push(`Task "${title}" (ID: ${result.taskId})`);
+            } else if ('noteId' in result && result.noteId) {
+              const title = (item.data as { title?: string }).title || 'Untitled';
+              createdItemsDetails.push(`Note "${title}" (ID: ${result.noteId})`);
+            } else if ('itemId' in result && result.itemId) {
+              const name = (item.data as { name?: string }).name || 'Unnamed';
+              createdItemsDetails.push(`Shopping item "${name}" (ID: ${result.itemId})`);
+            } else if ('surveyId' in result && result.surveyId) {
+              const title = (item.data as { title?: string }).title || 'Untitled';
+              createdItemsDetails.push(`Survey "${title}" (ID: ${result.surveyId})`);
+            } else if ('contactId' in result && result.contactId) {
+              const name = (item.data as { name?: string }).name || 'Unnamed';
+              createdItemsDetails.push(`Contact "${name}" (ID: ${result.contactId})`);
+            }
+          }
+
           if (item.functionCall && item.responseId && result) {
             if (!resultsByResponseId.has(item.responseId)) {
               resultsByResponseId.set(item.responseId, []);
@@ -910,11 +1438,16 @@ const AIAssistantSmart = () => {
 
       if (successCount > 0) {
         toast.success(`Successfully created ${successCount} items${failureCount > 0 ? `, ${failureCount} failed` : ''}`);
-        
-        // Add success message to chat
-        setChatHistory(prev => [...prev, { 
-          role: 'assistant', 
-          content: `✅ Successfully created ${successCount} items${failureCount > 0 ? ` (${failureCount} failed)` : ''}` 
+
+        // Add success message to chat with all created item IDs
+        let successMessage = `✅ Successfully created ${successCount} items${failureCount > 0 ? ` (${failureCount} failed)` : ''}`;
+        if (createdItemsDetails.length > 0) {
+          successMessage += '\n\nCreated items:\n' + createdItemsDetails.join('\n');
+        }
+
+        setChatHistory(prev => [...prev, {
+          role: 'assistant',
+          content: successMessage
         }]);
       }
 
@@ -935,7 +1468,7 @@ const AIAssistantSmart = () => {
     const item = pendingItems[index];
     try {
       const result = await confirmSingleItem(item);
-      
+
       if (item.functionCall && item.responseId && threadId) {
         try {
           await markFunctionCallsAsConfirmed({
@@ -950,12 +1483,37 @@ const AIAssistantSmart = () => {
           console.error("Failed to mark function call as confirmed", e);
         }
       }
-      
+
       // Remove confirmed item from list
       setPendingItems(prev => prev.filter((_, i) => i !== index));
-      
-      toast.success(result.message || `${item.type} created successfully`);
-      
+
+      // Build success message with ID
+      let successMessage = result.message || `${item.type} created successfully`;
+      if ('taskId' in result && result.taskId) {
+        const title = (item.data as { title?: string }).title || 'Untitled';
+        successMessage = `Task "${title}" created (ID: ${result.taskId})`;
+      } else if ('noteId' in result && result.noteId) {
+        const title = (item.data as { title?: string }).title || 'Untitled';
+        successMessage = `Note "${title}" created (ID: ${result.noteId})`;
+      } else if ('itemId' in result && result.itemId) {
+        const name = (item.data as { name?: string }).name || 'Unnamed';
+        successMessage = `Shopping item "${name}" created (ID: ${result.itemId})`;
+      } else if ('surveyId' in result && result.surveyId) {
+        const title = (item.data as { title?: string }).title || 'Untitled';
+        successMessage = `Survey "${title}" created (ID: ${result.surveyId})`;
+      } else if ('contactId' in result && result.contactId) {
+        const name = (item.data as { name?: string }).name || 'Unnamed';
+        successMessage = `Contact "${name}" created (ID: ${result.contactId})`;
+      }
+
+      toast.success(successMessage);
+
+      // Add to chat history with ID
+      setChatHistory(prev => [...prev, {
+        role: 'assistant',
+        content: `✅ ${successMessage}`
+      }]);
+
       // Close grid if no more items
       if (pendingItems.length === 1) {
         setShowConfirmationGrid(false);
@@ -1048,6 +1606,44 @@ const AIAssistantSmart = () => {
     setShowConfirmationGrid(false);
     setIsConfirmationDialogOpen(true);
     setCurrentItemIndex(index);
+  };
+
+  // Helper to pick the best section label (prefer explicit sectionName, fall back to category)
+  const resolveSectionName = (rawSectionName?: unknown, rawCategory?: unknown): string | undefined => {
+    const normalizedSection =
+      typeof rawSectionName === "string" ? rawSectionName.trim() : "";
+    if (normalizedSection.length > 0) {
+      return normalizedSection;
+    }
+
+    const normalizedCategory = typeof rawCategory === "string" ? rawCategory.trim() : "";
+    return normalizedCategory.length > 0 ? normalizedCategory : undefined;
+  };
+
+  // Helper function to find or create a shopping section by name
+  const findOrCreateSection = async (sectionName: string): Promise<Id<"shoppingListSections"> | undefined> => {
+    if (!sectionName || !project) return undefined;
+
+    // Find existing section by name (case-insensitive)
+    const existingSection = shoppingSections?.find(
+      (s) => s.name.toLowerCase() === sectionName.toLowerCase()
+    );
+
+    if (existingSection) {
+      return existingSection._id;
+    }
+
+    // Create new section if it doesn't exist
+    try {
+      const newSectionId = await createShoppingSection({
+        projectId: project._id,
+        name: sectionName,
+      });
+      return newSectionId;
+    } catch (error) {
+      console.error("Failed to create section:", error);
+      return undefined;
+    }
   };
 
   // Helper function to confirm a single item
@@ -1158,8 +1754,15 @@ const AIAssistantSmart = () => {
 
           for (const shoppingData of items) {
             try {
-              const { sectionName: _sectionName, ...shoppingItemData } = shoppingData;
-              void _sectionName;
+              const { sectionName, ...shoppingItemData } = shoppingData;
+              const targetSectionName = resolveSectionName(sectionName, shoppingData.category);
+
+              if (targetSectionName && !shoppingItemData.sectionId) {
+                const sectionId = await findOrCreateSection(targetSectionName);
+                if (sectionId) {
+                  shoppingItemData.sectionId = sectionId;
+                }
+              }
 
               const shoppingResult = await createConfirmedShoppingItem({
                 projectId: project._id,
@@ -1284,12 +1887,27 @@ const AIAssistantSmart = () => {
             updates: item.updates as Record<string, unknown>
           });
           break;
-        case 'shopping':
+        case 'shopping': {
+          const updates = { ...(item.updates as Record<string, unknown>) };
+          const fallbackCategory =
+            updates["category"] ?? (item.data ? (item.data as Record<string, unknown>)["category"] : undefined);
+          const targetSectionName = resolveSectionName(updates["sectionName"], fallbackCategory);
+
+          if (targetSectionName && !updates["sectionId"]) {
+            const sectionId = await findOrCreateSection(targetSectionName);
+            if (sectionId) {
+              updates["sectionId"] = sectionId;
+            }
+          }
+
+          delete updates["sectionName"];
+
           result = await editConfirmedShoppingItem({
             itemId: item.originalItem?._id as Id<"shoppingListItems">,
-            updates: item.updates as Record<string, unknown>
+            updates,
           });
           break;
+        }
         case 'shoppingSection':
           await updateShoppingSection({
             sectionId: item.originalItem?._id as Id<"shoppingListSections">,
@@ -1314,19 +1932,77 @@ const AIAssistantSmart = () => {
           const selection = extractBulkSelection(item);
           const updates = extractBulkUpdates(item);
 
-          result = await bulkEditConfirmedTasks({
-            projectId: project._id,
-            selection,
-            updates: updates as {
-              title?: string;
-              description?: string;
-              status?: 'todo' | 'in_progress' | 'review' | 'done';
-              priority?: 'low' | 'medium' | 'high' | 'urgent';
-              assignedTo?: string | null;
-              tags?: string[];
-            },
-            reason: selection.reason,
-          });
+          if (Object.keys(updates).length > 0) {
+            result = await bulkEditConfirmedTasks({
+              projectId: project._id,
+              selection,
+              updates: updates as {
+                title?: string;
+                description?: string;
+                status?: 'todo' | 'in_progress' | 'review' | 'done';
+                priority?: 'low' | 'medium' | 'high' | 'urgent';
+                assignedTo?: string | null;
+                tags?: string[];
+              },
+              reason: selection.reason,
+            });
+          } else if (Array.isArray(item.data?.tasks)) {
+            const tasks = item.data.tasks as Array<Record<string, unknown>>;
+            if (tasks.length === 0) {
+              throw new Error("No tasks provided for bulk edit");
+            }
+
+            let updatedCount = 0;
+            const errors: string[] = [];
+
+            for (const taskUpdate of tasks) {
+              try {
+                const { taskId, ...updatesForTask } = taskUpdate as {
+                  taskId?: string;
+                  [key: string]: unknown;
+                };
+                if (!taskId) {
+                  continue;
+                }
+
+                const cleanUpdates = { ...updatesForTask } as Record<string, unknown>;
+                delete cleanUpdates.assignedToName;
+
+                const editResult = await editConfirmedTask({
+                  taskId: taskId as Id<"tasks">,
+                  updates: cleanUpdates as {
+                    title?: string;
+                    description?: string;
+                    content?: string;
+                    status?: 'todo' | 'in_progress' | 'review' | 'done';
+                    assignedTo?: string | null;
+                    priority?: 'low' | 'medium' | 'high' | 'urgent';
+                    dueDate?: string;
+                    tags?: string[];
+                    cost?: number;
+                  },
+                });
+
+                if (editResult.success) {
+                  updatedCount++;
+                } else {
+                  errors.push(editResult.message);
+                }
+              } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                errors.push(message);
+              }
+            }
+
+            result = {
+              success: errors.length === 0,
+              message: errors.length === 0
+                ? `Updated ${updatedCount}/${tasks.length} tasks successfully`
+                : `Updated ${updatedCount}/${tasks.length} tasks with errors: ${errors.slice(0, 3).join(', ')}`,
+            };
+          } else {
+            throw new Error("No updates provided for bulk edit");
+          }
         } else {
           const cleanTaskData = { ...(item.data as Record<string, unknown>) };
           delete (cleanTaskData as Record<string, unknown>).assignedToName;
@@ -1351,14 +2027,34 @@ const AIAssistantSmart = () => {
             noteData: item.data as { title: string; content: string; }
           });
           break;
-        case 'shopping':
-          const { sectionName: _sectionName, ...shoppingItemData } = item.data as { sectionName?: string; [key: string]: unknown; };
-          void _sectionName; // Mark as intentionally unused
+        case 'shopping': {
+          const rawShoppingData = item.data as ShoppingItemInput;
+          const { sectionName, ...shoppingItemData } = rawShoppingData;
+          const targetSectionName = resolveSectionName(sectionName, rawShoppingData.category);
+
+          if (targetSectionName && !shoppingItemData.sectionId) {
+            const sectionId = await findOrCreateSection(targetSectionName);
+            if (sectionId) {
+              shoppingItemData.sectionId = sectionId;
+            }
+          }
+
           result = await createConfirmedShoppingItem({
             projectId: project._id,
-            itemData: shoppingItemData as { name: string; quantity: number; notes?: string; priority?: "low" | "medium" | "high" | "urgent"; buyBefore?: string; supplier?: string; category?: string; unitPrice?: number; sectionId?: Id<"shoppingListSections">; }
+            itemData: shoppingItemData as {
+              name: string;
+              quantity: number;
+              notes?: string;
+              priority?: "low" | "medium" | "high" | "urgent";
+              buyBefore?: string;
+              supplier?: string;
+              category?: string;
+              unitPrice?: number;
+              sectionId?: Id<"shoppingListSections">;
+            },
           });
           break;
+        }
         case 'shoppingSection':
           await createShoppingSection({
             projectId: project._id,
@@ -1431,9 +2127,9 @@ const AIAssistantSmart = () => {
     if (editingItemIndex !== null) {
       setEditingItemIndex(null);
       setIsConfirmationDialogOpen(false);
-      setShowConfirmationGrid(true);
-      toast.info("Item updated - returning to grid");
-    } else {
+    setShowConfirmationGrid(true);
+    toast.info("Item updated - returning to grid");
+  } else {
       toast.info("Element został zaktualizowany");
     }
   };
@@ -1444,6 +2140,8 @@ const AIAssistantSmart = () => {
 
 
   const handleNewChat = async () => {
+    handleStopResponse();
+
     // Note: We only clear local state - thread messages are handled server-side
     // Reset local state
     setChatHistory([]);
@@ -1454,12 +2152,39 @@ const AIAssistantSmart = () => {
     setIsConfirmationDialogOpen(false);
     setEditingItemIndex(null);
     setSessionTokens({ total: 0, cost: 0 });
+    setCurrentMode(null);
+    setInitialThreadSelectionDone(true);
+    setMessage("");
+    setSelectedFile(null);
+    setUploadedFileId(null);
+    setIsUploading(false);
     toast.success("Chat cleared!");
   };
 
   // ProjectProvider handles loading state, so project should always be available here
 
+  const threadList = userThreads ?? [];
+  const isThreadListLoading = Boolean(project && user?.id) && userThreads === undefined;
+  const hasThreads = threadList.length > 0;
+  const activeThreadExists = Boolean(
+    threadId && threadList.some((thread) => thread.threadId === threadId)
+  );
+  const mobileSelectValue = activeThreadExists ? (threadId as string) : "";
+  const chatIsLoading = Boolean(threadId) && persistedMessages === undefined;
+
   const aiEnabled = aiSettings?.isEnabled ?? true;
+  const isStartingFresh = !threadId && initialThreadSelectionDone;
+  const showEmptyState = !chatIsLoading && aiEnabled && chatHistory.length === 0;
+  const emptyStateTitle = !hasThreads
+    ? `Hi ${greetingName},`
+    : isStartingFresh
+    ? "Start a new renovation chat"
+    : "Select a renovation chat";
+  const emptyStateDescription = !hasThreads
+    ? "Bring your renovation plans, punch lists, and suppliers into one place."
+    : isStartingFresh
+    ? "Send the first update to kick off this renovation thread."
+    : "Browse your saved renovation chats or launch a fresh one for a new project area.";
 
   if (aiSettings === undefined) {
     return (
@@ -1480,281 +2205,415 @@ const AIAssistantSmart = () => {
   }
 
   return (
-    <div className="flex flex-col h-full bg-muted/30">
-      {/* Header */}
-      <div className="border-b bg-background px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-xl font-semibold">AI Assistant (GPT-5)</h1>
-              {currentMode && (
-                <Badge variant={currentMode === 'rag' ? 'default' : 'secondary'} className="text-xs">
-                  {currentMode === 'rag' ? (
-                    <>
-                      <Database className="h-3 w-3 mr-1" />
-                      Full Mode
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="h-3 w-3 mr-1" />
-                      Smart Mode
-                    </>
-                  )}
-                </Badge>
-              )}
-              {sessionTokens.total > 0 && (
-                <Badge variant="outline" className="text-xs">
-                  <DollarSign className="h-3 w-3 mr-1" />
-                  {sessionTokens.total.toLocaleString()} tokens (~${sessionTokens.cost.toFixed(4)})
-                </Badge>
-              )}
+    <>
+      <div className="flex h-full bg-background text-foreground">
+      {/* Sidebar with chat history (desktop) */}
+      <aside className="hidden w-72 shrink-0 flex-col border-r border-border/60 bg-card/20 md:flex lg:w-80">
+        <div className="border-b border-border/60 px-4 py-5">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <MessageSquare className="h-4 w-4 text-primary" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">Project chats</p>
+              <p className="text-xs text-muted-foreground">All your renovation threads</p>
             </div>
-            <p className="text-sm text-muted-foreground">
-              {aiEnabled
-                ? currentMode === 'rag'
-                  ? "GPT-5 with project context"
-                  : currentMode === 'basic'
-                    ? "GPT-5 smart mode"
-                    : "GPT-5 AI Assistant"
-                : "Enable AI to start chatting with your project assistant"
-              }
-            </p>
           </div>
-
-        <div className="flex items-center gap-2">
-            <InlinePromptManager />
           <Button
             onClick={handleNewChat}
-            variant="outline"
             size="sm"
             disabled={!aiEnabled}
+            className="mt-4 w-full justify-center"
           >
-            <RotateCcw className="h-4 w-4 mr-2" />
-            New Chat
+            Start new chat
           </Button>
-          </div>
         </div>
-      </div>
+        <div className="flex-1 overflow-y-auto">
+          {isThreadListLoading ? (
+            <div className="px-4 py-6 text-xs text-muted-foreground">Loading chat history…</div>
+          ) : hasThreads ? (
+            <div className="divide-y divide-border/60">
+              {threadList.map((thread) => {
+                const isActive = thread.threadId === threadId;
+                const previewRaw = (thread.lastMessagePreview ?? "").replace(/\s+/g, " ").trim();
+                const preview =
+                  previewRaw.length > 0
+                    ? previewRaw
+                    : thread.messageCount === 0
+                    ? "No messages yet."
+                    : thread.lastMessageRole === "assistant"
+                    ? "Assistant replied."
+                    : "You replied.";
+                const messageLabel = thread.messageCount === 1 ? "message" : "messages";
+                const relativeTime = formatDistanceToNow(
+                  new Date(thread.lastMessageAt ?? Date.now()),
+                  { addSuffix: true }
+                );
 
-      {/* Chat Area */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-6 space-y-4">
-          {!aiEnabled && (
-            <div className="text-center py-12">
-              <div className="w-12 h-12 bg-card border shadow-sm rounded-full flex items-center justify-center mx-auto mb-4">
-                <Sparkles className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <h3 className="font-semibold mb-2">Enable AI Assistant</h3>
-              <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                Turn on the AI assistant in project settings to start chatting about tasks, notes, shopping lists, and surveys.
-              </p>
-            </div>
-          )}
-
-          {chatHistory.length === 0 && aiEnabled && (
-            <div className="text-center py-12">
-              <div className="w-12 h-12 bg-card border shadow-sm rounded-full flex items-center justify-center mx-auto mb-4">
-                <Sparkles className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <h3 className="font-semibold mb-2">GPT-5 AI Ready</h3>
-              <p className="text-sm text-muted-foreground max-w-md mx-auto mb-4">
-                Powered by GPT-5. Ask me about your project tasks, shopping lists, notes, surveys, or any questions about your project.
-              </p>
-              <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground">
-                <div className="flex items-center gap-1">
-                  <Database className="h-3 w-3" />
-                  Small projects: Full data
-                </div>
-                <div className="flex items-center gap-1">
-                  <Zap className="h-3 w-3" />
-                  Large projects: Smart mode
-                </div>
-              </div>
-            </div>
-          )}
-          
-          {chatHistory.map((chat, index) => (
-            <div key={index} className={`flex ${chat.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] ${
-                chat.role === 'user' 
-                  ? 'bg-primary text-primary-foreground shadow-sm' 
-                  : 'bg-card border shadow-sm'
-              } rounded-xl px-4 py-3`}>
-                {chat.content === '' && chat.role === 'assistant' ? (
-                  // Show smart typing indicator
-                  <div className="flex items-center gap-2">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"></div>
-                    </div>
-                    <span className="text-sm text-muted-foreground">
-                      {currentMode === 'rag' ? 'AI searching & analyzing...' : 'AI thinking...'}
-                    </span>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{chat.content}</p>
-                    {chat.fileInfo && <FileThumbnail fileInfo={chat.fileInfo} />}
-                    {chat.role === 'assistant' && (chat.mode || chat.tokenUsage) && (
-                      <div className="mt-2 pt-2 border-t border-border/50 flex items-center gap-2 flex-wrap">
-                        {chat.mode && (
-                          <Badge variant="outline" className="text-xs">
-                            {chat.mode === 'full' ? (
-                              <>
-                                <Database className="h-2 w-2 mr-1" />
-                                Complete project data
-                              </>
-                            ) : (
-                              <>
-                                <Zap className="h-2 w-2 mr-1" />
-                                Recent + historical search
-                              </>
-                            )}
-                          </Badge>
-                        )}
-                        {chat.tokenUsage && (
-                          <Badge variant="outline" className="text-xs text-muted-foreground">
-                            <DollarSign className="h-2 w-2 mr-1" />
-                            {chat.tokenUsage.totalTokens.toLocaleString()} tokens (${chat.tokenUsage.estimatedCostUSD.toFixed(4)})
-                          </Badge>
-                        )}
-                      </div>
+                return (
+                  <button
+                    key={thread.threadId}
+                    onClick={() => handleThreadSelect(thread.threadId)}
+                    className={cn(
+                      "w-full px-4 py-3 text-left transition-colors focus:outline-none",
+                      isActive ? "bg-primary/10" : "hover:bg-muted/60"
                     )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-foreground">{thread.title}</p>
+                        <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{preview}</p>
+                      </div>
+                      <span className="whitespace-nowrap text-[11px] text-muted-foreground">
+                        {relativeTime}
+                      </span>
+                    </div>
+                    <div className="mt-3 text-[11px] text-muted-foreground/80">
+                      {thread.messageCount > 0 ? (
+                        <>
+                          {thread.messageCount} {messageLabel} • Last{" "}
+                          {thread.lastMessageRole === "assistant" ? "assistant" : "you"}
+                        </>
+                      ) : (
+                        <>No messages yet</>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="px-4 py-6 text-xs text-muted-foreground">
+              No renovation chats yet. Start one and it will appear here.
+            </div>
+          )}
+        </div>
+      </aside>
+
+      {/* Main conversation area */}
+      <div className="relative flex flex-1 flex-col">
+        {/* Mobile header */}
+        <div className="flex items-center gap-3 border-b border-border/60 px-4 py-3 md:hidden">
+          {hasThreads ? (
+            <div className="flex-1">
+              <label className="text-xs font-medium text-muted-foreground" htmlFor="mobile-thread-select">
+                Renovation chat
+              </label>
+              <select
+                id="mobile-thread-select"
+                value={mobileSelectValue}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (!value) {
+                    return;
+                  }
+                  handleThreadSelect(value);
+                }}
+                className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                <option value="" disabled>
+                  Select a conversation…
+                </option>
+                {threadList.map((thread) => (
+                  <option key={thread.threadId} value={thread.threadId}>
+                    {thread.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="flex-1 text-sm font-semibold text-foreground">New renovation chat</div>
+          )}
+          <Button onClick={handleNewChat} variant="outline" size="sm" disabled={!aiEnabled}>
+            New chat
+          </Button>
+        </div>
+
+        {/* Desktop toolbar */}
+        <div className="absolute right-6 top-6 hidden items-center gap-3 text-xs text-muted-foreground md:flex">
+          {sessionTokens.total > 0 && (
+            <span>{sessionTokens.total.toLocaleString()} tokens (~${sessionTokens.cost.toFixed(4)})</span>
+          )}
+          <InlinePromptManager />
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6">
+          {chatIsLoading ? (
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              Loading conversation…
+            </div>
+          ) : (
+            <div className="mx-auto flex max-w-3xl flex-col space-y-6 py-14">
+              {!aiEnabled && (
+                <div className="rounded-2xl border border-border bg-card p-8 text-center text-muted-foreground shadow-sm">
+                  <h3 className="text-lg font-semibold tracking-tight">Enable AI Assistant</h3>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Turn on the AI assistant in project settings to start chatting about tasks, notes, shopping lists, and surveys.
+                  </p>
+                </div>
+              )}
+
+              {showEmptyState ? (
+                <div className="rounded-2xl border border-border bg-card/60 p-8 text-center shadow-sm">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-border bg-card text-lg text-muted-foreground">
+                    ✶
                   </div>
-                )}
+                  <div className="mt-6 space-y-2">
+                    <h1 className="text-3xl font-semibold tracking-tight">{emptyStateTitle}</h1>
+                    <p className="text-sm text-muted-foreground">{emptyStateDescription}</p>
+                  </div>
+                  <div className="mt-6 grid gap-3 text-left text-sm text-muted-foreground">
+                    <div className="rounded-xl border border-dashed border-border/60 bg-background/40 px-4 py-3">
+                      • Ask about schedules, dependencies, or the next milestones for this renovation.
+                    </div>
+                    <div className="rounded-xl border border-dashed border-border/60 bg-background/40 px-4 py-3">
+                      • Attach floor plans, invoices, or site photos—I'll surface the details that matter.
+                    </div>
+                    <div className="rounded-xl border border-dashed border-border/60 bg-background/40 px-4 py-3">
+                      • Use the quick actions below to spin up budgets, shopping lists, or site updates.
+                    </div>
+                  </div>
+                  <div className="mt-6 flex flex-wrap justify-center gap-2 text-sm text-muted-foreground">
+                    {quickPrompts.map((item) => (
+                      <button
+                        key={item.label}
+                        onClick={() => handleQuickPromptClick(item.prompt)}
+                        className="rounded-full border border-transparent bg-muted/40 px-3 py-1.5 transition hover:border-border hover:bg-muted"
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {chatHistory.map((chat, index) => {
+                    if (chat.role === "assistant" && chat.content === "") {
+                      return (
+                        <div key={index} className="flex justify-start">
+                          <TypingIndicator />
+                        </div>
+                      );
+                    }
+
+                    const isUser = chat.role === "user";
+
+                    return (
+                      <div
+                        key={index}
+                        className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+                      >
+                        <div
+                          className={`flex max-w-full items-start gap-3 ${
+                            isUser ? "flex-row-reverse" : "flex-row"
+                          }`}
+                        >
+                          <div
+                            className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold uppercase ${
+                              isUser
+                                ? "bg-primary text-primary-foreground"
+                                : "border border-border bg-card text-muted-foreground"
+                            }`}
+                          >
+                            {isUser ? userInitial : "✶"}
+                          </div>
+
+                          <div
+                            className={`rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
+                              isUser
+                                ? "bg-primary text-primary-foreground"
+                                : "border border-border bg-card text-foreground"
+                            }`}
+                          >
+                            <p className="whitespace-pre-wrap">{chat.content}</p>
+                            {chat.fileInfo && (
+                              <div className="mt-3">
+                                <FileThumbnail fileInfo={chat.fileInfo} />
+                              </div>
+                            )}
+                            {chat.role === "assistant" && (chat.mode || chat.tokenUsage) && (
+                              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                {chat.mode && (
+                                  <Badge variant="outline" className="border-border bg-muted/60 text-[11px] text-muted-foreground">
+                                    {chat.mode === "full" ? "Complete project data" : "Recent context search"}
+                                  </Badge>
+                                )}
+                                {chat.tokenUsage && (
+                                  <Badge variant="outline" className="border-border bg-muted/60 text-[11px] text-muted-foreground">
+                                    {chat.tokenUsage.totalTokens.toLocaleString()} tokens (${chat.tokenUsage.estimatedCostUSD.toFixed(4)})
+                                  </Badge>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  <div ref={messagesEndRef} />
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-background px-6 pb-10 pt-4">
+          <div className="mx-auto max-w-3xl rounded-2xl border border-border bg-card p-5 shadow-sm">
+          <input
+            ref={fileInputRef}
+            type="file"
+            onChange={handleFileSelect}
+            accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.xlsm,.txt,.json,.jsonl,.csv,.md,.py,.js,.ts,.html,.css,.xml,.rtf"
+            className="hidden"
+          />
+
+          {selectedFile && (
+            <div className="mb-4 rounded-lg bg-muted/40 px-3 py-2">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Paperclip className="h-4 w-4" />
+                <span className="flex-1 truncate">{selectedFile.name}</span>
+                <span className="text-xs">
+                  {(selectedFile.size / 1024 / 1024).toFixed(1)} MB
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleRemoveFile}
+                  className="h-6 w-6 rounded-full p-0 text-muted-foreground hover:bg-muted"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
               </div>
             </div>
-          ))}
-          
-          <div ref={messagesEndRef} />
-        </div>
-      </div>
+          )}
 
-      {/* Input Area */}
-      <div className="border-t bg-background p-6">
-        {/* Hidden file input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          onChange={handleFileSelect}
-          accept="image/*,video/*,application/pdf,.doc,.docx,.txt,.json,.jsonl,.csv,.md,.py,.js,.ts,.html,.css,.xml,.rtf"
-          className="hidden"
-        />
-
-        {/* Selected file preview */}
-        {selectedFile && (
-          <div className="mb-4 p-3 bg-muted rounded-lg">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
             <div className="flex items-center gap-2">
-              <Paperclip className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm flex-1 truncate">{selectedFile.name}</span>
-              <span className="text-xs text-muted-foreground">
-                {(selectedFile.size / 1024 / 1024).toFixed(1)} MB
-              </span>
               <Button
                 variant="ghost"
-                size="sm"
-                onClick={handleRemoveFile}
-                className="h-6 w-6 p-0"
+                size="icon"
+                className="h-9 w-9 rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted"
+                onClick={handleAttachmentClick}
+                disabled={isLoading || isUploading || !aiEnabled}
               >
-                <X className="h-4 w-4" />
+                <Plus className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted"
+                onClick={() => handleQuickPromptClick("Summarize what happened on this project today.")}
+                disabled={isLoading || isUploading || !aiEnabled}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted"
+                onClick={() => handleQuickPromptClick("Set a gentle reminder for tomorrow's priorities.")}
+                disabled={isLoading || isUploading || !aiEnabled}
+              >
+                <Clock className="h-4 w-4" />
               </Button>
             </div>
-            <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
-              <Sparkles className="h-3 w-3" />
-              File will be uploaded to Gemini Files API for direct AI analysis
-            </div>
           </div>
-        )}
-        
-        <div className="flex items-center gap-3">
-          <Input
-            ref={inputRef}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && !isLoading && !isUploading) {
-                e.preventDefault();
-                handleSendMessage();
-              }
-            }}
-            placeholder={selectedFile ? "Add a message (optional)" : "Ask me about tasks, budget, timeline, or say hello..."}
-            disabled={isLoading || isUploading}
-            className="flex-1"
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={isLoading || isUploading}
-            onClick={handleAttachmentClick}
-          >
-            <Paperclip className="h-4 w-4" />
-          </Button>
-          <Button 
-            onClick={handleSendMessage} 
-            disabled={isLoading || isUploading || (!message.trim() && !selectedFile)}
-            size="sm"
-          >
-            {isLoading || isUploading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+
+          <div className="mt-3 flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2">
+            <Input
+              ref={inputRef}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && !isLoading && !isUploading && aiEnabled) {
+                  e.preventDefault();
+                  handleSendMessage();
+                }
+              }}
+              placeholder={selectedFile ? "Add a message (optional)" : "Ask about renovation tasks, materials, or next steps..."}
+              disabled={isUploading || !aiEnabled}
+              className="h-12 flex-1 border-none bg-transparent text-base text-foreground placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+            />
+            {isLoading && !isUploading ? (
+              <Button
+                onClick={handleStopResponse}
+                size="icon"
+                className="h-10 w-10 rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+                title="Stop response"
+              >
+                <Square className="h-4 w-4" />
+                <span className="sr-only">Stop response</span>
+              </Button>
             ) : (
-              <Send className="h-4 w-4" />
+              <Button
+                onClick={handleSendMessage}
+                disabled={isUploading || !aiEnabled || (!message.trim() && !selectedFile)}
+                size="icon"
+                className="h-10 w-10 rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                {isUploading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ArrowUpRight className="h-5 w-5" />
+                )}
+              </Button>
             )}
-          </Button>
+          </div>
         </div>
       </div>
-
-      {/* Confirmation Grid Modal for Multiple Items */}
-      {showConfirmationGrid && (
-        <Dialog open={showConfirmationGrid} onOpenChange={setShowConfirmationGrid}>
-          <DialogContent 
-            className="overflow-hidden p-8"
-            style={{
-              width: '95vw',
-              height: '95vh',
-              maxWidth: 'none',
-              maxHeight: 'none',
-              margin: 'auto'
-            }}
-          >
-            <DialogHeader>
-              <DialogTitle>Review AI Suggestions</DialogTitle>
-            </DialogHeader>
-            <div className="overflow-y-auto flex-1 w-full h-full">
-              <AIConfirmationGrid
-                pendingItems={pendingItems as PendingContentItem[]}
-                onConfirmAll={handleConfirmAll}
-                onConfirmItem={handleConfirmItem}
-                onRejectItem={handleRejectItem}
-                onRejectAll={handleRejectAll}
-                onEditItem={(index) => {
-                  handleEditItem(index);
-                  setShowConfirmationGrid(false);
-                  setIsConfirmationDialogOpen(true);
-                  setCurrentItemIndex(index);
-                }}
-                isProcessing={isBulkProcessing}
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* Universal Confirmation Dialog for Single Items */}
-      {pendingItems.length > 0 && !showConfirmationGrid && (
-        <UniversalConfirmationDialog
-          isOpen={isConfirmationDialogOpen}
-          onClose={handleContentDialogClose}
-          onConfirm={handleContentConfirm}
-          onCancel={handleContentCancel}
-          onEdit={handleContentEdit}
-          contentItem={pendingItems[currentItemIndex] as PendingContentItem}
-          isLoading={isCreatingContent}
-          itemNumber={currentItemIndex + 1}
-          totalItems={pendingItems.length}
-        />
-      )}
     </div>
+  </div>
+
+    {/* Confirmation Grid Modal for Multiple Items */}
+    {showConfirmationGrid && (
+      <Dialog open={showConfirmationGrid} onOpenChange={setShowConfirmationGrid}>
+        <DialogContent
+          className="overflow-hidden p-8"
+          style={{
+            width: "95vw",
+            height: "95vh",
+            maxWidth: "none",
+            maxHeight: "none",
+            margin: "auto",
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Review AI Suggestions</DialogTitle>
+          </DialogHeader>
+          <div className="overflow-y-auto flex-1 w-full h-full">
+            <AIConfirmationGrid
+              pendingItems={pendingItems as PendingContentItem[]}
+              onConfirmAll={handleConfirmAll}
+              onConfirmItem={handleConfirmItem}
+              onRejectItem={handleRejectItem}
+              onRejectAll={handleRejectAll}
+              onEditItem={(index) => {
+                handleEditItem(index);
+                setShowConfirmationGrid(false);
+                setIsConfirmationDialogOpen(true);
+                setCurrentItemIndex(index);
+              }}
+              isProcessing={isBulkProcessing}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    )}
+
+    {/* Universal Confirmation Dialog for Single Items */}
+    {pendingItems.length > 0 && !showConfirmationGrid && (
+      <UniversalConfirmationDialog
+        isOpen={isConfirmationDialogOpen}
+        onClose={handleContentDialogClose}
+        onConfirm={handleContentConfirm}
+        onCancel={handleContentCancel}
+        onEdit={handleContentEdit}
+        contentItem={pendingItems[currentItemIndex] as PendingContentItem}
+        isLoading={isCreatingContent}
+        itemNumber={currentItemIndex + 1}
+        totalItems={pendingItems.length}
+      />
+    )}
+    </>
   );
 };
 

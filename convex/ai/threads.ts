@@ -1,6 +1,5 @@
 import { v } from "convex/values";
-import { internalQuery, internalMutation, mutation } from "../_generated/server";
-import { Id } from "../_generated/dataModel";
+import { internalQuery, internalMutation, mutation, query } from "../_generated/server";
 
 // Internal version - used by server-side functions
 export const getOrCreateThread = internalMutation({
@@ -206,6 +205,19 @@ export const getThreadMessages = internalQuery({
     content: v.string(),
     messageIndex: v.number(),
     ragContext: v.optional(v.string()),
+    tokenUsage: v.optional(v.object({
+      inputTokens: v.number(),
+      outputTokens: v.number(),
+      totalTokens: v.number(),
+      estimatedCostUSD: v.number(),
+    })),
+    metadata: v.optional(v.object({
+      fileId: v.optional(v.string()),
+      fileName: v.optional(v.string()),
+      fileType: v.optional(v.string()),
+      fileSize: v.optional(v.number()),
+      mode: v.optional(v.string()),
+    })),
   })),
   handler: async (ctx, args) => {
     const limit = args.limit || 20; // Last 20 messages by default
@@ -221,6 +233,8 @@ export const getThreadMessages = internalQuery({
       content: msg.content,
       messageIndex: msg.messageIndex,
       ragContext: msg.ragContext,
+      tokenUsage: msg.tokenUsage,
+      metadata: msg.metadata,
     }));
   },
 });
@@ -239,16 +253,31 @@ export const saveMessagesToThread = internalMutation({
       estimatedCostUSD: v.number(),
     }),
     ragContext: v.optional(v.string()),
+    userMetadata: v.optional(v.object({
+      fileId: v.optional(v.string()),
+      fileName: v.optional(v.string()),
+      fileType: v.optional(v.string()),
+      fileSize: v.optional(v.number()),
+    })),
+    assistantMetadata: v.optional(v.object({
+      mode: v.optional(v.string()),
+    })),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    // Get current message count for this thread to determine messageIndex
-    const existingMessages = await ctx.db
-      .query("aiMessages")
-      .withIndex("by_thread", (q) => q.eq("threadId", args.threadId))
-      .collect();
+    const threadDoc = await ctx.db
+      .query("aiThreads")
+      .withIndex("by_thread_id", (q) => q.eq("threadId", args.threadId))
+      .unique();
 
-    const nextIndex = existingMessages.length;
+    // Get current message count for this thread to determine messageIndex
+    const lastMessage = await ctx.db
+      .query("aiMessages")
+      .withIndex("by_thread_and_index", (q) => q.eq("threadId", args.threadId))
+      .order("desc")
+      .take(1);
+
+    const nextIndex = lastMessage.length > 0 ? lastMessage[0].messageIndex + 1 : 0;
 
     // Save user message
     await ctx.db.insert("aiMessages", {
@@ -257,6 +286,7 @@ export const saveMessagesToThread = internalMutation({
       role: "user",
       content: args.userMessage,
       messageIndex: nextIndex,
+      metadata: args.userMetadata,
     });
 
     // Save assistant message
@@ -268,9 +298,158 @@ export const saveMessagesToThread = internalMutation({
       tokenUsage: args.tokenUsage,
       ragContext: args.ragContext,
       messageIndex: nextIndex + 1,
+      metadata: args.assistantMetadata,
     });
 
+    if (threadDoc) {
+      const updates: Record<string, unknown> = {
+        lastMessageAt: Date.now(),
+      };
+
+      if ((!threadDoc.title || threadDoc.title.trim().length === 0) && args.userMessage.trim().length > 0) {
+        updates.title = args.userMessage.trim().slice(0, 120);
+      }
+
+      await ctx.db.patch(threadDoc._id, updates);
+    }
+
     return null;
+  },
+});
+
+export const listThreadMessages = query({
+  args: {
+    threadId: v.string(),
+    projectId: v.id("projects"),
+    userClerkId: v.string(),
+  },
+  returns: v.array(v.object({
+    role: v.union(v.literal("user"), v.literal("assistant")),
+    content: v.string(),
+    messageIndex: v.number(),
+    ragContext: v.optional(v.string()),
+    tokenUsage: v.optional(v.object({
+      inputTokens: v.number(),
+      outputTokens: v.number(),
+      totalTokens: v.number(),
+      estimatedCostUSD: v.number(),
+    })),
+    metadata: v.optional(v.object({
+      fileId: v.optional(v.string()),
+      fileName: v.optional(v.string()),
+      fileType: v.optional(v.string()),
+      fileSize: v.optional(v.number()),
+      mode: v.optional(v.string()),
+    })),
+  })),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized");
+    }
+
+    if (identity.subject !== args.userClerkId) {
+      throw new Error("Forbidden");
+    }
+
+    const thread = await ctx.db
+      .query("aiThreads")
+      .withIndex("by_thread_id", (q) => q.eq("threadId", args.threadId))
+      .unique();
+
+    if (!thread) {
+      return [];
+    }
+
+    if (thread.projectId !== args.projectId) {
+      throw new Error("Thread does not belong to project");
+    }
+
+    const messages = await ctx.db
+      .query("aiMessages")
+      .withIndex("by_thread", (q) => q.eq("threadId", args.threadId))
+      .order("asc")
+      .collect();
+
+    return messages.map((msg) => ({
+      role: msg.role,
+      content: msg.content,
+      messageIndex: msg.messageIndex,
+      ragContext: msg.ragContext,
+      tokenUsage: msg.tokenUsage,
+      metadata: msg.metadata,
+    }));
+  },
+});
+
+export const listThreadsForUser = query({
+  args: {
+    projectId: v.id("projects"),
+    userClerkId: v.string(),
+  },
+  returns: v.array(
+    v.object({
+      threadId: v.string(),
+      title: v.string(),
+      lastMessageAt: v.number(),
+      lastMessagePreview: v.optional(v.string()),
+      lastMessageRole: v.optional(v.union(v.literal("user"), v.literal("assistant"))),
+      messageCount: v.number(),
+    })
+  ),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized");
+    }
+    if (identity.subject !== args.userClerkId) {
+      throw new Error("Forbidden");
+    }
+
+    const threads = await ctx.db
+      .query("aiThreads")
+      .withIndex("by_user", (q) => q.eq("userClerkId", args.userClerkId))
+      .collect();
+
+    const filtered = threads.filter((thread) => thread.projectId === args.projectId);
+
+    const latestMessages = await Promise.all(
+      filtered.map(async (thread) => {
+        const [latestMessage] = await ctx.db
+          .query("aiMessages")
+          .withIndex("by_thread_and_index", (q) => q.eq("threadId", thread.threadId))
+          .order("desc")
+          .take(1);
+        return latestMessage ?? null;
+      })
+    );
+
+    const summaries = filtered.map((thread, index) => {
+      const latestMessage = latestMessages[index];
+
+      let preview: string | undefined;
+      let previewRole: "user" | "assistant" | undefined;
+      let messageCount = 0;
+
+      if (latestMessage) {
+        preview = latestMessage.content;
+        previewRole = latestMessage.role;
+        messageCount = latestMessage.messageIndex + 1;
+      }
+
+      return {
+        threadId: thread.threadId,
+        title: thread.title && thread.title.trim().length > 0 ? thread.title : "Untitled chat",
+        lastMessageAt: thread.lastMessageAt || thread._creationTime,
+        lastMessagePreview: preview,
+        lastMessageRole: previewRole,
+        messageCount,
+      };
+    });
+
+    summaries.sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+
+    return summaries;
   },
 });
 

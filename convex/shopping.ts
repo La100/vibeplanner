@@ -232,6 +232,38 @@ export const updateShoppingListItem = mutation({
     },
 });
 
+// Soft delete - marks item as CANCELLED (for rejected orders)
+export const cancelShoppingListItem = mutation({
+    args: { itemId: v.id("shoppingListItems") },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error("Not authenticated");
+
+        const item = await ctx.db.get(args.itemId);
+        if (!item) throw new Error("Item not found");
+
+        await ctx.runMutation(internal.activityLog.logActivity, {
+            teamId: item.teamId,
+            projectId: item.projectId,
+
+            actionType: "shopping.cancel",
+            entityId: args.itemId,
+            entityType: "shopping",
+            details: {
+                name: item.name,
+            },
+        });
+
+        await ctx.db.patch(args.itemId, {
+            realizationStatus: "CANCELLED",
+            updatedAt: Date.now(),
+        });
+
+        return args.itemId;
+    },
+});
+
+// Hard delete - permanently removes item from database
 export const deleteShoppingListItem = mutation({
     args: { itemId: v.id("shoppingListItems") },
     handler: async (ctx, args) => {
@@ -244,7 +276,7 @@ export const deleteShoppingListItem = mutation({
         await ctx.runMutation(internal.activityLog.logActivity, {
             teamId: item.teamId,
             projectId: item.projectId,
-            
+
             actionType: "shopping.delete",
             entityId: args.itemId,
             entityType: "shopping",
@@ -253,10 +285,8 @@ export const deleteShoppingListItem = mutation({
             },
         });
 
-        await ctx.db.patch(args.itemId, {
-            realizationStatus: "CANCELLED",
-            updatedAt: Date.now(),
-        });
+        // Actually delete the item from database
+        await ctx.db.delete(args.itemId);
 
         return args.itemId;
     },

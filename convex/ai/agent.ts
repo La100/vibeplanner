@@ -199,6 +199,37 @@ const deleteContactSchema = z.object({
   reason: z.string().optional().describe("Optional reason for deletion"),
 });
 
+// Search tool schemas
+const searchTasksSchema = z.object({
+  query: z.string().optional().describe("Search query - can be title, description, assignee name, or any task details"),
+  status: z.enum(["todo", "in_progress", "review", "done"]).optional().describe("Filter by status"),
+  limit: z.number().optional().default(10).describe("Maximum number of results to return"),
+});
+
+const searchShoppingItemsSchema = z.object({
+  query: z.string().optional().describe("Search query - can be item name, category, section, supplier, or any item details"),
+  sectionName: z.string().optional().describe("Filter by section name"),
+  limit: z.number().optional().default(10).describe("Maximum number of results to return"),
+});
+
+const searchNotesSchema = z.object({
+  query: z.string().optional().describe("Search query - can be note title or content keywords"),
+  includeArchived: z.boolean().optional().describe("Include archived notes in the results"),
+  limit: z.number().optional().default(10).describe("Maximum number of results to return"),
+});
+
+const searchSurveysSchema = z.object({
+  query: z.string().optional().describe("Search query - can be survey title or description keywords"),
+  status: z.enum(["draft", "active", "closed"]).optional().describe("Filter by survey status"),
+  limit: z.number().optional().default(10).describe("Maximum number of results to return"),
+});
+
+const searchContactsSchema = z.object({
+  query: z.string().optional().describe("Search query - can be contact name, company, email, phone, or notes"),
+  contactType: z.enum(["contractor", "supplier", "subcontractor", "other"]).optional().describe("Filter by contact type"),
+  limit: z.number().optional().default(10).describe("Maximum number of results to return"),
+});
+
 /**
  * Create the VibePlanner AI Agent with all tools and advanced features
  *
@@ -213,6 +244,8 @@ export const createVibePlannerAgent = (
   instructions: string,
   options?: {
     usageHandler?: (ctx: any, usageData: any) => Promise<void>;
+    projectId?: string;
+    runAction?: (action: any, args: any) => Promise<any>;
   }
 ) => {
   const agentConfig: any = {
@@ -404,6 +437,149 @@ export const createVibePlannerAgent = (
         inputSchema: deleteContactSchema,
         execute: async (args: z.infer<typeof deleteContactSchema>) => {
           return JSON.stringify({ type: "contact", operation: "delete", data: args });
+        },
+      },
+
+      // Search tools - allow AI to search for data on-demand
+      search_tasks: {
+        description: "Search for tasks in the project. Use this when you need to find specific tasks or get information about existing tasks (e.g., to edit them, check their status, or reference them).",
+        inputSchema: searchTasksSchema,
+        execute: async (args: z.infer<typeof searchTasksSchema>) => {
+          if (!options?.projectId || !options?.runAction) {
+            return JSON.stringify({ error: "Search not available - missing project context" });
+          }
+          const { internal } = await import("../_generated/api");
+          const result = await options.runAction(internal.ai.search.searchTasks, {
+            projectId: options.projectId as any,
+            ...args,
+          });
+          return JSON.stringify({
+            found: result.count,
+            total: result.total,
+            tasks: result.tasks.map((t: any) => ({
+              id: t._id,
+              title: t.title,
+              description: t.description,
+              status: t.status,
+              priority: t.priority,
+              assignedToName: t.assignedToName,
+              dueDate: t.dueDate,
+              tags: t.tags,
+            })),
+          });
+        },
+      },
+
+      search_shopping_items: {
+        description: "Search for shopping list items in the project. Use this when you need to find specific items or get information about existing shopping items.",
+        inputSchema: searchShoppingItemsSchema,
+        execute: async (args: z.infer<typeof searchShoppingItemsSchema>) => {
+          if (!options?.projectId || !options?.runAction) {
+            return JSON.stringify({ error: "Search not available - missing project context" });
+          }
+          const { internal } = await import("../_generated/api");
+          const result = await options.runAction(internal.ai.search.searchShoppingItems, {
+            projectId: options.projectId as any,
+            ...args,
+          });
+          return JSON.stringify({
+            found: result.count,
+            total: result.total,
+            items: result.items.map((item: any) => ({
+              id: item._id,
+              name: item.name,
+              quantity: item.quantity,
+              notes: item.notes,
+              category: item.category,
+              supplier: item.supplier,
+              priority: item.priority,
+              sectionId: item.sectionId,
+            })),
+          });
+        },
+      },
+
+      search_notes: {
+        description: "Search for project notes by title or content.",
+        inputSchema: searchNotesSchema,
+        execute: async (args: z.infer<typeof searchNotesSchema>) => {
+          if (!options?.projectId || !options?.runAction) {
+            return JSON.stringify({ error: "Search not available - missing project context" });
+          }
+          const { internal } = await import("../_generated/api");
+          const result = await options.runAction(internal.ai.search.searchNotes, {
+            projectId: options.projectId as any,
+            ...args,
+          });
+          return JSON.stringify({
+            found: result.count,
+            total: result.total,
+            notes: result.notes.map((note: any) => ({
+              id: note._id,
+              title: note.title,
+              content: note.content,
+              isArchived: note.isArchived ?? false,
+              updatedAt: note.updatedAt,
+              createdAt: note.createdAt,
+            })),
+          });
+        },
+      },
+
+      search_surveys: {
+        description: "Search for surveys in the project to review or edit them.",
+        inputSchema: searchSurveysSchema,
+        execute: async (args: z.infer<typeof searchSurveysSchema>) => {
+          if (!options?.projectId || !options?.runAction) {
+            return JSON.stringify({ error: "Search not available - missing project context" });
+          }
+          const { internal } = await import("../_generated/api");
+          const result = await options.runAction(internal.ai.search.searchSurveys, {
+            projectId: options.projectId as any,
+            ...args,
+          });
+          return JSON.stringify({
+            found: result.count,
+            total: result.total,
+            surveys: result.surveys.map((survey: any) => ({
+              id: survey._id,
+              title: survey.title,
+              description: survey.description,
+              status: survey.status,
+              isRequired: survey.isRequired,
+              allowMultipleResponses: survey.allowMultipleResponses,
+              startDate: survey.startDate,
+              endDate: survey.endDate,
+            })),
+          });
+        },
+      },
+
+      search_contacts: {
+        description: "Search for project contacts such as contractors or suppliers.",
+        inputSchema: searchContactsSchema,
+        execute: async (args: z.infer<typeof searchContactsSchema>) => {
+          if (!options?.projectId || !options?.runAction) {
+            return JSON.stringify({ error: "Search not available - missing project context" });
+          }
+          const { internal } = await import("../_generated/api");
+          const result = await options.runAction(internal.ai.search.searchContacts, {
+            projectId: options.projectId as any,
+            ...args,
+          });
+          return JSON.stringify({
+            found: result.count,
+            total: result.total,
+            contacts: result.contacts.map((contact: any) => ({
+              id: contact._id,
+              name: contact.name,
+              companyName: contact.companyName,
+              email: contact.email,
+              phone: contact.phone,
+              type: contact.type,
+              notes: contact.notes,
+            })),
+          });
         },
       },
     },

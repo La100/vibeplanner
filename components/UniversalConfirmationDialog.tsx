@@ -536,7 +536,7 @@ export function UniversalConfirmationDialog({
   };
 
   const renderShoppingContent = () => {
-    const data = contentItem.data as Record<string, unknown>;
+    const data = isEditing ? editedItem.data : contentItem.data;
     return (
       <div className="space-y-4">
         <div className="space-y-2">
@@ -544,8 +544,8 @@ export function UniversalConfirmationDialog({
             <>
               <Input
                 value={String(editedItem.data.name || '')}
-                onChange={(e) => setEditedItem(prev => ({ 
-                  ...prev, 
+                onChange={(e) => setEditedItem(prev => ({
+                  ...prev,
                   data: { ...prev.data, name: e.target.value }
                 }))}
                 placeholder="Nazwa produktu"
@@ -553,8 +553,8 @@ export function UniversalConfirmationDialog({
               />
               <Textarea
                 value={String(editedItem.data.notes || '')}
-                onChange={(e) => setEditedItem(prev => ({ 
-                  ...prev, 
+                onChange={(e) => setEditedItem(prev => ({
+                  ...prev,
                   data: { ...prev.data, notes: e.target.value }
                 }))}
                 className="text-sm resize-none"
@@ -572,51 +572,161 @@ export function UniversalConfirmationDialog({
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div className="flex items-center gap-2">
-            <Package className="w-4 h-4 text-gray-500" />
-            <span className="text-gray-600">Ilość:</span>
-            <span className="font-medium">{String(data.quantity)}</span>
-          </div>
-          
-          {Boolean(data.unitPrice && String(data.unitPrice)) && (
+        {isEditing ? (
+          <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <DollarSign className="w-4 h-4 text-gray-500" />
-              <span className="text-gray-600">Cena:</span>
-              <span className="font-medium">{String(data.unitPrice)} PLN</span>
+              <label className="text-sm text-gray-600 w-24 flex items-center gap-1">
+                <Package className="w-4 h-4" />
+                Ilość:
+              </label>
+              <Input
+                type="number"
+                value={Number(editedItem.data.quantity || 1)}
+                onChange={(e) => setEditedItem(prev => ({
+                  ...prev,
+                  data: { ...prev.data, quantity: Number(e.target.value) }
+                }))}
+                className="flex-1"
+                min="1"
+              />
             </div>
-          )}
-          
-          {Boolean(data.sectionName && String(data.sectionName)) && (
-            <div className="flex items-center gap-2">
-              <Home className="w-4 h-4 text-gray-500" />
-              <span className="text-gray-600">Sekcja:</span>
-              <span className="font-medium">{String(data.sectionName)}</span>
-            </div>
-          )}
 
-          {Boolean(data.category && String(data.category)) && (
             <div className="flex items-center gap-2">
-              <Tag className="w-4 h-4 text-gray-500" />
-              <span className="text-gray-600">Kategoria:</span>
-              <span className="font-medium">{String(data.category)}</span>
+              <label className="text-sm text-gray-600 w-24 flex items-center gap-1">
+                <DollarSign className="w-4 h-4" />
+                Cena:
+              </label>
+              <Input
+                type="number"
+                value={Number(editedItem.data.unitPrice || 0)}
+                onChange={(e) => setEditedItem(prev => ({
+                  ...prev,
+                  data: { ...prev.data, unitPrice: Number(e.target.value) }
+                }))}
+                placeholder="0.00"
+                className="flex-1"
+                step="0.01"
+              />
             </div>
-          )}
-          
-          {Boolean(data.supplier && String(data.supplier)) && (
+
             <div className="flex items-center gap-2">
-              <User className="w-4 h-4 text-gray-500" />
-              <span className="text-gray-600">Dostawca:</span>
-              <span className="font-medium">{String(data.supplier)}</span>
+              <label className="text-sm text-gray-600 w-24 flex items-center gap-1">
+                <Home className="w-4 h-4" />
+                Sekcja:
+              </label>
+              <Input
+                value={String(editedItem.data.sectionName || '')}
+                onChange={(e) => setEditedItem(prev => ({
+                  ...prev,
+                  data: { ...prev.data, sectionName: e.target.value }
+                }))}
+                placeholder="Łazienka"
+                className="flex-1"
+              />
             </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-600 w-24 flex items-center gap-1">
+                <Tag className="w-4 h-4" />
+                Kategoria:
+              </label>
+              <Input
+                value={String(editedItem.data.category || '')}
+                onChange={(e) => setEditedItem(prev => ({
+                  ...prev,
+                  data: { ...prev.data, category: e.target.value }
+                }))}
+                placeholder="Armatura"
+                className="flex-1"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-600 w-24 flex items-center gap-1">
+                <User className="w-4 h-4" />
+                Dostawca:
+              </label>
+              <Input
+                value={String(editedItem.data.supplier || '')}
+                onChange={(e) => setEditedItem(prev => ({
+                  ...prev,
+                  data: { ...prev.data, supplier: e.target.value }
+                }))}
+                placeholder="Nazwa dostawcy"
+                className="flex-1"
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="flex items-center gap-2">
+              <Package className="w-4 h-4 text-gray-500" />
+              <span className="text-gray-600">Ilość:</span>
+              <span className="font-medium">{String(data.quantity)}</span>
+            </div>
+
+            {Boolean(data.unitPrice && String(data.unitPrice)) && (
+              <div className="flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-gray-500" />
+                <span className="text-gray-600">Cena:</span>
+                <span className="font-medium">{String(data.unitPrice)} PLN</span>
+              </div>
+            )}
+
+            {Boolean(data.sectionName && String(data.sectionName)) && (
+              <div className="flex items-center gap-2">
+                <Home className="w-4 h-4 text-gray-500" />
+                <span className="text-gray-600">Sekcja:</span>
+                <span className="font-medium">{String(data.sectionName)}</span>
+              </div>
+            )}
+
+            {Boolean(data.category && String(data.category)) && (
+              <div className="flex items-center gap-2">
+                <Tag className="w-4 h-4 text-gray-500" />
+                <span className="text-gray-600">Kategoria:</span>
+                <span className="font-medium">{String(data.category)}</span>
+              </div>
+            )}
+
+            {Boolean(data.supplier && String(data.supplier)) && (
+              <div className="flex items-center gap-2">
+                <User className="w-4 h-4 text-gray-500" />
+                <span className="text-gray-600">Dostawca:</span>
+                <span className="font-medium">{String(data.supplier)}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-600">Priorytet:</span>
+          {isEditing ? (
+            <Select
+              value={String(editedItem.data.priority || 'medium')}
+              onValueChange={(value) => setEditedItem(prev => ({
+                ...prev,
+                data: { ...prev.data, priority: value }
+              }))}
+            >
+              <SelectTrigger className="w-32 h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="low">Low</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="urgent">Urgent</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            Boolean(data.priority && String(data.priority)) && (
+              <Badge className={priorityColors[data.priority as keyof typeof priorityColors]}>
+                Priorytet: {String(data.priority)}
+              </Badge>
+            )
           )}
         </div>
-
-        {Boolean(data.priority && String(data.priority)) && (
-          <Badge className={priorityColors[data.priority as keyof typeof priorityColors]}>
-            Priorytet: {String(data.priority)}
-          </Badge>
-        )}
       </div>
     );
   };

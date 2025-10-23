@@ -167,7 +167,7 @@ export function MessageInput({
         ref={fileInputRef}
         type="file"
         onChange={handleFileSelect}
-        accept="image/*,video/*,application/pdf,.doc,.docx,.txt"
+        accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.xlsm,.txt"
         className="hidden"
       />
 

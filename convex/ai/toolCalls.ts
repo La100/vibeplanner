@@ -504,5 +504,69 @@ export const functionTools: FunctionToolDefinition[] = [
       required: ["contactId"],
     },
   },
+  {
+    name: "search_tasks",
+    description: "Search for tasks in the project. Use this when you need to find specific tasks or get information about existing tasks (e.g., to edit them, check their status, or reference them).",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query - can be title, description, assignee name, or any task details" },
+        status: { type: "string", enum: ["todo", "in_progress", "review", "done"], description: "Filter by status (optional)" },
+        limit: { type: "number", description: "Maximum number of results to return (default: 10)", default: 10 },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "search_shopping_items",
+    description: "Search for shopping list items in the project. Use this when you need to find specific items or get information about existing shopping items.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query - can be item name, category, section, supplier, or any item details" },
+        sectionName: { type: "string", description: "Filter by section name (optional)" },
+        limit: { type: "number", description: "Maximum number of results to return (default: 10)", default: 10 },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "search_notes",
+    description: "Search for project notes by title or content. Use this to find notes you need to reference or edit.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query - can be note title or content keywords" },
+        includeArchived: { type: "boolean", description: "Whether to include archived notes (default: false)", default: false },
+        limit: { type: "number", description: "Maximum number of results to return (default: 10)", default: 10 },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "search_surveys",
+    description: "Search for surveys in the project. Use this when you need to find surveys to review, edit, or reference.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query - survey title or description keywords" },
+        status: { type: "string", enum: ["draft", "active", "closed"], description: "Filter by survey status (optional)" },
+        limit: { type: "number", description: "Maximum number of results to return (default: 10)", default: 10 },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "search_contacts",
+    description: "Search for contacts assigned to the project. Use this to find suppliers, contractors, or other contacts.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query - contact name, company, email, phone, or notes" },
+        contactType: { type: "string", enum: ["contractor", "supplier", "subcontractor", "other"], description: "Filter by contact type (optional)" },
+        limit: { type: "number", description: "Maximum number of results to return (default: 10)", default: 10 },
+      },
+      required: [],
+    },
+  },
 ];
-

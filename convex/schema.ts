@@ -756,6 +756,15 @@ export default defineSchema({
       estimatedCostUSD: v.number(),
     })),
     ragContext: v.optional(v.string()), // RAG context used for this message
+    metadata: v.optional(
+      v.object({
+        fileId: v.optional(v.string()),
+        fileName: v.optional(v.string()),
+        fileType: v.optional(v.string()),
+        fileSize: v.optional(v.number()),
+        mode: v.optional(v.string()),
+      })
+    ),
     messageIndex: v.number(), // Order of message in thread (0, 1, 2, ...)
   })
     .index("by_thread", ["threadId"])
