@@ -7,7 +7,7 @@
 /**
  * Default AI model to use
  */
-export const AI_MODEL = "gpt-5";
+export const AI_MODEL = "gpt-5-mini";
 
 /**
  * AI model configuration

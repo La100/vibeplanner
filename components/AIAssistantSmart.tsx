@@ -463,6 +463,7 @@ const AIAssistantSmart = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [threadId, setThreadId] = useState<string | undefined>(undefined);
   const [initialThreadSelectionDone, setInitialThreadSelectionDone] = useState(false);
+  const [showHistory, setShowHistory] = useState(true);
   const [currentMode, setCurrentMode] = useState<'full' | 'recent' | null>(null);
   const [sessionTokens, setSessionTokens] = useState({ total: 0, cost: 0 });
   const [pendingItems, setPendingItems] = useState<PendingItem[]>([]); // New unified system
@@ -2208,14 +2209,49 @@ const AIAssistantSmart = () => {
     <>
       <div className="flex h-full bg-background text-foreground">
       {/* Sidebar with chat history (desktop) */}
-      <aside className="hidden w-72 shrink-0 flex-col border-r border-border/60 bg-card/20 md:flex lg:w-80">
-        <div className="border-b border-border/60 px-4 py-5">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <MessageSquare className="h-4 w-4 text-primary" />
-            <div>
-              <p className="text-sm font-semibold text-foreground">Project chats</p>
-              <p className="text-xs text-muted-foreground">All your renovation threads</p>
+      <aside
+        className={cn(
+          "hidden shrink-0 flex-col border-r border-border/60 bg-card/20 transition-all duration-200 md:flex",
+          showHistory ? "w-72 lg:w-80" : "w-[18px]"
+        )}
+      >
+        {/* Collapsed tab */}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setShowHistory(true)}
+          className={cn(
+            "absolute left-0 top-5 z-10 h-7 w-7 -translate-x-1/2 rounded-full border border-border bg-card shadow-sm transition-opacity",
+            showHistory ? "opacity-0 pointer-events-none" : "opacity-100"
+          )}
+        >
+          <span className="sr-only">Open chat history</span>
+          ☰
+        </Button>
+
+        <div
+          className={cn(
+            "border-b border-border/60 px-4 py-5",
+            showHistory ? "block" : "hidden"
+          )}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <MessageSquare className="h-4 w-4 text-primary" />
+              <div>
+                <p className="text-sm font-semibold text-foreground">Project chats</p>
+                <p className="text-xs text-muted-foreground">All your renovation threads</p>
+              </div>
             </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowHistory(false)}
+              className="h-7 w-7 rounded-full border border-border"
+            >
+              <span className="sr-only">Collapse chat history</span>
+              ×
+            </Button>
           </div>
           <Button
             onClick={handleNewChat}
@@ -2226,7 +2262,7 @@ const AIAssistantSmart = () => {
             Start new chat
           </Button>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className={cn("flex-1 overflow-y-auto", showHistory ? "block" : "hidden")}>
           {isThreadListLoading ? (
             <div className="px-4 py-6 text-xs text-muted-foreground">Loading chat history…</div>
           ) : hasThreads ? (
@@ -2292,6 +2328,15 @@ const AIAssistantSmart = () => {
       <div className="relative flex flex-1 flex-col">
         {/* Mobile header */}
         <div className="flex items-center gap-3 border-b border-border/60 px-4 py-3 md:hidden">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShowHistory((prev) => !prev)}
+            className="h-8 w-8 rounded-full border border-border"
+          >
+            <span className="sr-only">Toggle chat history</span>
+            {showHistory ? "×" : "☰"}
+          </Button>
           {hasThreads ? (
             <div className="flex-1">
               <label className="text-xs font-medium text-muted-foreground" htmlFor="mobile-thread-select">
@@ -2329,6 +2374,15 @@ const AIAssistantSmart = () => {
 
         {/* Desktop toolbar */}
         <div className="absolute right-6 top-6 hidden items-center gap-3 text-xs text-muted-foreground md:flex">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShowHistory((prev) => !prev)}
+            className="h-7 w-7 rounded-full border border-border"
+          >
+            <span className="sr-only">Toggle chat history</span>
+            {showHistory ? "×" : "☰"}
+          </Button>
           {sessionTokens.total > 0 && (
             <span>{sessionTokens.total.toLocaleString()} tokens (~${sessionTokens.cost.toFixed(4)})</span>
           )}
