@@ -10,6 +10,7 @@ import { Agent } from "@convex-dev/agent";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { AI_MODEL, AI_CONFIG } from "./config";
+import type { ProjectContextSnapshot } from "./types";
 
 /**
  * Tool schemas for the VibePlanner AI Agent
@@ -230,6 +231,10 @@ const searchContactsSchema = z.object({
   limit: z.number().optional().default(10).describe("Maximum number of results to return"),
 });
 
+const loadFullProjectContextSchema = z.object({
+  reason: z.string().optional().describe("Why you need the full context (for logging and debugging)"),
+});
+
 /**
  * Create the VibePlanner AI Agent with all tools and advanced features
  *
@@ -246,6 +251,7 @@ export const createVibePlannerAgent = (
     usageHandler?: (ctx: any, usageData: any) => Promise<void>;
     projectId?: string;
     runAction?: (action: any, args: any) => Promise<any>;
+    loadSnapshot?: () => Promise<ProjectContextSnapshot>;
   }
 ) => {
   const agentConfig: any = {
@@ -580,6 +586,51 @@ export const createVibePlannerAgent = (
               notes: contact.notes,
             })),
           });
+        },
+      },
+
+      // Full project context loading tool
+      load_full_project_context: {
+        description: "Load complete project overview including ALL tasks, notes, shopping items, contacts, and surveys. Use this when you need comprehensive context about the entire project (e.g., for summaries, complex queries spanning multiple areas, or when search results are insufficient). This is more expensive than targeted searches, so use it wisely. The context is cached, so multiple calls are efficient.",
+        inputSchema: loadFullProjectContextSchema,
+        execute: async (args: z.infer<typeof loadFullProjectContextSchema>) => {
+          if (!options?.loadSnapshot) {
+            return JSON.stringify({ 
+              error: "Full context loading not available",
+              suggestion: "Try using specific search tools instead (search_tasks, search_notes, etc.)"
+            });
+          }
+          
+          console.log(`🧠 AI requested full project context. Reason: ${args.reason || "not specified"}`);
+          
+          try {
+            // Load snapshot (cached if already loaded)
+            const snapshot = await options.loadSnapshot();
+            
+            // Format for AI consumption
+            const { buildContextFromSnapshot } = await import("./helpers/contextBuilder");
+            const formattedContext = buildContextFromSnapshot(snapshot);
+            
+            return JSON.stringify({
+              success: true,
+              context: formattedContext,
+              counts: {
+                tasks: snapshot.tasks.length,
+                notes: snapshot.notes.length,
+                shoppingItems: snapshot.shoppingItems.length,
+                contacts: snapshot.contacts.length,
+                surveys: snapshot.surveys.length,
+              },
+              summary: snapshot.summary,
+              message: "Full project context loaded successfully. Use the 'context' field for detailed data.",
+            });
+          } catch (error) {
+            console.error("Error loading full project context:", error);
+            return JSON.stringify({
+              error: "Failed to load full project context",
+              details: (error as Error).message,
+            });
+          }
         },
       },
     },

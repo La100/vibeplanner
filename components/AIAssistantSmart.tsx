@@ -30,13 +30,12 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useUser } from "@clerk/nextjs";
 import { useProject } from '@/components/providers/ProjectProvider';
-import { Loader2, Paperclip, X, Building, FileText, Image, File, Plus, SlidersHorizontal, Clock, ArrowUpRight, Square, MessageSquare } from "lucide-react";
+import { Loader2, Paperclip, X, Building, FileText, Image, File, Plus, ArrowUpRight, Square, MessageSquare } from "lucide-react";
 import type { PendingContentItem } from "@/components/AIConfirmationGrid";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { UniversalConfirmationDialog } from "@/components/UniversalConfirmationDialog";
-import InlinePromptManager from "@/components/InlinePromptManager";
 import { AIConfirmationGrid } from "@/components/AIConfirmationGrid";
 
 type PendingItem = {
@@ -463,7 +462,7 @@ const AIAssistantSmart = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [threadId, setThreadId] = useState<string | undefined>(undefined);
   const [initialThreadSelectionDone, setInitialThreadSelectionDone] = useState(false);
-  const [showHistory, setShowHistory] = useState(true);
+  const [showHistory, setShowHistory] = useState(false);
   const [currentMode, setCurrentMode] = useState<'full' | 'recent' | null>(null);
   const [sessionTokens, setSessionTokens] = useState({ total: 0, cost: 0 });
   const [pendingItems, setPendingItems] = useState<PendingItem[]>([]); // New unified system
@@ -557,15 +556,12 @@ const AIAssistantSmart = () => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleStopResponse]);
 
+  // Removed auto-loading of last thread - always start with empty chat
   useEffect(() => {
-    if (initialThreadSelectionDone) {
-      return;
-    }
-    if (!threadId && userThreads && userThreads.length > 0) {
-      setThreadId(userThreads[0].threadId);
+    if (!initialThreadSelectionDone) {
       setInitialThreadSelectionDone(true);
     }
-  }, [userThreads, threadId, initialThreadSelectionDone]);
+  }, [initialThreadSelectionDone]);
 
   useEffect(() => {
     if (!persistedMessages) {
@@ -2212,22 +2208,9 @@ const AIAssistantSmart = () => {
       <aside
         className={cn(
           "hidden shrink-0 flex-col border-r border-border/60 bg-card/20 transition-all duration-200 md:flex",
-          showHistory ? "w-72 lg:w-80" : "w-[18px]"
+          showHistory ? "w-72 lg:w-80" : "w-0"
         )}
       >
-        {/* Collapsed tab */}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setShowHistory(true)}
-          className={cn(
-            "absolute left-0 top-5 z-10 h-7 w-7 -translate-x-1/2 rounded-full border border-border bg-card shadow-sm transition-opacity",
-            showHistory ? "opacity-0 pointer-events-none" : "opacity-100"
-          )}
-        >
-          <span className="sr-only">Open chat history</span>
-          ☰
-        </Button>
 
         <div
           className={cn(
@@ -2373,20 +2356,24 @@ const AIAssistantSmart = () => {
         </div>
 
         {/* Desktop toolbar */}
-        <div className="absolute right-6 top-6 hidden items-center gap-3 text-xs text-muted-foreground md:flex">
+        <div className="absolute left-6 top-6 hidden items-center gap-3 z-20 md:flex">
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setShowHistory((prev) => !prev)}
-            className="h-7 w-7 rounded-full border border-border"
+            className="h-9 w-9 rounded-lg border border-border bg-card shadow-md hover:bg-muted transition-all"
+            title={showHistory ? "Zamknij historię czatów" : "Otwórz historię czatów"}
           >
             <span className="sr-only">Toggle chat history</span>
-            {showHistory ? "×" : "☰"}
+            <MessageSquare className="h-5 w-5" />
           </Button>
+        </div>
+        
+        {/* Right side toolbar */}
+        <div className="absolute right-6 top-6 hidden items-center gap-3 text-xs text-muted-foreground md:flex">
           {sessionTokens.total > 0 && (
             <span>{sessionTokens.total.toLocaleString()} tokens (~${sessionTokens.cost.toFixed(4)})</span>
           )}
-          <InlinePromptManager />
         </div>
 
         <div className="flex-1 overflow-y-auto px-6">
@@ -2550,24 +2537,6 @@ const AIAssistantSmart = () => {
                 disabled={isLoading || isUploading || !aiEnabled}
               >
                 <Plus className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted"
-                onClick={() => handleQuickPromptClick("Summarize what happened on this project today.")}
-                disabled={isLoading || isUploading || !aiEnabled}
-              >
-                <SlidersHorizontal className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted"
-                onClick={() => handleQuickPromptClick("Set a gentle reminder for tomorrow's priorities.")}
-                disabled={isLoading || isUploading || !aiEnabled}
-              >
-                <Clock className="h-4 w-4" />
               </Button>
             </div>
           </div>

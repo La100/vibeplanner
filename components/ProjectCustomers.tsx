@@ -7,7 +7,6 @@ import { Id } from "@/convex/_generated/dataModel";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useOrganization } from "@clerk/nextjs";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,7 +32,6 @@ interface ProjectCustomersProps {
 
 
 export default function ProjectCustomers({ projectId }: ProjectCustomersProps) {
-  const { organization } = useOrganization();
   const [isInviting, setIsInviting] = useState(false);
 
   // Get project info
@@ -59,45 +57,18 @@ export default function ProjectCustomers({ projectId }: ProjectCustomersProps) {
   });
 
   const handleInviteCustomer = async (values: z.infer<typeof inviteFormSchema>) => {
-    if (!organization) {
-      toast.error("Organization not found");
-      return;
-    }
-
     setIsInviting(true);
     try {
-      // Check if user exists in organization
-      const membersResponse = await organization.getMemberships();
-      const existingMember = membersResponse.data.find(member => 
-        member.publicUserData?.identifier === values.email
-      );
+      // Invite customer directly to project (NOT to organization)
+      // Customers have limited access - only to specific projects they're invited to
+      await inviteCustomer({
+        email: values.email,
+        projectId: projectId,
+      });
 
-      if (existingMember) {
-        // User is already in org - add to project
-        await inviteCustomer({
-          email: values.email,
-          projectId: projectId,
-        });
-
-        toast.success("Customer Added to Project", {
-          description: `${values.email} now has access to this project.`,
-        });
-      } else {
-        // Invite to organization and project
-        await organization.inviteMember({
-          emailAddress: values.email,
-          role: "org:customer",
-        });
-
-        await inviteCustomer({
-          email: values.email,
-          projectId: projectId,
-        });
-
-        toast.success("Customer Invited", {
-          description: `${values.email} has been invited to the organization and will have access to this project.`,
-        });
-      }
+      toast.success("Customer Invited", {
+        description: `${values.email} has been invited to this project. They will receive an email with access instructions.`,
+      });
 
       form.reset();
     } catch (error) {
@@ -173,6 +144,27 @@ export default function ProjectCustomers({ projectId }: ProjectCustomersProps) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Info Card */}
+      <Card className="border-blue-200 bg-blue-50">
+        <CardContent className="pt-6">
+          <div className="flex items-start gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100">
+              <Users className="h-4 w-4 text-blue-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-blue-900">About Project Customers</h3>
+              <p className="text-sm text-blue-700 mt-1">
+                Customers are clients who have limited access only to this specific project.
+                Unlike team members (admin/member), customers cannot access the organization or other projects.
+              </p>
+              <p className="text-xs text-blue-600 mt-2">
+                💡 Customers will receive an email invitation and can access project files, surveys, and collaboration features.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Current Customers */}
       <Card>

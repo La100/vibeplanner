@@ -29,6 +29,7 @@ import { getFileUrl, processFileForAI } from "./helpers/fileProcessor";
 import { processFunctionCalls } from "./helpers/functionCallHandler";
 import { calculateTokenUsage } from "./helpers/tokenUtils";
 import type { ProjectContextSnapshot } from "./types";
+import { defaultPrompt } from "./prompt";
 
 const MIN_MESSAGE_LENGTH_FOR_CONTEXT = 120;
 
@@ -171,13 +172,8 @@ export const chatWithLongContextAgent = action({
       throw new Error("Unable to resolve teamId for project while running AI chat");
     }
 
-    // Get system prompt (custom or default)
-    const customPrompt = await ctx.runQuery(internal.ai.promptDb.getActiveCustomPromptInternal, {
-      projectId: args.projectId,
-    });
-
-    const systemPrompt: string = customPrompt ||
-      await ctx.runQuery(api.ai.promptDb.getDefaultPromptTemplate, {});
+    // Use default system prompt
+    const systemPrompt: string = defaultPrompt;
 
     // Ensure thread exists
     let actualThreadId = args.threadId;

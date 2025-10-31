@@ -90,18 +90,38 @@ export default function ProjectGantt() {
   }
 
   const ganttFeatures: GanttFeature[] = tasks
-    ?.filter(task => task.dueDate)
-    .map(task => ({
-      id: task._id,
-      name: task.title,
-      startAt: new Date(task.dueDate!),
-      endAt: new Date(task.dueDate!),
-      status: {
-        id: task.status,
-        name: task.status.replace("_", " "),
-        color: statusColors[task.status] || "#6B7280",
-      },
-    })) || [];
+    ?.filter(task => task.startDate || task.endDate)
+    .map(task => {
+      // Properly handle start and end dates for Gantt chart
+      let startAt: Date;
+      let endAt: Date;
+      
+      if (task.startDate && task.endDate) {
+        // Has both - use as is
+        startAt = new Date(task.startDate);
+        endAt = new Date(task.endDate);
+      } else if (task.endDate) {
+        // Only deadline - show as single point at deadline
+        endAt = new Date(task.endDate);
+        startAt = endAt;
+      } else {
+        // Only startDate - show as single point at start
+        startAt = new Date(task.startDate!);
+        endAt = startAt;
+      }
+      
+      return {
+        id: task._id,
+        name: task.title,
+        startAt,
+        endAt,
+        status: {
+          id: task.status,
+          name: task.status.replace("_", " "),
+          color: statusColors[task.status] || "#6B7280",
+        },
+      };
+    }) || [];
 
 
   const handleTaskClick = (taskId: string) => {

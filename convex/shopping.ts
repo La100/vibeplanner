@@ -301,6 +301,22 @@ export const getShoppingListItemsByProject = query({
       .collect();
     return items;
   },
+});
+
+export const getShoppingListItemsByTeam = query({
+  args: { teamId: v.id("teams") },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    // Get all shopping list items for this team
+    const items = await ctx.db
+      .query("shoppingListItems")
+      .filter((q) => q.eq(q.field("teamId"), args.teamId))
+      .collect();
+
+    return items;
+  },
 }); 
 
 export const getShoppingListForIndexing = query({

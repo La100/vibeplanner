@@ -846,11 +846,22 @@ export const GanttProvider: FC<GanttProviderProps> = ({
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollLeft =
-        scrollRef.current.scrollWidth / 2 - scrollRef.current.clientWidth / 2;
+      // Scroll to today's date, positioned more to the left
+      const today = new Date();
+      const timelineStartDate = new Date(timelineData.at(0)?.year ?? 0, 0, 1);
+      const differenceIn = getDifferenceIn(range);
+      const offset = differenceIn(today, timelineStartDate);
+      const innerOffset = calculateInnerOffset(today, range, (zoom / 100) * columnWidth);
+      
+      // Calculate scroll position - show today about 20% from left edge (not centered)
+      const todayPosition = (zoom / 100) * columnWidth * offset + innerOffset;
+      const leftMargin = scrollRef.current.clientWidth * 0.2; // 20% from left
+      const targetScroll = todayPosition - leftMargin;
+      
+      scrollRef.current.scrollLeft = Math.max(0, targetScroll);
       setScrollX(scrollRef.current.scrollLeft);
     }
-  }, [setScrollX]);
+  }, [setScrollX, timelineData, range, zoom, columnWidth]);
 
   // Update sidebar width when DOM is ready
   useEffect(() => {

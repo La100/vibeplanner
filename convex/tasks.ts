@@ -209,7 +209,8 @@ export const listProjectTasksInternal = internalQuery({
       ),
       assignedTo: v.optional(v.union(v.string(), v.null())),
       createdBy: v.string(),
-      dueDate: v.optional(v.number()),
+      startDate: v.optional(v.number()),
+      endDate: v.optional(v.number()),
       tags: v.array(v.string()),
       cost: v.optional(v.number()),
       updatedAt: v.optional(v.number()),
@@ -259,7 +260,8 @@ export const getTaskInternal = internalQuery({
       ),
       assignedTo: v.optional(v.union(v.string(), v.null())),
       createdBy: v.string(),
-      dueDate: v.optional(v.number()),
+      startDate: v.optional(v.number()),
+      endDate: v.optional(v.number()),
       tags: v.array(v.string()),
       cost: v.optional(v.number()),
       updatedAt: v.optional(v.number()),
@@ -366,7 +368,8 @@ export const createTask = mutation({
     status: v.union(v.literal("todo"), v.literal("in_progress"), v.literal("review"), v.literal("done")),
     priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent"))),
     assignedTo: v.optional(v.union(v.string(), v.null())),
-    dueDate: v.optional(v.number()),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
     cost: v.optional(v.number()),
     content: v.optional(v.string()),
@@ -386,7 +389,8 @@ export const createTask = mutation({
       priority: args.priority,
       assignedTo: args.assignedTo,
       createdBy: identity.subject,
-      dueDate: args.dueDate,
+      startDate: args.startDate,
+      endDate: args.endDate,
       tags: args.tags ?? [],
       cost: args.cost,
       updatedAt: Date.now(),
@@ -414,7 +418,8 @@ export const updateTask = mutation({
     status: v.optional(v.union(v.literal("todo"), v.literal("in_progress"), v.literal("review"), v.literal("done"))),
     priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent"), v.null())),
     assignedTo: v.optional(v.union(v.string(), v.null())),
-    dueDate: v.optional(v.number()),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
     cost: v.optional(v.number()),
     content: v.optional(v.string()),
@@ -592,12 +597,14 @@ The available properties are:
 - description: string
 - priority: 'low' | 'medium' | 'high' | 'urgent' | null. To remove priority, return null.
 - status: 'todo' | 'in_progress' | 'review' | 'done'
-- dateRange: object with 'from' and 'to' properties. Dates should be full ISO 8601 date-time strings. IMPORTANT: After interpreting the time in the user's local timezone, convert it to UTC for the final ISO string (e.g., YYYY-MM-DDTHH:mm:ss.sssZ). If the user does NOT provide a specific time, the time part of the string MUST be set to midnight UTC (T00:00:00.000Z). If a single date is mentioned, use it for both 'from' and 'to'.
+- startDate: ISO 8601 date-time string (e.g., YYYY-MM-DDTHH:mm:ss.sssZ). IMPORTANT: After interpreting the time in the user's local timezone, convert it to UTC for the final ISO string. If the user does NOT provide a specific time, the time part of the string MUST be set to midnight UTC (T00:00:00.000Z).
+- endDate: ISO 8601 date-time string (e.g., YYYY-MM-DDTHH:mm:ss.sssZ). IMPORTANT: After interpreting the time in the user's local timezone, convert it to UTC for the final ISO string. If the user does NOT provide a specific time, the time part of the string MUST be set to midnight UTC (T00:00:00.000Z).
 - cost: number
 - assignedTo: string (must be one of the user IDs from the provided list)
 - tags: string[] (array of strings)
 
 The title is a short, concise summary. The description contains all other details, notes, and context.
+If a single date or deadline is mentioned, set both startDate and endDate to that date. For date ranges like "from Monday to Friday", set startDate to Monday and endDate to Friday.
 
 Here are the available team members for assignment. Match the name mentioned in the prompt to one of these users and return their ID.
 Team Members:

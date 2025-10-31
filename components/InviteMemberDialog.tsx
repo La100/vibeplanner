@@ -27,7 +27,7 @@ interface InviteMemberDialogProps {
   children: React.ReactNode;
 }
 
-type InvitationRole = "admin" | "member" | "customer";
+type InvitationRole = "admin" | "member";
 
 export function InviteMemberDialog({ teamId, children }: InviteMemberDialogProps) {
   const [email, setEmail] = useState("");
@@ -89,7 +89,6 @@ export function InviteMemberDialog({ teamId, children }: InviteMemberDialogProps
                 <SelectContent>
                   <SelectItem value="admin">Admin</SelectItem>
                   <SelectItem value="member">Member</SelectItem>
-                  <SelectItem value="customer">Customer</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -31,22 +31,61 @@ export function transformTaskToEvent(task: Task & {
   assignedToImageUrl?: string;
   project?: { id: string; name: string; slug: string; }
 }): CalendarEvent | null {
-  // Only include tasks with dates
-  if (!task.dueDate) {
+  // Only include tasks with dates (either startDate or endDate)
+  if (!task.startDate && !task.endDate) {
     return null;
   }
 
+  // Determine event type and dates based on what's provided
+  let startTime: Date;
+  let endTime: Date;
+  let eventType: 'task' | 'deadline' | 'milestone';
+  let isAllDay: boolean;
 
-  // Task has due date - show as all-day event
-  const startTime = new Date(task.dueDate);
-  const endTime = new Date(task.dueDate);
-  const isAllDay = true;
+  if (task.startDate && task.endDate) {
+    // Has both dates - analyze the type
+    startTime = new Date(task.startDate);
+    endTime = new Date(task.endDate);
+    
+    const isSameDay = startTime.toDateString() === endTime.toDateString();
+    const isSameTimestamp = task.startDate === task.endDate;
+    
+    // Check if all-day: times are at midnight UTC
+    const startIsAllDay = startTime.getUTCHours() === 0 && startTime.getUTCMinutes() === 0;
+    const endIsAllDay = endTime.getUTCHours() === 0 && endTime.getUTCMinutes() === 0;
+    isAllDay = startIsAllDay && endIsAllDay;
+    
+    if (isSameDay && isSameTimestamp) {
+      // Single point in time
+      eventType = isAllDay ? 'deadline' : 'milestone';
+    } else if (isSameDay && !isAllDay) {
+      // Same day with time range (e.g., meeting 2pm-4pm)
+      eventType = 'milestone';
+    } else {
+      // Multi-day or different days = task
+      eventType = 'task';
+    }
+    
+  } else if (task.endDate) {
+    // Only endDate - it's a deadline
+    endTime = new Date(task.endDate);
+    startTime = endTime; // Show on the deadline date
+    eventType = 'deadline';
+    isAllDay = endTime.getUTCHours() === 0 && endTime.getUTCMinutes() === 0;
+    
+  } else {
+    // Only startDate - it's a milestone/start point
+    startTime = new Date(task.startDate!);
+    endTime = startTime;
+    eventType = 'milestone';
+    isAllDay = startTime.getUTCHours() === 0 && startTime.getUTCMinutes() === 0;
+  }
 
   return {
     id: task._id,
     title: task.title,
     description: task.description,
-    type: task.dueDate ? 'deadline' : 'task',
+    type: eventType,
     startTime,
     endTime,
     isAllDay,

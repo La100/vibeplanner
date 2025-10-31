@@ -292,7 +292,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                       <div className="flex-1">
                         <p className="font-medium">{task.title}</p>
                         <p className="text-sm text-gray-500">
-                          {task.dueDate && `Termin: ${formatDate(task.dueDate)}`}
+                          {(task.endDate || task.startDate) && `Termin: ${formatDate((task.endDate || task.startDate)!)}`}
                         </p>
                       </div>
                       {task.priority && task.priority !== null && (
@@ -461,10 +461,16 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                               <p className="text-sm text-gray-600 mt-1">{task.description}</p>
                             )}
                             <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                              {task.dueDate && (
+                              {(task.startDate || task.endDate) && (
                                 <span className="flex items-center gap-1">
                                   <Calendar className="h-3 w-3" />
-                                  Due: {formatDate(task.dueDate)}
+                                  {task.startDate && task.endDate ? (
+                                    `${formatDate(task.startDate)} - ${formatDate(task.endDate)}`
+                                  ) : task.endDate ? (
+                                    `Due: ${formatDate(task.endDate)}`
+                                  ) : (
+                                    `Start: ${formatDate(task.startDate!)}`
+                                  )}
                                 </span>
                               )}
 

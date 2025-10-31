@@ -174,7 +174,8 @@ export default defineSchema({
     )),
     assignedTo: v.optional(v.union(v.string(), v.null())), // Clerk user ID
     createdBy: v.string(), // Clerk user ID
-    dueDate: v.optional(v.number()),
+    startDate: v.optional(v.number()), // Unix timestamp (UTC)
+    endDate: v.optional(v.number()), // Unix timestamp (UTC)
     tags: v.array(v.string()),
     cost: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
@@ -714,20 +715,6 @@ export default defineSchema({
     .index("by_supplier", ["supplier"])
     .index("by_brand", ["brand"])
     .index("by_created_by", ["createdBy"]),
-
-  // AI Custom Prompts
-  aiCustomPrompts: defineTable({
-    projectId: v.id("projects"),
-    teamId: v.id("teams"),
-    customPrompt: v.string(), // Custom system prompt text
-    createdBy: v.string(), // Clerk user ID who created the custom prompt
-    createdAt: v.number(),
-    updatedAt: v.number(),
-    isActive: v.boolean(), // Whether this custom prompt is currently being used
-  })
-    .index("by_project", ["projectId"])
-    .index("by_team", ["teamId"])
-    .index("by_project_and_active", ["projectId", "isActive"]),
 
   // AI Chat Threads - conversation sessions
   aiThreads: defineTable({

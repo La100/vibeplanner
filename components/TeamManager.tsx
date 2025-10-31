@@ -535,25 +535,33 @@ function OverviewTab({ team, projects }: { team: Team; projects: Project[] }) {
 
 function MembersTab() {
   const params = useParams<{ slug: string }>();
-  useQuery(api.teams.getTeamBySlug, params.slug ? { slug: params.slug } : "skip");
+  const team = useQuery(api.teams.getTeamBySlug, params.slug ? { slug: params.slug } : "skip");
+
+  const handleGoToTeamManagement = () => {
+    if (team) {
+      window.location.href = `/${team.slug}/team`;
+    }
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-gray-900">Team Members</h2>
-          <p className="text-gray-600 mt-1">Manage access and roles</p>
-        </div>
-        
-        <button className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
-          <Plus className="h-4 w-4" />
-          Invite Member
-        </button>
-      </div>
-
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <p className="text-gray-500">Member management will be available soon...</p>
-      </div>
+      <Card>
+        <CardContent className="pt-6">
+          <div className="text-center py-8">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mx-auto mb-4">
+              <Users className="h-8 w-8 text-primary" />
+            </div>
+            <h3 className="text-lg font-semibold mb-2">Team Member Management</h3>
+            <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+              Manage your team members, roles, and invitations from the dedicated Team Management page.
+            </p>
+            <Button onClick={handleGoToTeamManagement}>
+              <Users className="mr-2 h-4 w-4" />
+              Go to Team Management
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 } 

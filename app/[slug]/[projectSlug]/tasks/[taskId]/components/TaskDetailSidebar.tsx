@@ -54,7 +54,8 @@ interface TaskDetailSidebarProps {
     status: string;
     priority?: string | null;
     cost?: number;
-    dueDate?: number;
+    startDate?: number;
+    endDate?: number;
     assignedTo?: string | null;
     assignedToName?: string;
     estimatedHours?: number;
@@ -121,10 +122,11 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
         if (result.assignedTo) updatePayload.assignedTo = result.assignedTo;
         if (result.tags) updatePayload.tags = result.tags;
 
-        if (result.dateRange) {
-            if (result.dateRange.from) {
-                updatePayload.dueDate = new Date(result.dateRange.from).getTime();
-            }
+        if (result.startDate) {
+            updatePayload.startDate = new Date(result.startDate).getTime();
+        }
+        if (result.endDate) {
+            updatePayload.endDate = new Date(result.endDate).getTime();
         }
         
         if (Object.keys(updatePayload).length > 0) {
@@ -144,16 +146,32 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
     }
   };
 
-  const handleDueDateUpdate = async (date: Date | undefined) => {
-    setIsUpdating('dueDate');
+  const handleStartDateUpdate = async (date: Date | undefined) => {
+    setIsUpdating('startDate');
      try {
       await updateTask({
         taskId: task._id,
-        dueDate: date?.getTime(),
+        startDate: date?.getTime(),
       });
-      toast.success("Due date updated");
+      toast.success("Start date updated");
     } catch (error) {
-      toast.error("Error updating due date");
+      toast.error("Error updating start date");
+      console.error(error);
+    } finally {
+      setIsUpdating(null);
+    }
+  }
+
+  const handleEndDateUpdate = async (date: Date | undefined) => {
+    setIsUpdating('endDate');
+     try {
+      await updateTask({
+        taskId: task._id,
+        endDate: date?.getTime(),
+      });
+      toast.success("End date updated");
+    } catch (error) {
+      toast.error("Error updating end date");
       console.error(error);
     } finally {
       setIsUpdating(null);
@@ -296,16 +314,33 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
           </Select>
         </div>
 
-        {/* Due Date */}
+        {/* Start Date */}
         <div>
-          <Label className="text-sm font-medium">Due Date</Label>
+          <Label className="text-sm font-medium">Start Date</Label>
           <DatePicker
-            date={task.dueDate ? new Date(task.dueDate) : undefined}
-            onDateChange={handleDueDateUpdate}
-            placeholder="Set due date"
+            date={task.startDate ? new Date(task.startDate) : undefined}
+            onDateChange={handleStartDateUpdate}
+            placeholder="Set start date"
             className="mt-1"
           />
-          {isUpdating === 'dueDate' && (
+          {isUpdating === 'startDate' && (
+            <div className="flex items-center mt-1 text-sm text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+              Updating...
+            </div>
+          )}
+        </div>
+
+        {/* End Date */}
+        <div>
+          <Label className="text-sm font-medium">End Date</Label>
+          <DatePicker
+            date={task.endDate ? new Date(task.endDate) : undefined}
+            onDateChange={handleEndDateUpdate}
+            placeholder="Set end date"
+            className="mt-1"
+          />
+          {isUpdating === 'endDate' && (
             <div className="flex items-center mt-1 text-sm text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin mr-1" />
               Updating...

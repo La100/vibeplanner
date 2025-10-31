@@ -667,8 +667,7 @@ export const inviteTeamMember = mutation({
     email: v.string(),
     role: v.union(
       v.literal("admin"),
-      v.literal("member"),
-      v.literal("customer")
+      v.literal("member")
     ),
   },
   async handler(ctx, args) {
@@ -708,7 +707,7 @@ export const sendClerkInvitation = internalAction({
   args: {
     clerkOrgId: v.string(),
     email: v.string(),
-    role: v.string(), // "admin", "member", or "customer"
+    role: v.string(), // "admin" or "member"
     invitedBy: v.string(),
   },
   async handler(ctx, args) {
@@ -718,7 +717,6 @@ export const sendClerkInvitation = internalAction({
     }
 
     // Map our internal role to a Clerk role.
-    // "customer" will be treated as a "member" in Clerk's system.
     const clerkRole = args.role === 'admin' ? 'org:admin' : 'org:member';
 
     const redirectUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
@@ -761,10 +759,8 @@ export const changeTeamMemberRole = mutation({
     teamId: v.id("teams"),
     role: v.union(
       v.literal("admin"),
-      v.literal("member"),
-      v.literal("customer")
+      v.literal("member")
     ),
-    projectId: v.optional(v.id("projects")), // Wymagane dla roli customer
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -794,55 +790,8 @@ export const changeTeamMemberRole = mutation({
       throw new Error("Team member not found");
     }
 
-    // Przygotuj dane do aktualizacji
-    const updateData: any = { role: args.role };
-
-    // Jeśli zmiana na customer, potrzebny jest projectId
-    if (args.role === "customer") {
-      if (!args.projectId) {
-        throw new Error("Project ID is required for customer role");
-      }
-      updateData.projectIds = [args.projectId];
-
-      // Dodaj wpis do tabeli customers
-      const user = await ctx.db
-        .query("users")
-        .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", args.clerkUserId))
-        .unique();
-
-      if (user) {
-        await ctx.db.insert("customers", {
-          email: user.email,
-          clerkUserId: args.clerkUserId,
-          clerkOrgId: targetMember.clerkOrgId,
-          projectId: args.projectId,
-          teamId: args.teamId,
-          invitedBy: identity.subject,
-          status: "active",
-          invitedAt: Date.now(),
-          joinedAt: Date.now(),
-        });
-      }
-    } else {
-      // Jeśli zmiana z customer na inną rolę, usuń projectIds
-      updateData.projectIds = undefined;
-
-      // Usuń wpisy z tabeli customers
-      if (targetMember.role === "customer") {
-        const customerRecords = await ctx.db
-          .query("customers")
-          .withIndex("by_clerk_user", q => q.eq("clerkUserId", args.clerkUserId))
-          .filter(q => q.eq(q.field("teamId"), args.teamId))
-          .collect();
-        
-        for (const customerRecord of customerRecords) {
-          await ctx.db.delete(customerRecord._id);
-        }
-      }
-    }
-
-    // Aktualizuj członka
-    await ctx.db.patch(targetMember._id, updateData);
+    // Aktualizuj rolę członka (tylko admin/member)
+    await ctx.db.patch(targetMember._id, { role: args.role });
 
     return { success: true };
   }

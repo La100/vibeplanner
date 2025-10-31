@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { startOfDay, isSameDay } from "date-fns";
-import { CalendarProvider } from "./CalendarProvider";
 import { MonthView } from "./MonthView";
+import { WeekView } from "./WeekView";
+import { DayView } from "./DayView";
+import { YearView } from "./YearView";
 import { TaskSidebar } from "./TaskSidebar";
 import { DayEventsModal } from "./DayEventsModal";
 import { useCalendar } from "./CalendarProvider";
@@ -28,11 +30,77 @@ function CalendarContent({
   onDateClick,
   filters: externalFilters
 }: CalendarProps) {
-  const { setSelectedDate } = useCalendar();
+  const { setSelectedDate, state, navigateNext, navigatePrevious, goToToday, setViewMode } = useCalendar();
+  const { viewMode } = state;
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [dayModalDate, setDayModalDate] = useState<Date | null>(null);
   const [isDayModalOpen, setIsDayModalOpen] = useState(false);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input/textarea
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+
+      // Ignore if modal/sidebar is open (to avoid conflicts)
+      if (isSidebarOpen || isDayModalOpen) {
+        if (e.key === 'Escape') {
+          if (isSidebarOpen) handleSidebarClose();
+          if (isDayModalOpen) handleDayModalClose();
+        }
+        return;
+      }
+
+      // Navigation shortcuts
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          navigatePrevious();
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          navigateNext();
+          break;
+        case 't':
+        case 'T':
+          e.preventDefault();
+          goToToday();
+          break;
+        
+        // View mode shortcuts
+        case 'd':
+        case 'D':
+          e.preventDefault();
+          setViewMode('day');
+          break;
+        case 'w':
+        case 'W':
+          e.preventDefault();
+          setViewMode('week');
+          break;
+        case 'm':
+        case 'M':
+          e.preventDefault();
+          setViewMode('month');
+          break;
+        case 'y':
+        case 'Y':
+          e.preventDefault();
+          setViewMode('year');
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSidebarOpen, isDayModalOpen, navigateNext, navigatePrevious, goToToday, setViewMode]);
   
   // Apply filters to events
   const filteredEvents = useMemo(() => {
@@ -145,18 +213,54 @@ function CalendarContent({
   }, [dayModalDate, getDayEvents]);
 
   const renderCurrentView = () => {
-    return (
-      <MonthView
-        events={filteredEvents}
-        onEventClick={handleEventClick}
-        onDateClick={handleDateClick}
-        onMoreEventsClick={handleMoreEventsClick}
-      />
-    );
+    switch (viewMode) {
+      case 'day':
+        return (
+          <DayView
+            events={filteredEvents}
+            onEventClick={handleEventClick}
+            onDateClick={handleDateClick}
+          />
+        );
+      case 'week':
+        return (
+          <WeekView
+            events={filteredEvents}
+            onEventClick={handleEventClick}
+            onDateClick={handleDateClick}
+          />
+        );
+      case 'month':
+        return (
+          <MonthView
+            events={filteredEvents}
+            onEventClick={handleEventClick}
+            onDateClick={handleDateClick}
+            onMoreEventsClick={handleMoreEventsClick}
+          />
+        );
+      case 'year':
+        return (
+          <YearView
+            events={filteredEvents}
+            onEventClick={handleEventClick}
+            onDateClick={handleDateClick}
+          />
+        );
+      default:
+        return (
+          <MonthView
+            events={filteredEvents}
+            onEventClick={handleEventClick}
+            onDateClick={handleDateClick}
+            onMoreEventsClick={handleMoreEventsClick}
+          />
+        );
+    }
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-50">
+    <div className="flex flex-col h-full">
       <div className="flex-1 overflow-hidden">
         {renderCurrentView()}
       </div>
@@ -189,15 +293,13 @@ export function Calendar({
   filters
 }: CalendarProps) {
   return (
-    <CalendarProvider>
-      <div className={`h-full ${className}`}>
-        <CalendarContent
-          events={events}
-          onEventClick={onEventClick}
-          onDateClick={onDateClick}
-          filters={filters}
-        />
-      </div>
-    </CalendarProvider>
+    <div className={`h-full ${className}`}>
+      <CalendarContent
+        events={events}
+        onEventClick={onEventClick}
+        onDateClick={onDateClick}
+        filters={filters}
+      />
+    </div>
   );
 }

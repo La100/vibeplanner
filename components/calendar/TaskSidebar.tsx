@@ -75,41 +75,52 @@ export function TaskSidebar({
       {/* Overlay */}
       <div 
         className={cn(
-          "fixed inset-0 bg-black/20 transition-opacity z-40",
+          "fixed inset-0 bg-black/40 sm:bg-black/20 backdrop-blur-sm sm:backdrop-blur-none transition-opacity z-40",
           isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
         )}
         onClick={onClose}
       />
       
-              {/* Sidebar */}
-        <div className={cn(
-          "fixed right-0 top-0 h-full bg-white shadow-xl transform transition-transform duration-300 ease-in-out z-50",
-          "w-full sm:w-96 max-w-full",
-          isOpen ? "translate-x-0" : "translate-x-full"
-        )}>
-          <div className="flex flex-col h-full">
-            {/* Header */}
-            <div className="flex items-center justify-between p-3 sm:p-4 border-b">
-              <h2 className="text-base sm:text-lg font-semibold">
-                {isTask ? 'Task Details' : 'Shopping Item'}
-              </h2>
+      {/* Sidebar/Modal - Full screen on mobile, sidebar on desktop */}
+      <div className={cn(
+        "fixed bg-white shadow-2xl transform transition-all duration-300 ease-in-out z-50",
+        // Mobile: Full screen with slide-up animation
+        "bottom-0 left-0 right-0 top-0 sm:top-0 sm:right-0 sm:left-auto",
+        "w-full sm:w-96 h-full",
+        "rounded-t-3xl sm:rounded-none",
+        // Animation
+        isOpen 
+          ? "translate-y-0 sm:translate-y-0 sm:translate-x-0" 
+          : "translate-y-full sm:translate-y-0 sm:translate-x-full"
+      )}>
+        <div className="flex flex-col h-full">
+          {/* Mobile drag handle */}
+          <div className="sm:hidden flex justify-center pt-2 pb-1">
+            <div className="w-12 h-1 rounded-full bg-gray-300" />
+          </div>
+
+          {/* Header */}
+          <div className="flex items-center justify-between p-3 sm:p-4 border-b bg-white sticky top-0 z-10">
+            <h2 className="text-base sm:text-lg font-semibold">
+              {isTask ? 'Task Details' : 'Shopping Item'}
+            </h2>
             <Button
               variant="ghost"
               size="sm"
               onClick={onClose}
-              className="h-8 w-8 p-0"
+              className="h-8 w-8 p-0 hover:bg-gray-100"
             >
               <X className="h-4 w-4" />
             </Button>
           </div>
 
           {/* Content */}
-          <ScrollArea className="flex-1 p-3 sm:p-4">
-            <div className="space-y-4 sm:space-y-6">
+          <ScrollArea className="flex-1 p-3 sm:p-4 overscroll-contain">
+            <div className="space-y-3 sm:space-y-6 pb-6 sm:pb-4">
               {/* Title and Status */}
               <div>
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="text-lg sm:text-xl font-semibold text-gray-900 flex-1 pr-2" onClick={() => setIsEditing(true)}>
+                <div className="flex items-start justify-between mb-2 gap-2">
+                  <h3 className="text-base sm:text-xl font-semibold text-gray-900 flex-1 leading-snug" onClick={() => setIsEditing(true)}>
                     {event.title}
                   </h3>
                   {isEditing && (
@@ -117,19 +128,19 @@ export function TaskSidebar({
                       value={event.title}
                       onChange={() => { /* Handle change */ }}
                       onBlur={() => setIsEditing(false)}
-                      className="w-full text-lg sm:text-xl font-semibold text-gray-900 bg-transparent border-b-2 border-blue-500 focus:outline-none resize-none"
+                      className="w-full text-base sm:text-xl font-semibold text-gray-900 bg-transparent border-b-2 border-blue-500 focus:outline-none resize-none"
                     />
                   )}
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleStatusToggle}
-                    className="ml-2 p-1 flex-shrink-0"
+                    className="p-1 sm:p-1.5 flex-shrink-0 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0"
                   >
                     {event.status === 'completed' ? (
-                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      <CheckCircle2 className="h-5 w-5 sm:h-5 sm:w-5 text-green-600" />
                     ) : (
-                      <Circle className="h-5 w-5 text-gray-400" />
+                      <Circle className="h-5 w-5 sm:h-5 sm:w-5 text-gray-400" />
                     )}
                   </Button>
                 </div>
@@ -293,12 +304,12 @@ export function TaskSidebar({
             </div>
           </ScrollArea>
 
-                      {/* Footer Actions */}
-            <div className="p-3 sm:p-4 border-t bg-gray-50">
+          {/* Footer Actions */}
+          <div className="p-3 sm:p-4 border-t bg-gray-50 sticky bottom-0 safe-bottom">
             <div className="flex gap-2">
               <Button
                 variant="outline"
-                className="flex-1"
+                className="flex-1 h-10 sm:h-9"
                 onClick={() => {
                   if (event?.sourceType === 'task' && params.slug && params.projectSlug && event?.sourceData?._id) {
                     router.push(`/${params.slug}/${params.projectSlug}/tasks/${event.sourceData._id}`);

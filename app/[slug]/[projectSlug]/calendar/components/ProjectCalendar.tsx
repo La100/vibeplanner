@@ -4,6 +4,8 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useProject } from "@/components/providers/ProjectProvider";
 import { Calendar } from "@/components/calendar/Calendar";
+import { CalendarHeader } from "@/components/calendar/CalendarHeader";
+import { CalendarProvider } from "@/components/calendar/CalendarProvider";
 import { Gantt } from "@/components/gantt/Gantt";
 import { transformDataToEvents } from "@/components/calendar/utils";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -137,7 +139,7 @@ export default function ProjectCalendar() {
         <h1 className="text-xl font-semibold">Schedule</h1>
       </div>
 
-      {/* Shared Filters */}
+      {/* View Switcher (Calendar/Gantt) */}
       <GanttHeader 
         filters={filters}
         onFiltersChange={setFilters}
@@ -146,16 +148,26 @@ export default function ProjectCalendar() {
       />
 
       {/* Content Area */}
-      <div className="flex-1 w-full h-[calc(100vh-73px-120px)]">
+      <div className={`flex-1 w-full ${currentView === "calendar" ? "h-[calc(100vh-73px-120px)]" : "h-[calc(100vh-73px-120px)]"}`}>
         {currentView === "calendar" ? (
-          <Calendar
-            events={calendarEvents}
-            onEventClick={handleEventClick}
-            onDateClick={handleDateClick}
-            className="h-full w-full"
-            filters={filters}
-            onFiltersChange={setFilters}
-          />
+          <CalendarProvider>
+            {/* Calendar Navigation & Filters */}
+            <CalendarHeader 
+              filters={filters}
+              onFiltersChange={setFilters}
+            />
+            {/* Calendar View */}
+            <div className="h-[calc(100%-80px)]">
+              <Calendar
+                events={calendarEvents}
+                onEventClick={handleEventClick}
+                onDateClick={handleDateClick}
+                className="h-full w-full"
+                filters={filters}
+                onFiltersChange={setFilters}
+              />
+            </div>
+          </CalendarProvider>
         ) : (
           <Gantt
             events={calendarEvents}

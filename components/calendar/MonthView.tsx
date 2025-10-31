@@ -11,10 +11,11 @@ import {
   isSameMonth, 
   isToday, 
   isSameDay,
-  startOfDay
+  startOfDay,
+  isBefore,
+  isAfter
 } from "date-fns";
 import { MoreHorizontal } from "lucide-react";
-import { CalendarEventCard } from "./CalendarEventCard";
 import { useCalendar } from "./CalendarProvider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -29,8 +30,14 @@ interface MonthViewProps {
   onMoreEventsClick?: (date: Date) => void;
 }
 
-const EVENTS_PER_DAY_MOBILE = 2;
-const EVENTS_PER_DAY_DESKTOP = 4;
+interface EventWithPosition extends CalendarEvent {
+  startCol: number;
+  span: number;
+  row: number;
+  weekIndex: number;
+}
+
+const MAX_VISIBLE_ROWS = 3;
 
 export const MonthView = memo(function MonthView({ events = [], onEventClick, onDateClick, onMoreEventsClick }: MonthViewProps) {
   const { state } = useCalendar();
@@ -52,44 +59,84 @@ export const MonthView = memo(function MonthView({ events = [], onEventClick, on
       weeks.push(days.slice(i, i + 7));
     }
 
-    return weeks;
+    return { weeks, startDate, endDate };
   }, [currentDate]);
 
-  // Memoize events for better performance
-  const eventsByDate = useMemo(() => {
-    const eventMap = new Map<string, Array<{ event: CalendarEvent; type: 'start' | 'end' | 'single' }>>();
+  // Process events to calculate their positions and spans
+  const eventsByWeek = useMemo(() => {
+    const weekEvents: EventWithPosition[][] = [];
     
-    events.forEach(event => {
-      const eventStart = startOfDay(new Date(event.startTime));
-      const eventEnd = startOfDay(new Date(event.endTime));
+    monthGrid.weeks.forEach((week, weekIndex) => {
+      const weekStart = week[0];
+      const weekEnd = week[6];
       
-      // Single day event
-      if (isSameDay(eventStart, eventEnd)) {
-        const dateKey = eventStart.toISOString().split('T')[0];
-        if (!eventMap.has(dateKey)) eventMap.set(dateKey, []);
-        eventMap.get(dateKey)!.push({ event, type: 'single' });
-      }
-      // Multi-day event - show start and end
-      else {
-        const startKey = eventStart.toISOString().split('T')[0];
-        const endKey = eventEnd.toISOString().split('T')[0];
+      const eventsInWeek: EventWithPosition[] = [];
+      
+      events.forEach(event => {
+        const eventStart = startOfDay(new Date(event.startTime));
+        const eventEnd = startOfDay(new Date(event.endTime));
         
-        if (!eventMap.has(startKey)) eventMap.set(startKey, []);
-        eventMap.get(startKey)!.push({ event, type: 'start' });
+        // Check if event overlaps with this week
+        if (isBefore(eventEnd, weekStart) || isAfter(eventStart, weekEnd)) {
+          return;
+        }
         
-        if (!eventMap.has(endKey)) eventMap.set(endKey, []);
-        eventMap.get(endKey)!.push({ event, type: 'end' });
-      }
+        // Calculate start column (0-6 for Mon-Sun)
+        const displayStart = isBefore(eventStart, weekStart) ? weekStart : eventStart;
+        const displayEnd = isAfter(eventEnd, weekEnd) ? weekEnd : eventEnd;
+        
+        const startCol = week.findIndex(day => isSameDay(day, displayStart));
+        const endCol = week.findIndex(day => isSameDay(day, displayEnd));
+        
+        if (startCol === -1) return;
+        
+        const span = endCol - startCol + 1;
+        
+        eventsInWeek.push({
+          ...event,
+          startCol,
+          span,
+          row: 0,
+          weekIndex
+        });
+      });
+      
+      // Sort events by start column, then by span (longer first)
+      eventsInWeek.sort((a, b) => {
+        if (a.startCol !== b.startCol) return a.startCol - b.startCol;
+        return b.span - a.span;
+      });
+      
+      // Assign rows to prevent overlaps
+      eventsInWeek.forEach(event => {
+        let row = 0;
+        let placed = false;
+        
+        while (!placed) {
+          const hasConflict = eventsInWeek.some(other => {
+            if (other === event) return false;
+            if (other.row !== row) return false;
+            
+            const otherEnd = other.startCol + other.span - 1;
+            const eventEnd = event.startCol + event.span - 1;
+            
+            return !(eventEnd < other.startCol || event.startCol > otherEnd);
+          });
+          
+          if (!hasConflict) {
+            event.row = row;
+            placed = true;
+          } else {
+            row++;
+          }
+        }
+      });
+      
+      weekEvents.push(eventsInWeek);
     });
     
-    return eventMap;
-  }, [events]);
-
-  // Get events for specific date
-  const getEventsForDate = (date: Date) => {
-    const dateKey = startOfDay(date).toISOString().split('T')[0];
-    return eventsByDate.get(dateKey) || [];
-  };
+    return weekEvents;
+  }, [events, monthGrid.weeks]);
 
   const handleDateClick = useCallback((date: Date) => {
     onDateClick?.(date);
@@ -105,8 +152,6 @@ export const MonthView = memo(function MonthView({ events = [], onEventClick, on
     { short: 'Sun', full: 'Sunday', letter: 'S' }
   ], []);
 
-  const eventsLimit = isMobile ? EVENTS_PER_DAY_MOBILE : EVENTS_PER_DAY_DESKTOP;
-
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Week header */}
@@ -115,7 +160,7 @@ export const MonthView = memo(function MonthView({ events = [], onEventClick, on
           <div 
             key={day.short}
             className={cn(
-              "p-2 sm:p-3 text-center text-xs sm:text-sm font-medium border-r last:border-r-0",
+              "p-1.5 sm:p-3 text-center text-[10px] sm:text-sm font-medium border-r last:border-r-0",
               index >= 5 
                 ? 'text-blue-600 bg-blue-50' 
                 : 'text-muted-foreground'
@@ -131,155 +176,151 @@ export const MonthView = memo(function MonthView({ events = [], onEventClick, on
 
       {/* Month grid */}
       <div className="flex-1 flex flex-col overflow-auto">
-        {monthGrid.map((week, weekIndex) => (
-          <div 
-            key={weekIndex}
-            className={cn(
-              "flex-1 border-b last:border-b-0",
-              // Increased minimum heights significantly to prevent cutting off
-              isMobile 
-                ? "min-h-[160px]" 
-                : "min-h-[200px] sm:min-h-[240px] lg:min-h-[280px]"
-            )}
-            style={{
-              height: isMobile 
-                ? `max(160px, calc((100% - 60px) / ${monthGrid.length}))` 
-                : `max(200px, calc((100% - 80px) / ${monthGrid.length}))`
-            }}
-          >
-            <div className="grid grid-cols-7 h-full">
-              {week.map((date, dayIndex) => {
-                const dayEvents = getEventsForDate(date);
-                const isCurrentMonth = isSameMonth(date, currentDate);
-                const isCurrentDay = isToday(date);
-                const isSelected = selectedDate && isSameDay(date, selectedDate);
-                const isWeekend = dayIndex >= 5;
-                const hasMoreEvents = dayEvents.length > eventsLimit;
-                const hasManualEvents = dayEvents.length > 3; // Consider "full" day when more than 3 events
+        {monthGrid.weeks.map((week, weekIndex) => {
+          const weekEventsData = eventsByWeek[weekIndex] || [];
+          const maxRow = Math.max(0, ...weekEventsData.map(e => e.row));
+          const visibleEvents = weekEventsData.filter(e => e.row < MAX_VISIBLE_ROWS);
+          const hasMoreEvents = maxRow >= MAX_VISIBLE_ROWS;
+          
+          return (
+            <div 
+              key={weekIndex}
+              className={cn(
+                "border-b last:border-b-0 relative",
+                "min-h-[140px] sm:min-h-[180px] lg:min-h-[200px]"
+              )}
+              style={{
+                height: `calc((100% - 40px) / ${monthGrid.weeks.length})`
+              }}
+            >
+              {/* Day cells background */}
+              <div className="grid grid-cols-7 h-full absolute inset-0">
+                {week.map((date, dayIndex) => {
+                  const isCurrentMonth = isSameMonth(date, currentDate);
+                  const isCurrentDay = isToday(date);
+                  const isSelected = selectedDate && isSameDay(date, selectedDate);
+                  const isWeekend = dayIndex >= 5;
 
-                return (
-                  <div
-                    key={date.toISOString()}
-                    className={cn(
-                      "group relative flex flex-col cursor-pointer transition-all duration-200",
-                      "border-r last:border-r-0 overflow-hidden",
-                      isMobile ? "p-2" : "p-2 sm:p-3",
-                      !isCurrentMonth && "text-muted-foreground bg-muted/20",
-                      isCurrentMonth && "bg-card hover:bg-accent hover:shadow-sm",
-                      isCurrentDay && "bg-primary/10 ring-1 sm:ring-2 ring-primary",
-                      isSelected && "bg-accent",
-                      isWeekend && isCurrentMonth && "bg-blue-50/50",
-                      hasManualEvents && isCurrentMonth && "bg-gradient-to-br from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 border-l-2 sm:border-l-4 border-l-blue-500"
-                    )}
-                    onClick={() => handleDateClick(date)}
-                  >
-                    {/* Date header */}
-                    <div className="flex justify-between items-center mb-2 sm:mb-3 flex-shrink-0">
-                      <span 
+                  return (
+                    <div
+                      key={date.toISOString()}
+                      className={cn(
+                        "group relative flex flex-col cursor-pointer transition-colors",
+                        "border-r last:border-r-0 p-2 sm:p-3",
+                        !isCurrentMonth && "text-muted-foreground bg-muted/20",
+                        isCurrentMonth && "bg-card hover:bg-accent/50",
+                        isCurrentDay && "bg-primary/5 ring-2 ring-primary ring-inset",
+                        isSelected && "bg-accent",
+                        isWeekend && isCurrentMonth && "bg-blue-50/30"
+                      )}
+                      onClick={() => handleDateClick(date)}
+                    >
+                      {/* Date number */}
+                      <div className="flex justify-between items-start mb-2 relative z-10">
+                        <span 
+                          className={cn(
+                            "inline-flex items-center justify-center font-semibold transition-all",
+                            "text-sm sm:text-base lg:text-lg",
+                            isCurrentDay 
+                              ? "bg-primary text-primary-foreground shadow-lg rounded-lg px-2.5 py-1.5 sm:px-3 sm:py-2" 
+                              : "text-foreground",
+                            !isCurrentMonth && "text-muted-foreground/60"
+                          )}
+                        >
+                          {format(date, 'd')}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Events layer */}
+              <div className="absolute inset-0 pointer-events-none" style={{ top: isMobile ? '32px' : '44px' }}>
+                <div className="relative h-full px-2 sm:px-3">
+                  {visibleEvents.map((event, idx) => {
+                    const rowHeight = isMobile ? 24 : 28;
+                    const rowGap = isMobile ? 3 : 4;
+                    const topPosition = event.row * (rowHeight + rowGap);
+                    
+                    return (
+                      <div
+                        key={`${event.id}-${idx}`}
                         className={cn(
-                          "inline-flex items-center justify-center rounded-full font-medium transition-colors",
-                          isMobile ? "w-6 h-6 text-sm" : "w-7 h-7 sm:w-8 sm:h-8 text-sm sm:text-base",
-                          isCurrentDay && "bg-primary text-primary-foreground shadow-sm",
-                          isSelected && !isCurrentDay && "bg-accent text-accent-foreground",
-                          !isCurrentMonth && "text-muted-foreground",
-                          isWeekend && isCurrentMonth && !isCurrentDay && !isSelected && "text-blue-600",
-                          hasManualEvents && isCurrentMonth && !isCurrentDay && "font-bold text-blue-700"
+                          "absolute pointer-events-auto cursor-pointer",
+                          "rounded px-1.5 sm:px-2 py-0.5 sm:py-1",
+                          "text-white font-medium truncate",
+                          "hover:opacity-90 hover:shadow-md transition-all",
+                          "flex items-center gap-1"
                         )}
+                        style={{
+                          backgroundColor: event.color,
+                          left: `${(event.startCol / 7) * 100}%`,
+                          width: `calc(${(event.span / 7) * 100}% - ${isMobile ? '4px' : '6px'})`,
+                          top: `${topPosition}px`,
+                          height: `${rowHeight}px`,
+                          zIndex: 5 + event.row
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEventClick?.(event);
+                        }}
+                        title={`${event.title}\n${format(new Date(event.startTime), 'MMM d')} - ${format(new Date(event.endTime), 'MMM d')}`}
                       >
-                        {format(date, 'd')}
-                      </span>
-                      
-                      <div className="flex items-center gap-1">
-                        {dayEvents.length > 0 && (
-                          <div className={cn(
-                            "text-xs px-1.5 py-0.5 rounded-full transition-colors",
-                            isMobile ? "min-w-[18px] h-5" : "min-w-[20px] h-5",
-                            hasManualEvents && isCurrentMonth
-                              ? "bg-blue-500 text-white font-semibold" 
-                              : "text-muted-foreground bg-muted"
-                          )}>
-                            {dayEvents.length}
+                        {/* Event indicator badges */}
+                        {event.assignedTo && event.assignedToImageUrl && (
+                          <div className="flex-shrink-0 w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] sm:text-xs overflow-hidden">
+                            <img 
+                              src={event.assignedToImageUrl} 
+                              alt="" 
+                              className="w-full h-full object-cover"
+                            />
                           </div>
                         )}
+                        {!event.assignedToImageUrl && event.assignedToName && (
+                          <div className="flex-shrink-0 w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-white/30 flex items-center justify-center text-[9px] sm:text-[10px] font-bold">
+                            {event.assignedToName.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        
+                        <span className="text-xs sm:text-sm truncate flex-1">
+                          {event.title}
+                        </span>
                       </div>
+                    );
+                  })}
+                  
+                  {/* More events indicator */}
+                  {hasMoreEvents && (
+                    <div
+                      className="absolute left-0 right-0 pointer-events-auto"
+                      style={{
+                        top: `${MAX_VISIBLE_ROWS * (isMobile ? 27 : 32)}px`,
+                        height: `${isMobile ? 22 : 26}px`
+                      }}
+                    >
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onMoreEventsClick?.(week[0]);
+                        }}
+                        className={cn(
+                          "h-full w-full text-xs sm:text-sm px-2 py-0",
+                          "text-muted-foreground hover:text-foreground hover:bg-muted/50 font-medium"
+                        )}
+                      >
+                        <MoreHorizontal className="h-3.5 w-3.5 mr-1.5" />
+                        <span>+{weekEventsData.length - visibleEvents.length} more</span>
+                      </Button>
                     </div>
-
-                    {/* Events */}
-                    <div className={cn(
-                      "flex-1 flex flex-col",
-                      isMobile ? "space-y-1 min-h-0" : "space-y-1 sm:space-y-1.5 min-h-0"
-                    )}>
-                      <div className="flex-1 overflow-hidden">
-                        {dayEvents
-                          .sort((a, b) => {
-                            const priorityOrder = { urgent: 4, high: 3, medium: 2, low: 1 };
-                            const aPriority = priorityOrder[a.event.priority as keyof typeof priorityOrder] || 0;
-                            const bPriority = priorityOrder[b.event.priority as keyof typeof priorityOrder] || 0;
-                            
-                            if (aPriority !== bPriority) return bPriority - aPriority;
-                            
-                            const typeOrder = { start: 3, single: 2, end: 1 };
-                            const aTypeOrder = typeOrder[a.type];
-                            const bTypeOrder = typeOrder[b.type];
-                            
-                            return bTypeOrder - aTypeOrder;
-                          })
-                          .slice(0, eventsLimit)
-                          .map(({ event, type }, index) => (
-                            <CalendarEventCard
-                              key={`${event.id}-${type}-${index}`}
-                              event={event}
-                              variant="compact"
-                              eventType={type}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onEventClick?.(event);
-                              }}
-                              className={cn(
-                                "mb-1 last:mb-0 flex-shrink-0",
-                                isMobile && "text-xs"
-                              )}
-                            />
-                          ))}
-                      </div>
-                      
-                      {hasMoreEvents && onMoreEventsClick && (
-                        <div className="flex-shrink-0 pt-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onMoreEventsClick(date);
-                            }}
-                            className={cn(
-                              "w-full transition-colors",
-                              isMobile 
-                                ? "h-6 text-xs px-1" 
-                                : "h-7 sm:h-8 text-xs",
-                              hasManualEvents && isCurrentMonth
-                                ? "text-blue-700 hover:text-blue-800 hover:bg-blue-100 font-medium" 
-                                : "text-muted-foreground hover:text-foreground"
-                            )}
-                          >
-                            <MoreHorizontal className={cn(
-                              "mr-1",
-                              isMobile ? "h-3 w-3" : "h-3 w-3 sm:h-4 sm:w-4"
-                            )} />
-                            <span className="truncate">
-                              +{dayEvents.length - eventsLimit}
-                              <span className="hidden sm:inline"> more</span>
-                            </span>
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

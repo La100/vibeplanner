@@ -50,17 +50,20 @@ export const getProjectCalendarEvents = query({
       .collect();
 
     // Filter tasks based on date range if provided
+    // A task is included if it has either startDate or endDate
     let tasksWithDates = allTasks.filter(task => 
-      task.dueDate
+      task.startDate || task.endDate
     );
 
     if (args.dateRange) {
       tasksWithDates = tasksWithDates.filter(task => {
-        if (!task.dueDate) return false;
+        // Use endDate if available, otherwise startDate
+        const taskDate = task.endDate || task.startDate;
+        if (!taskDate) return false;
         
         return (
-          task.dueDate <= args.dateRange!.endDate &&
-          task.dueDate >= args.dateRange!.startDate
+          taskDate <= args.dateRange!.endDate &&
+          taskDate >= args.dateRange!.startDate
         );
       });
     }
@@ -85,7 +88,7 @@ export const getProjectCalendarEvents = query({
 
     // Get tasks without dates for todos
     const todosWithoutDates = allTasks.filter(task => 
-      !task.dueDate
+      !task.startDate && !task.endDate
     );
 
     // Enrich tasks with user data
@@ -216,11 +219,13 @@ export const getUpcomingEvents = query({
       .collect();
 
     const tasksWithDates = allTasks.filter(task => {
-      if (!task.dueDate) return false;
+      // Use endDate if available, otherwise startDate
+      const taskDate = task.endDate || task.startDate;
+      if (!taskDate) return false;
       
       return (
-        task.dueDate <= endDate &&
-        task.dueDate >= now
+        taskDate <= endDate &&
+        taskDate >= now
       );
     });
 
@@ -235,7 +240,7 @@ export const getUpcomingEvents = query({
         type: "task" as const,
         id: task._id,
         title: task.title,
-        date: task.dueDate!,
+        date: (task.endDate || task.startDate)!,
         priority: task.priority || "medium",
         status: task.status,
         data: task
@@ -277,16 +282,16 @@ export const getOverdueEvents = query({
     // Get overdue items (not completed/done)
     const overdueEvents = [
       ...allTasks
-        .filter(task => 
-          task.status !== "done" && 
-          task.dueDate && 
-          task.dueDate < now
-        )
+        .filter(task => {
+          if (task.status === "done") return false;
+          const taskDate = task.endDate || task.startDate;
+          return taskDate && taskDate < now;
+        })
         .map(task => ({
           type: "task" as const,
           id: task._id,
           title: task.title,
-          date: task.dueDate!,
+          date: (task.endDate || task.startDate)!,
           priority: task.priority || "medium",
           status: task.status,
           data: task
@@ -314,10 +319,11 @@ export const getOverdueEvents = query({
 
 // ====== MUTATIONS ======
 
-export const updateTaskDueDate = mutation({
+export const updateTaskDates = mutation({
   args: {
     taskId: v.id("tasks"),
-    dueDate: v.optional(v.number()),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -329,7 +335,10 @@ export const updateTaskDueDate = mutation({
     const hasAccess = await hasProjectAccess(ctx, task.projectId, true);
     if (!hasAccess) throw new Error("Permission denied");
 
-    await ctx.db.patch(args.taskId, { dueDate: args.dueDate });
+    await ctx.db.patch(args.taskId, { 
+      startDate: args.startDate,
+      endDate: args.endDate 
+    });
 
     return { success: true };
   },

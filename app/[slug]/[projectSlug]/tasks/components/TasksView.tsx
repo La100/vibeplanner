@@ -64,7 +64,8 @@ type KanbanTask = {
   description: string | undefined;
   content: string | undefined;
   priority: TaskPriority;
-  dueDate: number | undefined;
+  startDate: number | undefined;
+  endDate: number | undefined;
   cost: number | undefined;
   status: TaskStatusLiterals;
   assignedTo: string | null | undefined;
@@ -239,7 +240,8 @@ export default function TasksView() {
     description: task.description,
     content: task.content,
     priority: task.priority as TaskPriority,
-    dueDate: task.dueDate,
+    startDate: task.startDate,
+    endDate: task.endDate,
     cost: task.cost,
     status: task.status,
     assignedTo: task.assignedTo,
@@ -467,9 +469,9 @@ export default function TasksView() {
                   <TableHead>Status</TableHead>
                   <TableHead>Priority</TableHead>
                   <TableHead>Assignee</TableHead>
-                  <TableHead onClick={() => handleSortChange('dueDate')}>
+                  <TableHead onClick={() => handleSortChange('endDate')}>
                     <div className="flex items-center cursor-pointer">
-                      Due Date <ChevronsUpDown className="ml-2 h-4 w-4" />
+                      End Date <ChevronsUpDown className="ml-2 h-4 w-4" />
                     </div>
                   </TableHead>
                   <TableHead>Tags</TableHead>
@@ -507,7 +509,7 @@ export default function TasksView() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {formatDateTime(task.dueDate)}
+                      {task.endDate ? formatDateTime(task.endDate) : task.startDate ? formatDateTime(task.startDate) : '-'}
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
@@ -563,9 +565,15 @@ function TaskCardContent({ task, projectSlug, companySlug }: { task: KanbanTask,
       </div>
       {task.description && <p className="text-xs text-muted-foreground mb-2">{task.description}</p>}
       
-      {task.dueDate && (
+      {(task.startDate || task.endDate) && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <span>Due: {formatDateTime(task.dueDate)}</span>
+              {task.startDate && task.endDate ? (
+                <span>{formatDateTime(task.startDate)} - {formatDateTime(task.endDate)}</span>
+              ) : task.endDate ? (
+                <span>Due: {formatDateTime(task.endDate)}</span>
+              ) : (
+                <span>Start: {formatDateTime(task.startDate!)}</span>
+              )}
           </div>
       )}
 

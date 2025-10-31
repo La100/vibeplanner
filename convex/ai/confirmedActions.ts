@@ -21,7 +21,8 @@ export const createConfirmedTask = action({
       content: v.optional(v.string()),
       assignedTo: v.optional(v.union(v.string(), v.null())),
       priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent"))),
-      dueDate: v.optional(v.string()),
+      startDate: v.optional(v.string()),
+      endDate: v.optional(v.string()),
       tags: v.optional(v.array(v.string())),
       cost: v.optional(v.number()),
     }),
@@ -38,9 +39,13 @@ export const createConfirmedTask = action({
         throw new Error("Project not found");
       }
 
-      let dueDateNumber: number | undefined;
-      if (args.taskData.dueDate) {
-        dueDateNumber = new Date(args.taskData.dueDate).getTime();
+      let startDateNumber: number | undefined;
+      let endDateNumber: number | undefined;
+      if (args.taskData.startDate) {
+        startDateNumber = new Date(args.taskData.startDate).getTime();
+      }
+      if (args.taskData.endDate) {
+        endDateNumber = new Date(args.taskData.endDate).getTime();
       }
 
       const taskId: any = await ctx.runMutation(api.tasks.createTask, {
@@ -52,7 +57,8 @@ export const createConfirmedTask = action({
         assignedTo: args.taskData.assignedTo,
         priority: args.taskData.priority || "medium",
         status: args.taskData.status || "todo",
-        dueDate: dueDateNumber,
+        startDate: startDateNumber,
+        endDate: endDateNumber,
         tags: args.taskData.tags || [],
         cost: args.taskData.cost,
       });
@@ -308,7 +314,8 @@ export const editConfirmedTask = action({
       status: v.optional(v.union(v.literal("todo"), v.literal("in_progress"), v.literal("review"), v.literal("done"))),
       assignedTo: v.optional(v.union(v.string(), v.null())),
       priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("urgent"))),
-      dueDate: v.optional(v.string()),
+      startDate: v.optional(v.string()),
+      endDate: v.optional(v.string()),
       tags: v.optional(v.array(v.string())),
       cost: v.optional(v.number()),
     }),
@@ -319,9 +326,13 @@ export const editConfirmedTask = action({
   }),
   handler: async (ctx, args) => {
     try {
-      let dueDateNumber: number | undefined;
-      if (args.updates.dueDate) {
-        dueDateNumber = new Date(args.updates.dueDate).getTime();
+      let startDateNumber: number | undefined;
+      let endDateNumber: number | undefined;
+      if (args.updates.startDate) {
+        startDateNumber = new Date(args.updates.startDate).getTime();
+      }
+      if (args.updates.endDate) {
+        endDateNumber = new Date(args.updates.endDate).getTime();
       }
 
       await ctx.runMutation(api.tasks.updateTask, {
@@ -332,7 +343,8 @@ export const editConfirmedTask = action({
         status: args.updates.status,
         assignedTo: args.updates.assignedTo,
         priority: args.updates.priority,
-        dueDate: dueDateNumber,
+        startDate: startDateNumber,
+        endDate: endDateNumber,
         tags: args.updates.tags,
         cost: args.updates.cost,
       });

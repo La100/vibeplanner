@@ -43,6 +43,8 @@ const taskFormSchema = z.object({
   priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
   status: z.enum(["todo", "in_progress", "review", "done"]).optional(),
   assignedTo: z.string().nullable().optional(),
+  startDate: z.date().optional(),
+  endDate: z.date().optional(),
   dueDate: z.date().optional(),
   cost: z.coerce.number().optional(),
   tags: z.array(z.string()).optional(),
@@ -140,6 +142,8 @@ export function UniversalConfirmationDialog({
       priority: undefined,
       status: "todo",
       assignedTo: "",
+      startDate: undefined,
+      endDate: undefined,
       dueDate: undefined,
       cost: undefined,
       tags: [],
@@ -162,6 +166,8 @@ export function UniversalConfirmationDialog({
       priority: source.priority as TaskFormValues["priority"],
       status: (source.status as TaskFormValues["status"]) || "todo",
       assignedTo: String(source.assignedTo || ''),
+      startDate: source.startDate ? new Date(String(source.startDate)) : undefined,
+      endDate: source.endDate ? new Date(String(source.endDate)) : undefined,
       dueDate: source.dueDate ? new Date(String(source.dueDate)) : undefined,
       cost: source.cost !== undefined && source.cost !== null ? Number(source.cost) : undefined,
       tags: (source.tags as string[]) || [],
@@ -216,7 +222,9 @@ export function UniversalConfirmationDialog({
       const formValues = taskForm.getValues();
       const updatedTaskData = {
         ...formValues,
-        dueDate: formValues.dueDate?.toISOString().split('T')[0], // Convert to string
+        startDate: formValues.startDate?.toISOString().split('T')[0], // Convert to string
+        endDate: formValues.endDate?.toISOString().split('T')[0], // Convert to string
+        dueDate: formValues.dueDate?.toISOString().split('T')[0],
         tags: formValues.tags || [],
       };
 

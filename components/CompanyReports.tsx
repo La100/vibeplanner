@@ -6,7 +6,7 @@ import { useOrganization } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 
-import { Download, Calendar, DollarSign, BarChart3, TrendingUp, Clock } from "lucide-react";
+import { Download, Calendar, DollarSign, BarChart3, TrendingUp, Clock, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +29,12 @@ export default function CompanyReports() {
   );
   
   // Get team tasks for overview
-  const teamTasks = useQuery(api.tasks.listTeamTasks, 
+  const teamTasks = useQuery(api.tasks.listTeamTasks,
+    team && team._id ? { teamId: team._id } : "skip"
+  );
+
+  // Get shopping list items for financial data
+  const shoppingItems = useQuery(api.shopping.getShoppingListItemsByTeam,
     team && team._id ? { teamId: team._id } : "skip"
   );
 
@@ -39,10 +44,28 @@ export default function CompanyReports() {
 
   // Calculate metrics
   const totalProjects = projects?.length || 0;
+  const activeProjects = projects?.filter(p => p.status === "active").length || 0;
+  const totalBudget = projects?.reduce((sum, p) => sum + (p.budget || 0), 0) || 0;
+
   const totalTasks = teamTasks?.length || 0;
   const completedTasks = teamTasks?.filter(task => task.status === "done").length || 0;
+  const inProgressTasks = teamTasks?.filter(task => task.status === "in_progress").length || 0;
   const completionRate = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
-  const totalCost = teamTasks?.reduce((sum, task) => sum + (task.cost || 0), 0) || 0;
+
+  const totalTaskCost = teamTasks?.reduce((sum, task) => sum + (task.cost || 0), 0) || 0;
+
+  // Shopping list costs
+  const totalShoppingCost = shoppingItems?.reduce((sum, item) => sum + (item.totalPrice || 0), 0) || 0;
+  const orderedShoppingCost = shoppingItems
+    ?.filter(item => ["ORDERED", "IN_TRANSIT", "DELIVERED", "COMPLETED"].includes(item.realizationStatus))
+    .reduce((sum, item) => sum + (item.totalPrice || 0), 0) || 0;
+
+  // Overdue tasks
+  const now = Date.now();
+  const overdueTasks = teamTasks?.filter(task => {
+    const taskEndDate = task.endDate || task.startDate;
+    return taskEndDate && taskEndDate < now && task.status !== "done";
+  }).length || 0;
 
   // Group projects by status
   const projectsByStatus = projects?.reduce((acc, project) => {
@@ -98,85 +121,134 @@ export default function CompanyReports() {
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{totalCost.toFixed(2)} $</div>
-                  <p className="text-xs text-muted-foreground">
-                    <span className="text-green-600">+12%</span> from last month
-                  </p>
-                </CardContent>
-              </Card>
-              
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Active Projects</CardTitle>
+                  <CardTitle className="text-sm font-medium">Total Projects</CardTitle>
                   <BarChart3 className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{totalProjects}</div>
                   <p className="text-xs text-muted-foreground">
-                    <span className="text-green-600">+2</span> new this month
+                    {activeProjects} active
                   </p>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Task Completion</CardTitle>
+                  <CardTitle className="text-sm font-medium">Total Budget</CardTitle>
+                  <DollarSign className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{totalBudget.toLocaleString()} $</div>
+                  <p className="text-xs text-muted-foreground">
+                    Across all projects
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Tasks Progress</CardTitle>
                   <TrendingUp className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{completionRate.toFixed(1)}%</div>
                   <p className="text-xs text-muted-foreground">
-                    {completedTasks} of {totalTasks} tasks completed
+                    {completedTasks} done, {inProgressTasks} in progress
                   </p>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Avg. Project Duration</CardTitle>
+                  <CardTitle className="text-sm font-medium">Overdue Tasks</CardTitle>
                   <Clock className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">45d</div>
+                  <div className="text-2xl font-bold">{overdueTasks}</div>
                   <p className="text-xs text-muted-foreground">
-                    <span className="text-red-600">+5d</span> from target
+                    {overdueTasks > 0 ? (
+                      <span className="text-red-600">Require attention</span>
+                    ) : (
+                      <span className="text-green-600">All on track</span>
+                    )}
                   </p>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Charts Placeholder */}
+            {/* Quick Stats Grid */}
             <div className="grid gap-4 md:grid-cols-2">
               <Card>
                 <CardHeader>
-                  <CardTitle>Project Timeline</CardTitle>
-                  <CardDescription>Project completion over time</CardDescription>
+                  <CardTitle>Active Projects</CardTitle>
+                  <CardDescription>Currently in progress</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-64 flex items-center justify-center bg-muted rounded">
-                    <div className="text-center">
-                      <BarChart3 className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                      <p className="text-muted-foreground">Chart visualization coming soon</p>
-                    </div>
+                  <div className="space-y-3">
+                    {projects && projects.filter(p => p.status === "active").length > 0 ? (
+                      projects
+                        .filter(p => p.status === "active")
+                        .slice(0, 5)
+                        .map(project => {
+                          const projectTasks = teamTasks?.filter(t => t.projectId === project._id) || [];
+                          const completedCount = projectTasks.filter(t => t.status === "done").length;
+                          const progress = projectTasks.length > 0 ? (completedCount / projectTasks.length) * 100 : 0;
+
+                          return (
+                            <div key={project._id} className="space-y-1">
+                              <div className="flex items-center justify-between">
+                                <p className="font-medium text-sm">{project.name}</p>
+                                <span className="text-xs text-muted-foreground">{Math.round(progress)}%</span>
+                              </div>
+                              <div className="w-full bg-secondary rounded-full h-1.5">
+                                <div
+                                  className="bg-primary h-1.5 rounded-full transition-all duration-300"
+                                  style={{ width: `${progress}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                          );
+                        })
+                    ) : (
+                      <div className="text-center py-8 text-muted-foreground text-sm">
+                        No active projects
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardHeader>
-                  <CardTitle>Resource Allocation</CardTitle>
-                  <CardDescription>Team workload distribution</CardDescription>
+                  <CardTitle>Task Priority</CardTitle>
+                  <CardDescription>Tasks by priority level</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-64 flex items-center justify-center bg-muted rounded">
-                    <div className="text-center">
-                      <TrendingUp className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                      <p className="text-muted-foreground">Chart visualization coming soon</p>
-                    </div>
+                  <div className="space-y-3">
+                    {["urgent", "high", "medium", "low"].map(priority => {
+                      const count = teamTasks?.filter(t => t.priority === priority && t.status !== "done").length || 0;
+                      if (count === 0) return null;
+
+                      return (
+                        <div key={priority} className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Badge variant={
+                              priority === "urgent" ? "destructive" :
+                              priority === "high" ? "default" :
+                              "secondary"
+                            }>
+                              {priority.toUpperCase()}
+                            </Badge>
+                          </div>
+                          <span className="text-sm font-medium">{count} tasks</span>
+                        </div>
+                      );
+                    })}
+                    {!teamTasks?.some(t => t.priority && t.status !== "done") && (
+                      <div className="text-center py-8 text-muted-foreground text-sm">
+                        No prioritized tasks
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -209,7 +281,7 @@ export default function CompanyReports() {
                       </div>
                       <div className="flex items-center gap-2">
                         <div className="w-32 bg-secondary rounded-full h-2">
-                          <div 
+                          <div
                             className="bg-primary h-2 rounded-full transition-all duration-300"
                             style={{ width: `${totalProjects > 0 ? (numCount / totalProjects) * 100 : 0}%` }}
                           ></div>
@@ -218,6 +290,71 @@ export default function CompanyReports() {
                       </div>
                     </div>
                   )})}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Projects List */}
+            <Card>
+              <CardHeader>
+                <CardTitle>All Projects</CardTitle>
+                <CardDescription>Overview of all team projects</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {projects && projects.length > 0 ? (
+                    projects
+                      .sort((a, b) => b._creationTime - a._creationTime)
+                      .map(project => {
+                        const projectTasks = teamTasks?.filter(t => t.projectId === project._id) || [];
+                        const completedCount = projectTasks.filter(t => t.status === "done").length;
+                        const progress = projectTasks.length > 0 ? (completedCount / projectTasks.length) * 100 : 0;
+
+                        return (
+                          <div key={project._id} className="border rounded-lg p-4">
+                            <div className="flex items-start justify-between mb-2">
+                              <div>
+                                <h4 className="font-semibold">{project.name}</h4>
+                                {project.customer && (
+                                  <p className="text-sm text-muted-foreground">{project.customer}</p>
+                                )}
+                              </div>
+                              <Badge variant={
+                                project.status === "completed" ? "default" :
+                                project.status === "active" ? "secondary" :
+                                project.status === "on_hold" ? "outline" :
+                                "outline"
+                              }>
+                                {project.status}
+                              </Badge>
+                            </div>
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="text-muted-foreground">Progress</span>
+                                <span className="font-medium">{Math.round(progress)}%</span>
+                              </div>
+                              <div className="w-full bg-secondary rounded-full h-2">
+                                <div
+                                  className="bg-primary h-2 rounded-full transition-all duration-300"
+                                  style={{ width: `${progress}%` }}
+                                ></div>
+                              </div>
+                              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                <span>{projectTasks.length} tasks</span>
+                                {project.budget && <span>Budget: {project.budget.toLocaleString()} {project.currency || 'USD'}</span>}
+                                {project.startDate && (
+                                  <span>Start: {new Date(project.startDate).toLocaleDateString()}</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No projects yet
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -233,21 +370,44 @@ export default function CompanyReports() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {Object.entries(tasksByStatus).map(([status, count]) => (
+                  {Object.entries(tasksByStatus).map(([status, count]) => {
+                    const statusLabels: Record<string, string> = {
+                      "todo": "To Do",
+                      "in_progress": "In Progress",
+                      "review": "Review",
+                      "done": "Done"
+                    };
+
+                    const getStatusStyle = (status: string) => {
+                      switch(status) {
+                        case "done":
+                          return { variant: "default" as const, className: "" };
+                        case "in_progress":
+                          return { variant: "secondary" as const, className: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900 dark:text-blue-200" };
+                        case "review":
+                          return { variant: "secondary" as const, className: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900 dark:text-amber-200" };
+                        case "todo":
+                          return { variant: "outline" as const, className: "" };
+                        default:
+                          return { variant: "outline" as const, className: "" };
+                      }
+                    };
+
+                    const statusStyle = getStatusStyle(status);
+
+                    return (
                     <div key={status} className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Badge variant={
-                          status === "done" ? "default" :
-                          status === "in-progress" ? "secondary" :
-                          "outline"
-                        }>
-                          {status.replace("-", " ").toUpperCase()}
+                        <Badge
+                          variant={statusStyle.variant}
+                          className={statusStyle.className}
+                        >
+                          {statusLabels[status] || status}
                         </Badge>
-                        <span className="text-sm">{status.replace("-", " ").charAt(0).toUpperCase() + status.replace("-", " ").slice(1)}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <div className="w-32 bg-secondary rounded-full h-2">
-                          <div 
+                          <div
                             className="bg-primary h-2 rounded-full transition-all duration-300"
                             style={{ width: `${totalTasks > 0 ? (count / totalTasks) * 100 : 0}%` }}
                           ></div>
@@ -255,23 +415,85 @@ export default function CompanyReports() {
                         <span className="text-sm font-medium w-8">{count}</span>
                       </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
               </CardContent>
             </Card>
 
-            {/* Task Performance Chart Placeholder */}
+            {/* Overdue Tasks List */}
+            {overdueTasks > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <AlertCircle className="h-5 w-5 text-red-600" />
+                    Overdue Tasks
+                  </CardTitle>
+                  <CardDescription>Tasks that need immediate attention</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {teamTasks
+                      ?.filter(task => {
+                        const taskEndDate = task.endDate || task.startDate;
+                        return taskEndDate && taskEndDate < now && task.status !== "done";
+                      })
+                      .sort((a, b) => {
+                        const dateA = a.endDate || a.startDate || 0;
+                        const dateB = b.endDate || b.startDate || 0;
+                        return dateA - dateB;
+                      })
+                      .slice(0, 10)
+                      .map(task => {
+                        const project = projects?.find(p => p._id === task.projectId);
+                        return (
+                          <div key={task._id} className="flex items-center justify-between border-l-2 border-red-500 pl-3 py-2">
+                            <div className="flex-1">
+                              <p className="font-medium">{task.title}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {project?.name} • Due {new Date((task.endDate || task.startDate)!).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <Badge variant={task.priority === "urgent" ? "destructive" : "secondary"}>
+                              {task.priority || "medium"}
+                            </Badge>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Recent Completed Tasks */}
             <Card>
               <CardHeader>
-                <CardTitle>Task Completion Trends</CardTitle>
-                <CardDescription>Task completion over time</CardDescription>
+                <CardTitle>Recently Completed</CardTitle>
+                <CardDescription>Last 5 completed tasks</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="h-64 flex items-center justify-center bg-muted rounded">
-                  <div className="text-center">
-                    <TrendingUp className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground">Chart visualization coming soon</p>
-                  </div>
+                <div className="space-y-3">
+                  {teamTasks && teamTasks.filter(t => t.status === "done").length > 0 ? (
+                    teamTasks
+                      .filter(task => task.status === "done")
+                      .sort((a, b) => (b.updatedAt || b._creationTime) - (a.updatedAt || a._creationTime))
+                      .slice(0, 5)
+                      .map(task => {
+                        const project = projects?.find(p => p._id === task.projectId);
+                        return (
+                          <div key={task._id} className="flex items-center justify-between">
+                            <div>
+                              <p className="font-medium">{task.title}</p>
+                              <p className="text-xs text-muted-foreground">{project?.name}</p>
+                            </div>
+                            <Badge variant="default">Done</Badge>
+                          </div>
+                        );
+                      })
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No completed tasks yet
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -281,63 +503,133 @@ export default function CompanyReports() {
         <TabsContent value="financial" className="mt-6">
           <div className="space-y-6">
             {/* Financial Metrics */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Project Value</CardTitle>
+                  <CardTitle className="text-sm font-medium">Total Budget</CardTitle>
                   <DollarSign className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{totalCost.toFixed(2)} $</div>
+                  <div className="text-2xl font-bold">{totalBudget.toLocaleString()} $</div>
                   <p className="text-xs text-muted-foreground">
                     Across {totalProjects} projects
                   </p>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Average Project Value</CardTitle>
+                  <CardTitle className="text-sm font-medium">Shopping List</CardTitle>
                   <BarChart3 className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">
-                    {totalProjects > 0 ? (totalCost / totalProjects).toFixed(2) : "0.00"} $
-                  </div>
+                  <div className="text-2xl font-bold">{totalShoppingCost.toLocaleString()} $</div>
                   <p className="text-xs text-muted-foreground">
-                    Per project
+                    {shoppingItems?.length || 0} items planned
                   </p>
                 </CardContent>
               </Card>
-              
+
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Cost Per Task</CardTitle>
+                  <CardTitle className="text-sm font-medium">Ordered Items</CardTitle>
                   <TrendingUp className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">
-                    {totalTasks > 0 ? (totalCost / totalTasks).toFixed(2) : "0.00"} $
-                  </div>
+                  <div className="text-2xl font-bold">{orderedShoppingCost.toLocaleString()} $</div>
                   <p className="text-xs text-muted-foreground">
-                    Average per task
+                    Already ordered/delivered
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Task Costs</CardTitle>
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{totalTaskCost.toLocaleString()} $</div>
+                  <p className="text-xs text-muted-foreground">
+                    Total task costs tracked
                   </p>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Financial Chart Placeholder */}
+            {/* Shopping List Breakdown */}
             <Card>
               <CardHeader>
-                <CardTitle>Revenue Trends</CardTitle>
-                <CardDescription>Financial performance over time</CardDescription>
+                <CardTitle>Shopping List by Status</CardTitle>
+                <CardDescription>Items breakdown by realization status</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="h-64 flex items-center justify-center bg-muted rounded">
-                  <div className="text-center">
-                    <DollarSign className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground">Chart visualization coming soon</p>
-                  </div>
+                <div className="space-y-4">
+                  {shoppingItems && shoppingItems.length > 0 ? (
+                    ["PLANNED", "ORDERED", "IN_TRANSIT", "DELIVERED", "COMPLETED", "CANCELLED"].map(status => {
+                      const items = shoppingItems.filter(item => item.realizationStatus === status);
+                      const cost = items.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
+                      if (items.length === 0) return null;
+
+                      return (
+                        <div key={status} className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Badge variant={
+                              status === "COMPLETED" ? "default" :
+                              status === "DELIVERED" ? "secondary" :
+                              status === "CANCELLED" ? "outline" :
+                              "secondary"
+                            }>
+                              {status}
+                            </Badge>
+                            <span className="text-sm">{items.length} items</span>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold">{cost.toLocaleString()} $</p>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No shopping list items yet
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Budget by Project */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Budget Overview</CardTitle>
+                <CardDescription>Project budgets comparison</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {projects && projects.length > 0 ? (
+                    projects
+                      .filter(p => p.budget && p.budget > 0)
+                      .sort((a, b) => (b.budget || 0) - (a.budget || 0))
+                      .slice(0, 5)
+                      .map(project => (
+                        <div key={project._id} className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">{project.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {project.currency || 'USD'} • {project.status}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold">{(project.budget || 0).toLocaleString()} $</p>
+                          </div>
+                        </div>
+                      ))
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No budget data available yet
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

@@ -24,7 +24,6 @@ import type * as ai_helpers_tokenUtils from "../ai/helpers/tokenUtils.js";
 import type * as ai_longContext from "../ai/longContext.js";
 import type * as ai_longContextQueries from "../ai/longContextQueries.js";
 import type * as ai_prompt from "../ai/prompt.js";
-import type * as ai_promptDb from "../ai/promptDb.js";
 import type * as ai_search from "../ai/search.js";
 import type * as ai_settings from "../ai/settings.js";
 import type * as ai_threads from "../ai/threads.js";
@@ -90,7 +89,6 @@ declare const fullApi: ApiFromModules<{
   "ai/longContext": typeof ai_longContext;
   "ai/longContextQueries": typeof ai_longContextQueries;
   "ai/prompt": typeof ai_prompt;
-  "ai/promptDb": typeof ai_promptDb;
   "ai/search": typeof ai_search;
   "ai/settings": typeof ai_settings;
   "ai/threads": typeof ai_threads;

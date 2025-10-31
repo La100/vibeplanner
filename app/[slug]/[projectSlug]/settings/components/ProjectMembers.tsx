@@ -137,7 +137,7 @@ function MemberRow({
   teamId: Id<"teams">;
 }) {
   const removeTeamMember = useMutation(api.teams.removeTeamMember);
-  const changeTeamMemberRole = useMutation(api.teams.changeTeamMemberRole);
+  const inviteCustomerToProject = useMutation(api.teams.inviteCustomerToProject);
 
   const getRoleColor = (role: string) => {
     switch (role.toLowerCase()) {
@@ -160,16 +160,25 @@ function MemberRow({
   };
 
   const handleChangeToCustomer = async () => {
+    if (!member.email) {
+      toast.error("Cannot convert member without an email address.");
+      return;
+    }
+
     try {
-      await changeTeamMemberRole({
-        clerkUserId: member.clerkUserId,
-        teamId: teamId,
-        role: "customer",
-        projectId: projectId,
+      await inviteCustomerToProject({
+        email: member.email,
+        projectId,
       });
-      toast.success("Member changed to project customer");
+
+      await removeTeamMember({
+        clerkUserId: member.clerkUserId,
+        teamId,
+      });
+
+      toast.success("Member converted to project customer");
     } catch (error) {
-      toast.error("Failed to change role: " + (error as Error).message);
+      toast.error("Failed to convert member: " + (error as Error).message);
     }
   };
 

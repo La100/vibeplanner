@@ -17,7 +17,6 @@ import { action } from "../_generated/server";
 import { v } from "convex/values";
 import { createVibePlannerAgent } from "./agent";
 import {
-  buildContextFromSnapshot,
   buildTeamMembersContext,
   buildSystemInstructions,
   getCurrentDateTime,
@@ -25,6 +24,7 @@ import {
 import { prepareMessageWithFile, type FileMetadataForHistory } from "./files";
 import type { ProjectContextSnapshot } from "./types";
 import { AI_MODEL, calculateCost } from "./config";
+import { defaultPrompt } from "./prompt";
 import { webcrypto } from "crypto";
 
 // Ensure global crypto in Convex action runtime (needed for agent file storage hashing)
@@ -110,34 +110,25 @@ export const chatWithAgent = action({
 
     const startTime = Date.now();
 
-    // No longer loading all data upfront - AI uses search tools on-demand instead
-    const includeLongContext = false;
-    const agentModeIdentifier = includeLongContext ? "convex_agent_advanced" : "convex_agent";
+    // Agent mode identifier for tracking
+    const agentModeIdentifier = "convex_agent";
 
+    // Snapshot is loaded on-demand via load_full_project_context tool
     let snapshot: ProjectContextSnapshot | null = null;
 
-    // Lazy snapshot loader
+    // Lazy snapshot loader - called by AI tool when needed
     const ensureSnapshot = async (): Promise<ProjectContextSnapshot> => {
       if (!snapshot) {
-        console.log("📥 Loading long context snapshot for project:", args.projectId);
+        console.log("📥 Loading project context snapshot on-demand:", args.projectId);
         snapshot = (await ctx.runQuery(
           internal.ai.longContextQueries.getProjectContextSnapshot,
           { projectId: args.projectId }
         )) as unknown as ProjectContextSnapshot;
 
-        console.log("Long context snapshot - Tasks:", snapshot!.tasks.length);
-        console.log("Long context snapshot - Notes:", snapshot!.notes.length);
-        console.log("Long context snapshot - Shopping:", snapshot!.shoppingItems.length);
+        console.log("✅ Snapshot loaded - Tasks:", snapshot!.tasks.length, "| Notes:", snapshot!.notes.length, "| Shopping:", snapshot!.shoppingItems.length);
       }
       return snapshot!;
     };
-
-    if (includeLongContext) {
-      console.log("🧠 Including project snapshot for enriched context");
-      await ensureSnapshot();
-    } else {
-      console.log("⚡ Skipping long context snapshot for lightweight message");
-    }
 
     // Get AI settings and teamId
     const aiSettings = await ctx.runQuery(internal.ai.settings.getAISettingsInternal, {
@@ -151,34 +142,18 @@ export const chatWithAgent = action({
       });
       teamId = projectForTeam?.teamId ?? null;
     }
-    if (!teamId && includeLongContext) {
-      const snapshotForTeam = await ensureSnapshot();
-      teamId = snapshotForTeam.project?.teamId ?? null;
-    }
     if (!teamId) {
       throw new Error("Unable to resolve teamId for project while running AI chat");
     }
 
-    // Get system prompt (custom or default)
-    const customPrompt = await ctx.runQuery(internal.ai.promptDb.getActiveCustomPromptInternal, {
-      projectId: args.projectId,
-    });
-
-    const systemPrompt: string =
-      customPrompt || (await ctx.runQuery(api.ai.promptDb.getDefaultPromptTemplate, {}));
+    // Use default system prompt
+    const systemPrompt: string = defaultPrompt;
 
     // Get team members for AI context
     const teamMembers = await ctx.runQuery(internal.teams.getTeamMembersWithUserDetails, {
       projectId: args.projectId,
     });
     const teamMembersContext = buildTeamMembersContext(teamMembers);
-
-    // Build long context if needed
-    let longContextSnapshot = "";
-    if (includeLongContext) {
-      const snapshotForContext = await ensureSnapshot();
-      longContextSnapshot = buildContextFromSnapshot(snapshotForContext);
-    }
 
     // Build system instructions with context
     const { currentDate, currentDateTime } = getCurrentDateTime();
@@ -189,11 +164,11 @@ export const chatWithAgent = action({
       teamMembersContext
     );
 
-    // Build user message with long context
+    // Context size tracking (loaded on-demand by AI tool)
+    const longContextSnapshot = "";
+
+    // User message (no automatic context injection - AI uses tools instead)
     let userMessage = args.message;
-    if (longContextSnapshot) {
-      userMessage = `CONTEXT:\n${longContextSnapshot}\n\nUSER MESSAGE:\n${args.message}`;
-    }
     let userMessageContent: Array<
       { type: "text"; text: string } | { type: "image"; image: string; mediaType?: string }
     > = [{ type: "text", text: userMessage }];
@@ -201,7 +176,6 @@ export const chatWithAgent = action({
 
     // Handle file if provided
     if (args.fileId) {
-      "use node";
       console.log(`🔍 Processing file: ${args.fileId}`);
       const result = await prepareMessageWithFile({
         ctx,
@@ -213,13 +187,14 @@ export const chatWithAgent = action({
       fileMetadata = result.fileMetadata;
     }
 
-    console.log("🧵 Convex Agent mode | Long context:", includeLongContext ? "enabled" : "skipped");
+    console.log("🧵 Convex Agent mode | Full context available via tool: load_full_project_context");
 
     try {
       // Create the agent with system instructions and usage tracking
       const agent = createVibePlannerAgent(systemInstructions, {
         projectId: args.projectId,
         runAction: ctx.runAction,
+        loadSnapshot: ensureSnapshot,
         usageHandler: async (ctx, usageData) => {
           // Track token usage automatically
           const inputTokens = usageData.usage?.promptTokens || 0;
