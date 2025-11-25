@@ -26,6 +26,7 @@
     "@dnd-kit/modifiers": "^9.0.0",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@google/genai": "^1.30.0",
     "@hookform/resolvers": "^5.1.1",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
@@ -71,6 +72,7 @@
     "cmdk": "^1.1.1",
     "convex": "^1.23.0",
     "date-fns": "^4.1.0",
+    "dommatrix": "^1.0.3",
     "framer-motion": "^12.23.6",
     "jotai": "^2.12.5",
     "jspdf": "^2.5.2",
@@ -98,8 +100,8 @@
     "tesseract.js": "^6.0.1",
     "tippy.js": "^6.3.7",
     "tunnel-rat": "^0.1.2",
-    "zod": "^3.25.67",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "^3.25.67"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

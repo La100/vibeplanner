@@ -1,12 +1,24 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { Document, Page, pdfjs } from 'react-pdf';
+import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
 
-// Set up PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Dynamically import react-pdf to avoid SSR issues with pdfjs-dist
+const Document = dynamic(
+  () => import('react-pdf').then((mod) => {
+    // Set up PDF.js worker when the module is loaded
+    mod.pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${mod.pdfjs.version}/build/pdf.worker.min.mjs`;
+    return mod.Document;
+  }),
+  { ssr: false }
+);
+
+const Page = dynamic(
+  () => import('react-pdf').then((mod) => mod.Page),
+  { ssr: false }
+);
 
 interface PDFViewerProps {
   url: string;

@@ -29,7 +29,8 @@ import {
   ClipboardList,
   Contact,
   StickyNote,
-  Image
+  Image,
+  Wand2
 } from "lucide-react";
 import { Suspense } from "react";
 
@@ -51,6 +52,7 @@ function ProjectSidebarContent() {
     { href: `/${params.slug}/${params.projectSlug}`, label: "Overview", icon: LayoutDashboard, key: "overview" },
     { href: `/${params.slug}/${params.projectSlug}/tasks`, label: "Tasks", icon: CheckSquare, key: "tasks" },
     { href: `/${params.slug}/${params.projectSlug}/moodboard`, label: "Moodboard", icon: Image, key: "moodboard" },
+    { href: `/${params.slug}/${params.projectSlug}/visualizations`, label: "Visualizations", icon: Wand2, key: "visualizations" },
     { href: `/${params.slug}/${params.projectSlug}/notes`, label: "Notes", icon: StickyNote, key: "notes" },
     { href: `/${params.slug}/${params.projectSlug}/contacts`, label: "Contacts", icon: Contact, key: "contacts" },
     { href: `/${params.slug}/${params.projectSlug}/chat`, label: "Chat", icon: MessageSquare, key: "chat", hasUnread: totalUnreadCount > 0 },

@@ -9,8 +9,70 @@ import {
   User,
   Plus,
   X,
-  Check
+  Check,
+  AlertTriangle,
+  Flame,
+  Gauge,
+  Feather
 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
+const PRIORITY_CONFIG: Record<
+  "urgent" | "high" | "medium" | "low",
+  {
+    label: string;
+    badgeClassName: string;
+    accentClassName: string;
+    ringClassName: string;
+    icon: React.ReactNode;
+  }
+> = {
+  urgent: {
+    label: "Urgent",
+    badgeClassName: "bg-red-100 text-red-700 border border-red-200",
+    accentClassName: "from-red-500/60 via-red-500/40 to-red-500/20",
+    ringClassName: "ring-1 ring-red-500/20",
+    icon: <AlertTriangle className="h-3.5 w-3.5" />,
+  },
+  high: {
+    label: "High",
+    badgeClassName: "bg-orange-100 text-orange-700 border border-orange-200",
+    accentClassName: "from-orange-500/50 via-orange-500/40 to-orange-500/20",
+    ringClassName: "ring-1 ring-orange-500/20",
+    icon: <Flame className="h-3.5 w-3.5" />,
+  },
+  medium: {
+    label: "Medium",
+    badgeClassName: "bg-amber-100 text-amber-700 border border-amber-200",
+    accentClassName: "from-amber-500/45 via-amber-500/35 to-amber-500/20",
+    ringClassName: "ring-1 ring-amber-500/20",
+    icon: <Gauge className="h-3.5 w-3.5" />,
+  },
+  low: {
+    label: "Low",
+    badgeClassName: "bg-slate-100 text-slate-600 border border-slate-200",
+    accentClassName: "from-slate-500/35 via-slate-500/25 to-slate-500/10",
+    ringClassName: "ring-1 ring-slate-500/15",
+    icon: <Feather className="h-3.5 w-3.5" />,
+  },
+};
+
+const resolvePriorityKey = (priority?: string) => {
+  if (!priority || typeof priority !== "string") {
+    return undefined;
+  }
+  return priority.trim().toLowerCase() as keyof typeof PRIORITY_CONFIG;
+};
+
+const getPriorityLabel = (priority?: string) => {
+  const key = resolvePriorityKey(priority);
+  return key && PRIORITY_CONFIG[key] ? PRIORITY_CONFIG[key].label : priority;
+};
 
 interface PendingTask {
   type: 'task' | 'note' | 'shopping' | 'survey' | 'contact' | 'shoppingSection';
@@ -44,6 +106,10 @@ interface ItemPreviewCardProps {
 }
 
 export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: ItemPreviewCardProps) => {
+  const priorityKey =
+    typeof item.data.priority === "string" ? resolvePriorityKey(item.data.priority as string) : undefined;
+  const priorityConfig = priorityKey ? PRIORITY_CONFIG[priorityKey] : undefined;
+
   const getItemIcon = (type: string) => {
     switch (type) {
       case 'task': return <CheckSquare className="h-4 w-4" />;
@@ -186,7 +252,7 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
             changes.push(`Assigned to: ${item.updates.assignedToName}`);
           }
           if (item.updates?.priority) {
-            changes.push(`Priority: ${item.updates.priority}`);
+            changes.push(`Priority: ${getPriorityLabel(item.updates.priority as string)}`);
           }
           if (item.updates?.status) {
             changes.push(`Status: ${item.updates.status}`);
@@ -200,15 +266,15 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
           const assignedTo = (item.updates?.assignedToName as string) || (item.originalItem?.assignedToName as string) || (item.data.assignedToName as string);
           return [
             description,
-            priority && `Priority: ${priority}`,
+            priority && `Priority: ${getPriorityLabel(priority)}`,
             assignedTo && `Assigned to: ${assignedTo}`
           ].filter(Boolean).join(' • ');
         }
         return [
           typeof item.data.description === 'string' ? item.data.description : '',
-          item.data.priority && `Priority: ${item.data.priority}`,
+          item.data.priority && `Priority: ${getPriorityLabel(item.data.priority as string)}`,
           item.data.assignedToName && `Assigned to: ${item.data.assignedToName}`,
-          item.data.dueDate && typeof item.data.dueDate === 'number' && `Due: ${new Date(item.data.dueDate).toLocaleDateString()}`
+          (item.data.endDate || item.data.startDate) && typeof (item.data.endDate || item.data.startDate) === 'number' && `Due: ${new Date((item.data.endDate || item.data.startDate) as number).toLocaleDateString()}`
         ].filter(Boolean).join(' • ');
       case 'note':
         if (item.operation === 'edit') {
@@ -241,7 +307,7 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
             changes.push(`Quantity: ${item.updates.quantity}`);
           }
           if (item.updates?.priority) {
-            changes.push(`Priority: ${item.updates.priority}`);
+            changes.push(`Priority: ${getPriorityLabel(item.updates.priority as string)}`);
           }
           if (changes.length > 0) {
             return changes.join(' • ');
@@ -308,18 +374,35 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
     }
   };
 
-  const getPriorityVariant = (priority: string) => {
-    switch (priority) {
-      case 'urgent': return 'destructive' as const;
-      case 'high': return 'destructive' as const;
-      case 'medium': return 'default' as const;
-      case 'low': return 'secondary' as const;
-      default: return 'secondary' as const;
+  const renderPriorityBadge = (priority: string) => {
+    const priorityKey = resolvePriorityKey(priority);
+    if (!priorityKey || !(priorityKey in PRIORITY_CONFIG)) {
+      return null;
     }
+
+    const details = PRIORITY_CONFIG[priorityKey];
+
+    return (
+      <Badge
+        variant="outline"
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide ${details.badgeClassName}`}
+      >
+        {details.icon}
+        {details.label}
+      </Badge>
+    );
   };
 
   return (
-    <Card className="relative group hover:shadow-md transition-all duration-200 hover:scale-[1.02] h-full flex flex-col">
+    <Card
+      className={cn(
+        "relative group h-full flex flex-col overflow-hidden border border-border transition-all duration-200 hover:shadow-lg hover:scale-[1.01]",
+        priorityConfig?.ringClassName
+      )}
+    >
+      {priorityConfig?.accentClassName && (
+        <span className={`pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${priorityConfig.accentClassName}`} />
+      )}
       <CardHeader className="pb-3">
         <div className="flex items-center gap-3">
         <div className={`p-2 rounded-lg ${getTypeColor(item.type)}`}>
@@ -347,42 +430,49 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
               {tag}
             </Badge>
           ))}
-          {typeof item.data.priority === 'string' && (
-            <Badge 
-              variant={getPriorityVariant(item.data.priority)} 
-              className="text-sm px-2 py-1"
-            >
-              {item.data.priority}
-            </Badge>
-          )}
+          {typeof item.data.priority === 'string' && renderPriorityBadge(item.data.priority)}
         </div>
 
         {/* Action buttons - always at bottom */}
-        <div className="flex gap-2 mt-auto">
+        <div className="flex items-center gap-2 mt-auto">
+          <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => onReject(index)}
+                  className="h-9 w-9 rounded-full border border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                >
+                  <X className="h-4 w-4" />
+                  <span className="sr-only">Reject</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Reject</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => onEdit?.(index)}
+                  className="h-9 w-9 rounded-full border border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                >
+                  <span className="text-base leading-none">✏️</span>
+                  <span className="sr-only">Edit</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Edit</TooltipContent>
+            </Tooltip>
+          </div>
           <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onReject(index)}
-            className="flex-1 text-sm h-9 text-red-600 hover:text-red-700 hover:bg-red-50 font-medium"
-          >
-            <X className="h-4 w-4 mr-1" />
-            Reject
-          </Button>
-          <Button
-            size="sm"
-            variant="outline" 
-            onClick={() => onEdit?.(index)}
-            className="flex-1 text-sm h-9 text-blue-600 hover:text-blue-700 hover:bg-blue-50 font-medium"
-          >
-            ✏️ Edit
-          </Button>
-          <Button
-            size="sm"
+            size="icon"
             onClick={() => onConfirm(index)}
-            className="flex-1 text-sm h-9 bg-green-600 hover:bg-green-700 font-medium"
+            className="h-9 w-9 rounded-full bg-green-600 hover:bg-green-700 text-white"
           >
-            <Check className="h-4 w-4 mr-1" />
-            Accept
+            <Check className="h-4 w-4" />
+            <span className="sr-only">Accept</span>
           </Button>
         </div>
       </CardContent>

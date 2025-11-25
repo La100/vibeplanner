@@ -170,7 +170,9 @@ export const chatWithAgent = action({
     // User message (no automatic context injection - AI uses tools instead)
     let userMessage = args.message;
     let userMessageContent: Array<
-      { type: "text"; text: string } | { type: "image"; image: string; mediaType?: string }
+      | { type: "text"; text: string }
+      | { type: "image"; image: string; mediaType?: string }
+      | { type: "file"; data: string; mediaType: string }
     > = [{ type: "text", text: userMessage }];
     let fileMetadata: FileMetadataForHistory | undefined;
 
@@ -465,8 +467,11 @@ export const chatWithAgent = action({
           if (updates.content !== undefined) {
             changeParts.push("content updated");
           }
-          if (updates.dueDate !== undefined) {
-            changeParts.push(`dueDate → ${updates.dueDate}`);
+          if (updates.startDate !== undefined) {
+            changeParts.push(`startDate → ${updates.startDate}`);
+          }
+          if (updates.endDate !== undefined) {
+            changeParts.push(`endDate → ${updates.endDate}`);
           }
           if (changeParts.length > 0) {
             const summary = `${currentTitle}: ${changeParts.join(", ")}`;

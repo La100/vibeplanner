@@ -15,7 +15,7 @@ function ProjectLayoutContent({ children }: { children: React.ReactNode }) {
         <header className="xl:hidden flex h-16 items-center gap-2 px-4 border-b bg-background">
           <SidebarTrigger className="-ml-1 [&.hidden]:flex" />
         </header>
-        <main className="flex-1 p-4 xl:p-8 overflow-auto">
+        <main className="flex-1 min-h-0 overflow-auto p-4 xl:p-8">
           <Suspense fallback={
             <div className="space-y-4">
               <div className="h-8 bg-muted rounded animate-pulse w-1/3" />

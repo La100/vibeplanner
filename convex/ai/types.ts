@@ -33,7 +33,8 @@ export interface TaskContext {
   priority?: "low" | "medium" | "high" | "urgent";
   assignedTo?: string | null;
   assignedToName?: string;
-  dueDate?: number;
+  startDate?: number;
+  endDate?: number;
   tags: Array<string>;
   cost?: number;
 }

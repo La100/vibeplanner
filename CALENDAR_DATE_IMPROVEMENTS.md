@@ -219,3 +219,6 @@ if (task.startDate && task.endDate) {
 
 Powiedz mi które z tych chcesz dodać! 🎯
 
+
+
+

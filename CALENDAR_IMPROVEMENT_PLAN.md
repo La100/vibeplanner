@@ -470,3 +470,6 @@ Chcesz zacząć teraz? Powiedz które zadanie mam zaimplementować:
 3. **FAZA 3** - Day View
 4. Coś innego?
 
+
+
+

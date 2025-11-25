@@ -25,7 +25,8 @@ const createTaskSchema = z.object({
   priority: z.enum(["low", "medium", "high", "urgent"]).optional().describe("Task priority"),
   status: z.enum(["todo", "in_progress", "review", "done"]).default("todo").describe("Task status"),
   assignedTo: z.string().optional().describe("Team member name or email from TEAM MEMBERS list"),
-  dueDate: z.string().optional().describe("Due date in ISO format (YYYY-MM-DD)"),
+  startDate: z.string().optional().describe("Start date in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ). For all-day events, use midnight UTC (T00:00:00.000Z). For specific times, include the time in UTC."),
+  endDate: z.string().optional().describe("End date in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ). For all-day events, use midnight UTC (T00:00:00.000Z). For specific times, include the time in UTC. Can be same as startDate for single-point events/reminders."),
   tags: z.array(z.string()).optional().describe("Task tags for categorization"),
 });
 
@@ -41,7 +42,8 @@ const editTaskSchema = z.object({
   priority: z.enum(["low", "medium", "high", "urgent"]).optional().describe("New task priority"),
   status: z.enum(["todo", "in_progress", "review", "done"]).optional().describe("New task status"),
   assignedTo: z.string().optional().describe("Team member name or email from TEAM MEMBERS list"),
-  dueDate: z.string().optional().describe("New due date in ISO format (YYYY-MM-DD)"),
+  startDate: z.string().optional().describe("New start date in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ). For all-day events, use midnight UTC (T00:00:00.000Z). For specific times, include the time in UTC."),
+  endDate: z.string().optional().describe("New end date in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ). For all-day events, use midnight UTC (T00:00:00.000Z). For specific times, include the time in UTC. Can be same as startDate for single-point events/reminders."),
   tags: z.array(z.string()).optional().describe("New task tags"),
 });
 
@@ -469,7 +471,8 @@ export const createVibePlannerAgent = (
               status: t.status,
               priority: t.priority,
               assignedToName: t.assignedToName,
-              dueDate: t.dueDate,
+              startDate: t.startDate,
+              endDate: t.endDate,
               tags: t.tags,
             })),
           });

@@ -26,7 +26,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useUser } from "@clerk/nextjs";
 import { useProject } from '@/components/providers/ProjectProvider';
@@ -70,7 +70,8 @@ type TaskInput = {
   assignedTo?: string | null;
   assignedToName?: string;
   priority?: 'low' | 'medium' | 'high' | 'urgent';
-  dueDate?: string;
+  startDate?: string;
+  endDate?: string;
   tags?: string[];
   cost?: number;
 };
@@ -107,6 +108,20 @@ type BulkShoppingData = {
 
 type BulkSurveyData = {
   surveys?: Array<Record<string, unknown>>;
+};
+
+type ContactInput = {
+  name: string;
+  companyName?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  postalCode?: string;
+  website?: string;
+  taxId?: string;
+  type: "contractor" | "supplier" | "subcontractor" | "other";
+  notes?: string;
 };
 
 type ChatHistoryEntry = {
@@ -295,6 +310,40 @@ const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
     return formatShoppingSectionDisplay(item);
   });
 
+const sanitizeContactData = (data: Record<string, unknown>): ContactInput => {
+  const name =
+    typeof data.name === "string" && data.name.trim().length > 0
+      ? data.name.trim()
+      : "Untitled Contact";
+
+  const allowedTypes = new Set(["contractor", "supplier", "subcontractor", "other"]);
+  const typeCandidate = typeof data.type === "string" ? data.type.toLowerCase().trim() : "";
+  const type = (allowedTypes.has(typeCandidate) ? typeCandidate : "other") as ContactInput["type"];
+
+  const optionalStringFields: Array<keyof Omit<ContactInput, "name" | "type">> = [
+    "companyName",
+    "email",
+    "phone",
+    "address",
+    "city",
+    "postalCode",
+    "website",
+    "taxId",
+    "notes",
+  ];
+
+  const sanitized: ContactInput = { name, type };
+
+  for (const field of optionalStringFields) {
+    const value = data[field];
+    if (typeof value === "string" && value.trim().length > 0) {
+      sanitized[field] = value.trim();
+    }
+  }
+
+  return sanitized;
+};
+
 const formatShoppingSectionDisplay = (item: PendingItem): PendingItem => {
   if (item.type !== "shoppingSection") return item;
 
@@ -442,7 +491,7 @@ const extractBulkUpdates = (item: PendingItem) => {
 
 const AIAssistantSmart = () => {
   const { user } = useUser();
-  const { project } = useProject();
+  const { project, team } = useProject();
   const greetingName =
     user?.firstName ||
     user?.fullName?.split(" ")[0] ||
@@ -473,9 +522,10 @@ const AIAssistantSmart = () => {
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const streamUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userThreads = useQuery(
     api.ai.threads.listThreadsForUser,
     project && user?.id
@@ -538,6 +588,11 @@ const AIAssistantSmart = () => {
   };
 
   const handleStopResponse = useCallback(() => {
+    // Clear any pending stream update timeout
+    if (streamUpdateTimeoutRef.current) {
+      clearTimeout(streamUpdateTimeoutRef.current);
+      streamUpdateTimeoutRef.current = null;
+    }
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       setIsLoading(false);
@@ -609,10 +664,14 @@ const AIAssistantSmart = () => {
         };
       });
 
+      const sanitized = formatted.filter(
+        (entry) => entry.role !== "assistant" || (entry.content?.trim?.().length ?? 0) > 0
+      );
+
       const isSame =
-        prev.length === formatted.length &&
+        prev.length === sanitized.length &&
         prev.every((current, index) => {
-          const next = formatted[index];
+          const next = sanitized[index];
           if (!next) {
             return false;
           }
@@ -639,7 +698,7 @@ const AIAssistantSmart = () => {
         return prev;
       }
 
-      return formatted;
+      return sanitized;
     });
   }, [persistedMessages]);
 
@@ -661,6 +720,16 @@ const AIAssistantSmart = () => {
 
     setSessionTokens(totals);
   }, [persistedMessages]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (streamUpdateTimeoutRef.current) {
+        clearTimeout(streamUpdateTimeoutRef.current);
+        streamUpdateTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (chatHistory.length === 0) {
@@ -762,12 +831,23 @@ const AIAssistantSmart = () => {
   useEffect(() => {
     scrollToBottom();
   }, [chatHistory, isLoading]);
+  
+  useEffect(() => {
+    const textarea = inputRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    const maxHeight = 240;
+    const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [message]);
 
   // Use the RAG AI system
   const createConfirmedTask = useAction(api.ai.confirmedActions.createConfirmedTask);
   const createConfirmedNote = useAction(api.ai.confirmedActions.createConfirmedNote);
   const createConfirmedShoppingItem = useAction(api.ai.confirmedActions.createConfirmedShoppingItem);
   const createConfirmedSurvey = useAction(api.ai.confirmedActions.createConfirmedSurvey);
+  const createConfirmedContact = useAction(api.ai.confirmedActions.createConfirmedContact);
   const editConfirmedTask = useAction(api.ai.confirmedActions.editConfirmedTask);
   const editConfirmedNote = useAction(api.ai.confirmedActions.editConfirmedNote);
   const editConfirmedShoppingItem = useAction(api.ai.confirmedActions.editConfirmedShoppingItem);
@@ -910,20 +990,48 @@ const AIAssistantSmart = () => {
       let runningResponse = "";
       let latestTokenUsage: { totalTokens: number; estimatedCostUSD: number } | null = null;
       let partialLine = "";
+      
+      // Batch updates to prevent "Maximum update depth exceeded" error
+      // Use a ref-based throttling mechanism to avoid infinite update loops
+      const scheduleUpdate = () => {
+        // Clear any existing timeout
+        if (streamUpdateTimeoutRef.current) {
+          clearTimeout(streamUpdateTimeoutRef.current);
+        }
+        
+        // Schedule a new update with a small delay (throttling)
+        streamUpdateTimeoutRef.current = setTimeout(() => {
+          setChatHistory((prev) => {
+            // Check if there's actually a last entry to update
+            if (prev.length === 0) {
+              return prev;
+            }
+            
+            const lastIndex = prev.length - 1;
+            const lastEntry = prev[lastIndex];
+            
+            // Only update if content actually changed
+            if (lastEntry.content === runningResponse) {
+              return prev;
+            }
+            
+            const updated = [...prev];
+            updated[lastIndex] = {
+              ...lastEntry,
+              content: runningResponse,
+            };
+            return updated;
+          });
+          streamUpdateTimeoutRef.current = null;
+        }, 50); // Throttle to ~20 updates per second max
+      };
 
       const handleStreamEvent = (event: { type?: string; [key: string]: unknown }) => {
         switch (event.type) {
           case "token": {
             if (typeof event.delta === "string") {
               runningResponse += event.delta;
-              setChatHistory((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1] = {
-                  ...updated[updated.length - 1],
-                  content: runningResponse,
-                };
-                return updated;
-              });
+              scheduleUpdate();
             }
             break;
           }
@@ -1000,6 +1108,12 @@ const AIAssistantSmart = () => {
         } catch (error) {
           console.error("Failed to parse final stream chunk", error);
         }
+      }
+
+      // Clear any pending stream update timeout before final update
+      if (streamUpdateTimeoutRef.current) {
+        clearTimeout(streamUpdateTimeoutRef.current);
+        streamUpdateTimeoutRef.current = null;
       }
 
       setCurrentMode(pendingItemsMode);
@@ -1097,6 +1211,12 @@ const AIAssistantSmart = () => {
         }
       }
     } catch (error) {
+      // Clear any pending stream update timeout on error
+      if (streamUpdateTimeoutRef.current) {
+        clearTimeout(streamUpdateTimeoutRef.current);
+        streamUpdateTimeoutRef.current = null;
+      }
+      
       if (error instanceof DOMException && error.name === "AbortError") {
         setChatHistory((prev) => {
           if (prev.length === 0) return prev;
@@ -1258,7 +1378,7 @@ const AIAssistantSmart = () => {
             
             result = await createConfirmedTask({
               projectId: project._id,
-              taskData: cleanTaskData as { title: string; status?: "todo" | "in_progress" | "review" | "done"; description?: string; assignedTo?: string | null; priority?: "low" | "medium" | "high" | "urgent"; dueDate?: string; tags?: string[]; cost?: number; }
+              taskData: cleanTaskData as { title: string; status?: "todo" | "in_progress" | "review" | "done"; description?: string; assignedTo?: string | null; priority?: "low" | "medium" | "high" | "urgent"; startDate?: string; endDate?: string; tags?: string[]; cost?: number; }
             });
             break;
           case 'note':
@@ -1308,6 +1428,17 @@ const AIAssistantSmart = () => {
               surveyData: extractSurveyData(currentItem.data)
             });
             break;
+          case 'contact': {
+            const teamSlug = resolveTeamSlug();
+            if (!teamSlug) {
+              throw new Error("Missing team slug for contact creation");
+            }
+            result = await createConfirmedContact({
+              teamSlug,
+              contactData: sanitizeContactData(currentItem.data),
+            });
+            break;
+          }
           default:
             throw new Error(`Nieznany typ zawartości: ${currentItem.type}`);
         }
@@ -1605,6 +1736,17 @@ const AIAssistantSmart = () => {
     setCurrentItemIndex(index);
   };
 
+  const resolveTeamSlug = () => {
+    if (team?.slug && team.slug.length > 0) {
+      return team.slug;
+    }
+    const projectTeamSlug = (project as unknown as { teamSlug?: string } | null)?.teamSlug;
+    if (projectTeamSlug && projectTeamSlug.length > 0) {
+      return projectTeamSlug;
+    }
+    return undefined;
+  };
+
   // Helper to pick the best section label (prefer explicit sectionName, fall back to category)
   const resolveSectionName = (rawSectionName?: unknown, rawCategory?: unknown): string | undefined => {
     const normalizedSection =
@@ -1676,7 +1818,8 @@ const AIAssistantSmart = () => {
                   description?: string;
                   assignedTo?: string | null;
                   priority?: 'low' | 'medium' | 'high' | 'urgent';
-                  dueDate?: string;
+                  startDate?: string;
+                  endDate?: string;
                   tags?: string[];
                   cost?: number;
                 },
@@ -1790,6 +1933,53 @@ const AIAssistantSmart = () => {
           result = {
             success: errors.length === 0,
             message: `Created ${createdIds.length}/${items.length} shopping items successfully${
+              errors.length > 0 ? `. Errors: ${errors.slice(0, 3).join(', ')}` : ''
+            }`,
+          };
+          break;
+        }
+        case 'contact': {
+          const contacts = Array.isArray(
+            (item.data as { contacts?: Array<Record<string, unknown>> }).contacts
+          )
+            ? ((item.data as { contacts?: Array<Record<string, unknown>> }).contacts as Array<
+                Record<string, unknown>
+              >)
+            : [];
+
+          if (contacts.length === 0) {
+            throw new Error("No contacts provided for bulk creation");
+          }
+
+          const teamSlug = resolveTeamSlug();
+          if (!teamSlug) {
+            throw new Error("Missing team slug for contact creation");
+          }
+
+          const createdIds: string[] = [];
+          const errors: string[] = [];
+
+          for (const contact of contacts) {
+            try {
+              const contactResult = await createConfirmedContact({
+                teamSlug,
+                contactData: sanitizeContactData(contact),
+              });
+
+              if (contactResult.success && contactResult.contactId) {
+                createdIds.push(contactResult.contactId);
+              } else if (!contactResult.success) {
+                errors.push(contactResult.message);
+              }
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              errors.push(message);
+            }
+          }
+
+          result = {
+            success: errors.length === 0,
+            message: `Created ${createdIds.length}/${contacts.length} contacts successfully${
               errors.length > 0 ? `. Errors: ${errors.slice(0, 3).join(', ')}` : ''
             }`,
           };
@@ -1974,7 +2164,8 @@ const AIAssistantSmart = () => {
                     status?: 'todo' | 'in_progress' | 'review' | 'done';
                     assignedTo?: string | null;
                     priority?: 'low' | 'medium' | 'high' | 'urgent';
-                    dueDate?: string;
+                    startDate?: string;
+                    endDate?: string;
                     tags?: string[];
                     cost?: number;
                   },
@@ -2011,7 +2202,8 @@ const AIAssistantSmart = () => {
               description?: string;
               assignedTo?: string | null;
               priority?: 'low' | 'medium' | 'high' | 'urgent';
-              dueDate?: string;
+              startDate?: string;
+              endDate?: string;
               tags?: string[];
               cost?: number;
             },
@@ -2065,6 +2257,17 @@ const AIAssistantSmart = () => {
             surveyData: extractSurveyData(item.data)
           });
           break;
+        case 'contact': {
+          const teamSlug = resolveTeamSlug();
+          if (!teamSlug) {
+            throw new Error("Missing team slug for contact creation");
+          }
+          result = await createConfirmedContact({
+            teamSlug,
+            contactData: sanitizeContactData(item.data),
+          });
+          break;
+        }
         default:
           throw new Error(`Unknown content type: ${item.type}`);
       }
@@ -2203,11 +2406,11 @@ const AIAssistantSmart = () => {
 
   return (
     <>
-      <div className="flex h-full bg-background text-foreground">
+      <div className="flex h-full min-h-0 bg-background text-foreground">
       {/* Sidebar with chat history (desktop) */}
       <aside
         className={cn(
-          "hidden shrink-0 flex-col border-r border-border/60 bg-card/20 transition-all duration-200 md:flex",
+          "hidden shrink-0 flex-col border-r border-border/60 bg-card/20 transition-all duration-200 md:flex md:sticky md:self-start md:top-4 md:max-h-[calc(100vh-2rem)] xl:top-8 xl:max-h-[calc(100vh-4rem)]",
           showHistory ? "w-72 lg:w-80" : "w-0"
         )}
       >
@@ -2308,7 +2511,7 @@ const AIAssistantSmart = () => {
       </aside>
 
       {/* Main conversation area */}
-      <div className="relative flex flex-1 flex-col">
+      <div className="relative flex min-h-0 flex-1 flex-col">
         {/* Mobile header */}
         <div className="flex items-center gap-3 border-b border-border/60 px-4 py-3 md:hidden">
           <Button
@@ -2376,7 +2579,7 @@ const AIAssistantSmart = () => {
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6">
           {chatIsLoading ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               Loading conversation…
@@ -2542,7 +2745,7 @@ const AIAssistantSmart = () => {
           </div>
 
           <div className="mt-3 flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2">
-            <Input
+            <Textarea
               ref={inputRef}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
@@ -2554,7 +2757,8 @@ const AIAssistantSmart = () => {
               }}
               placeholder={selectedFile ? "Add a message (optional)" : "Ask about renovation tasks, materials, or next steps..."}
               disabled={isUploading || !aiEnabled}
-              className="h-12 flex-1 border-none bg-transparent text-base text-foreground placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+              rows={1}
+              className="flex-1 resize-none border-none bg-transparent p-0 text-base text-foreground shadow-none placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
             />
             {isLoading && !isUploading ? (
               <Button
@@ -2590,19 +2794,19 @@ const AIAssistantSmart = () => {
     {showConfirmationGrid && (
       <Dialog open={showConfirmationGrid} onOpenChange={setShowConfirmationGrid}>
         <DialogContent
-          className="overflow-hidden p-8"
+          className="flex flex-col overflow-hidden p-4 sm:p-8"
           style={{
-            width: "95vw",
-            height: "95vh",
-            maxWidth: "none",
-            maxHeight: "none",
+            width: "min(95vw, 1280px)",
+            height: "min(95vh, 900px)",
+            maxWidth: "95vw",
+            maxHeight: "95vh",
             margin: "auto",
           }}
         >
-          <DialogHeader>
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Review AI Suggestions</DialogTitle>
           </DialogHeader>
-          <div className="overflow-y-auto flex-1 w-full h-full">
+          <div className="flex-1 overflow-y-auto">
             <AIConfirmationGrid
               pendingItems={pendingItems as PendingContentItem[]}
               onConfirmAll={handleConfirmAll}

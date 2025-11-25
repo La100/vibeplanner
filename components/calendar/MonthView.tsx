@@ -155,14 +155,14 @@ export const MonthView = memo(function MonthView({ events = [], onEventClick, on
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Week header */}
-      <div className="grid grid-cols-7 border-b bg-card sticky top-0 z-10 flex-shrink-0">
+      <div className="grid grid-cols-7 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 sticky top-0 z-10 flex-shrink-0">
         {weekDays.map((day, index) => (
           <div 
             key={day.short}
             className={cn(
               "p-1.5 sm:p-3 text-center text-[10px] sm:text-sm font-medium border-r last:border-r-0",
               index >= 5 
-                ? 'text-blue-600 bg-blue-50' 
+                ? 'text-primary/80 bg-primary/5'
                 : 'text-muted-foreground'
             )}
             title={day.full}
@@ -185,10 +185,7 @@ export const MonthView = memo(function MonthView({ events = [], onEventClick, on
           return (
             <div 
               key={weekIndex}
-              className={cn(
-                "border-b last:border-b-0 relative",
-                "min-h-[140px] sm:min-h-[180px] lg:min-h-[200px]"
-              )}
+              className="border-b last:border-b-0 relative min-h-[140px] sm:min-h-[180px] lg:min-h-[200px]"
               style={{
                 height: `calc((100% - 40px) / ${monthGrid.weeks.length})`
               }}
@@ -205,13 +202,13 @@ export const MonthView = memo(function MonthView({ events = [], onEventClick, on
                     <div
                       key={date.toISOString()}
                       className={cn(
-                        "group relative flex flex-col cursor-pointer transition-colors",
-                        "border-r last:border-r-0 p-2 sm:p-3",
-                        !isCurrentMonth && "text-muted-foreground bg-muted/20",
-                        isCurrentMonth && "bg-card hover:bg-accent/50",
-                        isCurrentDay && "bg-primary/5 ring-2 ring-primary ring-inset",
-                        isSelected && "bg-accent",
-                        isWeekend && isCurrentMonth && "bg-blue-50/30"
+                        "group relative flex flex-col transition-colors border-r last:border-r-0 p-2 sm:p-3",
+                        isCurrentMonth
+                          ? "cursor-pointer bg-background hover:bg-muted/40"
+                          : "cursor-default text-muted-foreground/60 bg-muted/10",
+                        isWeekend && isCurrentMonth && !isCurrentDay && "bg-primary/5",
+                        isCurrentDay && "bg-primary/20 ring-2 ring-primary/60 ring-inset",
+                        isSelected && !isCurrentDay && "bg-primary/10 ring-2 ring-primary/40 ring-inset"
                       )}
                       onClick={() => handleDateClick(date)}
                     >

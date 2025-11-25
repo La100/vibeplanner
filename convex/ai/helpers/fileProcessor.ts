@@ -1,10 +1,10 @@
- "use node";
+"use node";
 
 /**
  * File Processor Helper
  *
- * Responsible for converting uploaded files into text that can be safely passed
- * to the language model.
+ * Responsible for converting uploaded files (Excel, text files) into text that can be safely passed
+ * to the language model. PDFs are handled natively by the agent via file URLs.
  */
 
 export const processFileForAI = async (
@@ -13,35 +13,6 @@ export const processFileForAI = async (
   userMessage: string,
 ): Promise<string> => {
   let augmentedMessage = userMessage;
-
-  // Attempt to extract PDF text
-  if (file.mimeType === "application/pdf") {
-    console.log("📄 Processing PDF file for text extraction...");
-    try {
-      const fileResponse = await fetch(fileUrl);
-      if (!fileResponse.ok) {
-        throw new Error(`Failed to download PDF: ${fileResponse.status}`);
-      }
-
-      const fileBuffer = await fileResponse.arrayBuffer();
-      const pdfParseModule = await import("pdf-parse/lib/pdf-parse.js");
-      const pdfParse = (pdfParseModule as any).default ?? pdfParseModule;
-      const parsed = await pdfParse(Buffer.from(fileBuffer));
-      const extractedText = (parsed?.text || "").trim();
-
-      if (extractedText) {
-        const normalized = extractedText.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n");
-        const truncated =
-          normalized.length > 15000 ? `${normalized.slice(0, 15000)}\n...[truncated]` : normalized;
-        augmentedMessage = `${userMessage}\n\n[PDF EXTRACT: ${file.name}]\n${truncated}`;
-        return augmentedMessage;
-      }
-    } catch (error) {
-      console.error("Failed to extract PDF content:", error);
-      augmentedMessage = `${userMessage}\n\n📎 ATTACHED PDF: "${file.name}" (could not auto-extract text). Please specify which sections you need help with.`;
-      return augmentedMessage;
-    }
-  }
 
   const isExcelFile =
     file.mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||

@@ -20,8 +20,8 @@ type ViewType = "calendar" | "gantt";
 
 export function ProjectCalendarSkeleton() {
   return (
-    <div className="h-full">
-      <div className="flex items-center justify-between p-4 border-b border-gray-200">
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-200">
         <div className="flex items-center gap-4">
           <Skeleton className="h-6 w-6" />
           <Skeleton className="h-6 w-20" />
@@ -133,49 +133,53 @@ export default function ProjectCalendar() {
   };
 
   return (
-    <div className="h-screen w-full relative overflow-hidden">
+    <div className="flex h-full w-full flex-col overflow-hidden rounded-xl border bg-card">
       {/* Top Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-card">
         <h1 className="text-xl font-semibold">Schedule</h1>
       </div>
 
       {/* View Switcher (Calendar/Gantt) */}
-      <GanttHeader 
-        filters={filters}
-        onFiltersChange={setFilters}
-        currentView={currentView}
-        onViewChange={setCurrentView}
-      />
+      <div className="border-b border-gray-200 bg-card px-2 py-3 sm:px-4">
+        <GanttHeader
+          filters={filters}
+          onFiltersChange={setFilters}
+          currentView={currentView}
+          onViewChange={setCurrentView}
+        />
+      </div>
 
       {/* Content Area */}
-      <div className={`flex-1 w-full ${currentView === "calendar" ? "h-[calc(100vh-73px-120px)]" : "h-[calc(100vh-73px-120px)]"}`}>
+      <div className="flex-1 w-full overflow-hidden">
         {currentView === "calendar" ? (
           <CalendarProvider>
-            {/* Calendar Navigation & Filters */}
-            <CalendarHeader 
-              filters={filters}
-              onFiltersChange={setFilters}
-            />
-            {/* Calendar View */}
-            <div className="h-[calc(100%-80px)]">
-              <Calendar
-                events={calendarEvents}
-                onEventClick={handleEventClick}
-                onDateClick={handleDateClick}
-                className="h-full w-full"
+            <div className="flex h-full flex-col overflow-hidden">
+              <CalendarHeader
                 filters={filters}
                 onFiltersChange={setFilters}
               />
+              <div className="flex-1 min-h-0">
+                <Calendar
+                  events={calendarEvents}
+                  onEventClick={handleEventClick}
+                  onDateClick={handleDateClick}
+                  className="h-full w-full"
+                  filters={filters}
+                  onFiltersChange={setFilters}
+                />
+              </div>
             </div>
           </CalendarProvider>
         ) : (
-          <Gantt
-            events={calendarEvents}
-            onEventClick={handleEventClick}
-            className="h-full w-full"
-            filters={filters}
-            onFiltersChange={setFilters}
-          />
+          <div className="flex h-full flex-col overflow-hidden">
+            <Gantt
+              events={calendarEvents}
+              onEventClick={handleEventClick}
+              className="flex-1 w-full"
+              filters={filters}
+              onFiltersChange={setFilters}
+            />
+          </div>
         )}
       </div>
 

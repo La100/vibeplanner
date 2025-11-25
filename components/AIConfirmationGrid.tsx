@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { ItemPreviewCard } from "@/components/ItemPreviewCard";
@@ -64,7 +64,45 @@ export const AIConfirmationGrid = ({
 }: AIConfirmationGridProps) => {
   const [currentPage, setCurrentPage] = useState(0);
   const [processingItems, setProcessingItems] = useState<Set<number>>(new Set());
-  const itemsPerPage = 10;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+
+  useEffect(() => {
+    const calculateItemsPerPage = () => {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      const isTall = height >= 900;
+
+      if (width < 640) {
+        return isTall ? 6 : 4;
+      }
+      if (width < 1024) {
+        return isTall ? 9 : 6;
+      }
+      if (width < 1440) {
+        return isTall ? 12 : 9;
+      }
+      return isTall ? 16 : 12;
+    };
+
+    setItemsPerPage(calculateItemsPerPage());
+
+    const handleResize = () => {
+      setItemsPerPage((prev) => {
+        const next = calculateItemsPerPage();
+        return prev === next ? prev : next;
+      });
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    const totalPages = Math.ceil(pendingItems.length / itemsPerPage);
+    if (currentPage >= totalPages) {
+      setCurrentPage(Math.max(totalPages - 1, 0));
+    }
+  }, [currentPage, itemsPerPage, pendingItems.length]);
 
   const totalPages = Math.ceil(pendingItems.length / itemsPerPage);
   const currentItems = pendingItems.slice(
@@ -152,7 +190,7 @@ export const AIConfirmationGrid = ({
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 p-6 bg-gray-50/50 rounded-lg border">
+      <div className="grid gap-4 sm:gap-6 p-4 sm:p-6 bg-gray-50/50 rounded-lg border [grid-template-columns:repeat(auto-fit,minmax(320px,1fr))] auto-rows-fr">
         {currentItems.map((item, index) => {
           const actualIndex = currentPage * itemsPerPage + index;
           const isItemProcessing = processingItems.has(actualIndex);
@@ -209,6 +247,3 @@ export const AIConfirmationGrid = ({
     </div>
   );
 };
-
-
-
