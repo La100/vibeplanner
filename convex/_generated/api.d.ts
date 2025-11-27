@@ -21,8 +21,11 @@ import type * as ai_helpers_contextBuilder from "../ai/helpers/contextBuilder.js
 import type * as ai_helpers_fileProcessor from "../ai/helpers/fileProcessor.js";
 import type * as ai_helpers_functionCallHandler from "../ai/helpers/functionCallHandler.js";
 import type * as ai_helpers_tokenUtils from "../ai/helpers/tokenUtils.js";
+import type * as ai_imageGen_config from "../ai/imageGen/config.js";
+import type * as ai_imageGen_generation from "../ai/imageGen/generation.js";
+import type * as ai_imageGen_helpers from "../ai/imageGen/helpers.js";
+import type * as ai_imageGen_videoGeneration from "../ai/imageGen/videoGeneration.js";
 import type * as ai_imageGeneration from "../ai/imageGeneration.js";
-import type * as ai_imageGenerationHelpers from "../ai/imageGenerationHelpers.js";
 import type * as ai_longContext from "../ai/longContext.js";
 import type * as ai_longContextQueries from "../ai/longContextQueries.js";
 import type * as ai_prompt from "../ai/prompt.js";
@@ -88,8 +91,11 @@ declare const fullApi: ApiFromModules<{
   "ai/helpers/fileProcessor": typeof ai_helpers_fileProcessor;
   "ai/helpers/functionCallHandler": typeof ai_helpers_functionCallHandler;
   "ai/helpers/tokenUtils": typeof ai_helpers_tokenUtils;
+  "ai/imageGen/config": typeof ai_imageGen_config;
+  "ai/imageGen/generation": typeof ai_imageGen_generation;
+  "ai/imageGen/helpers": typeof ai_imageGen_helpers;
+  "ai/imageGen/videoGeneration": typeof ai_imageGen_videoGeneration;
   "ai/imageGeneration": typeof ai_imageGeneration;
-  "ai/imageGenerationHelpers": typeof ai_imageGenerationHelpers;
   "ai/longContext": typeof ai_longContext;
   "ai/longContextQueries": typeof ai_longContextQueries;
   "ai/prompt": typeof ai_prompt;

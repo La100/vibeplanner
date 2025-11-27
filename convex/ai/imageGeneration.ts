@@ -5,29 +5,19 @@ import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { GoogleGenAI } from "@google/genai";
+import { IMAGE_GENERATION_CONFIG } from "./imageGen/config";
 
 /**
  * Gemini Image Generation for Architectural Visualizations
  * Uses Gemini 3 Pro Image model with official SDK and chat history
  */
 
-const GEMINI_MODEL = "gemini-3-pro-image-preview";
-
-// System prompt for architectural visualizations
-const VISUALIZATION_SYSTEM_PROMPT = `You are an expert architectural visualization artist. When generating images:
-- Create photorealistic, high-quality architectural renders
-- Pay attention to lighting, materials, and atmosphere
-- Include realistic textures and environmental details
-- Consider time of day, weather, and seasonal elements
-- Ensure proper scale and perspective
-- Add subtle details like furniture, plants, and people where appropriate
-- When user asks to modify or refine an image, keep the same general style but apply the requested changes`;
-
-// History message type
+// History message type - includes image data for model responses
 const historyMessageValidator = v.object({
   role: v.union(v.literal("user"), v.literal("model")),
   text: v.string(),
-  hasImage: v.optional(v.boolean()),
+  imageBase64: v.optional(v.string()),
+  imageMimeType: v.optional(v.string()),
 });
 
 /**
@@ -68,39 +58,67 @@ export const generateVisualization = action({
 
       const startTime = Date.now();
 
-      // Build contents array with proper structure for multi-turn
+      // Build contents array - single turn only
+      // Gemini thinking models require thought_signature for model responses,
+      // which we don't have access to. So we use single-turn with context in prompt.
       type Part = { text: string } | { inlineData: { mimeType: string; data: string } };
       type ContentItem = { role: "user" | "model"; parts: Part[] };
       
       const contents: ContentItem[] = [];
       
-      // Add history as previous turns
-      // Note: Only include user messages to avoid "thought_signature" errors
-      // with Gemini models that have thinking capabilities. Model responses
-      // would require a thought signature that we don't have access to.
+      // Find the last generated image from history to use as context
+      let lastGeneratedImage: { base64: string; mimeType: string } | null = null;
+      let conversationContext = "";
+      
       if (args.history && args.history.length > 0) {
+        // Build conversation context summary
+        const contextParts: string[] = [];
         for (const msg of args.history) {
-          // Only include user messages in history
           if (msg.role === "user") {
-            contents.push({
-              role: "user",
-              parts: [{ text: msg.text }],
-            });
+            contextParts.push(`User requested: "${msg.text}"`);
+          } else if (msg.role === "model" && msg.imageBase64 && msg.imageMimeType) {
+            contextParts.push("AI generated an image based on this request.");
+            // Keep track of the last generated image
+            lastGeneratedImage = {
+              base64: msg.imageBase64,
+              mimeType: msg.imageMimeType,
+            };
           }
+        }
+        if (contextParts.length > 0) {
+          conversationContext = "Previous conversation:\n" + contextParts.join("\n") + "\n\nNow: ";
         }
       }
       
       // Build current user message parts
-      const currentParts: Part[] = [{ text: args.prompt }];
+      // Include system prompt and conversation context in prompt
+      // We prepend the system prompt to ensure the model follows instructions
+      const basePrompt = `${IMAGE_GENERATION_CONFIG.SYSTEM_PROMPT}\n\n`;
       
-      // Add all reference images
+      const enhancedPrompt = conversationContext 
+        ? `${basePrompt}${conversationContext}${args.prompt}`
+        : `${basePrompt}${args.prompt}`;
+      
+      const currentParts: Part[] = [{ text: enhancedPrompt }];
+      
+      // Add the last generated image first (for context/editing)
+      if (lastGeneratedImage) {
+        currentParts.push({
+          inlineData: {
+            mimeType: lastGeneratedImage.mimeType,
+            data: lastGeneratedImage.base64,
+          },
+        });
+      }
+      
+      // Add user-provided reference images
       if (args.referenceImages && args.referenceImages.length > 0) {
         for (const img of args.referenceImages) {
           currentParts.push({
             inlineData: {
               mimeType: img.mimeType,
               data: img.base64,
-            },
+              },
           });
         }
       }
@@ -109,11 +127,9 @@ export const generateVisualization = action({
 
       // Generate with full conversation context
       const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
+        model: IMAGE_GENERATION_CONFIG.MODEL_ID,
         contents: contents,
-        config: {
-          responseModalities: ["TEXT", "IMAGE"],
-        },
+        config: IMAGE_GENERATION_CONFIG.GENERATION_CONFIG,
       });
 
       const duration = Date.now() - startTime;
@@ -121,7 +137,7 @@ export const generateVisualization = action({
       // Log usage information
       const usageMetadata = response.usageMetadata;
       console.log("=== GEMINI IMAGE GENERATION (Chat Mode) ===");
-      console.log("Model:", GEMINI_MODEL);
+      console.log("Model:", IMAGE_GENERATION_CONFIG.MODEL_ID);
       console.log("User prompt:", args.prompt);
       console.log("History length:", args.history?.length || 0, "messages");
       console.log("Reference images:", args.referenceImages?.length || 0);
@@ -208,7 +224,7 @@ export const saveGeneratedImage = action({
     try {
       // Get project and team info
       const project: { teamId: Id<"teams">; teamSlug: string; projectSlug: string } | null = 
-        await ctx.runQuery(internal.ai.imageGenerationHelpers.getProjectInfo, {
+        await ctx.runQuery(internal.ai.imageGen.helpers.getProjectInfo, {
           projectId: args.projectId,
         });
 
@@ -225,7 +241,7 @@ export const saveGeneratedImage = action({
       const fileKey: string = `${project.teamSlug}/${project.projectSlug}/ai-visualizations/${uuid}-${args.fileName}.${extension}`;
 
       // Get upload URL from R2
-      const uploadData: { url: string } = await ctx.runMutation(internal.ai.imageGenerationHelpers.generateR2UploadUrl, {
+      const uploadData: { url: string } = await ctx.runMutation(internal.ai.imageGen.helpers.generateR2UploadUrl, {
         key: fileKey,
       });
 
@@ -246,7 +262,7 @@ export const saveGeneratedImage = action({
       }
 
       // Save file record to database
-      const fileId: Id<"files"> = await ctx.runMutation(internal.ai.imageGenerationHelpers.createFileRecord, {
+      const fileId: Id<"files"> = await ctx.runMutation(internal.ai.imageGen.helpers.createFileRecord, {
         projectId: args.projectId,
         teamId: project.teamId,
         fileName: `${args.fileName}.${extension}`,
@@ -257,7 +273,7 @@ export const saveGeneratedImage = action({
       });
 
       // Get the file URL
-      const fileUrl: string | null = await ctx.runQuery(internal.ai.imageGenerationHelpers.getFileUrl, {
+      const fileUrl: string | null = await ctx.runQuery(internal.ai.imageGen.helpers.getFileUrl, {
         fileKey,
       });
 

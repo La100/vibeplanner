@@ -757,6 +757,33 @@ export default defineSchema({
     .index("by_thread", ["threadId"])
     .index("by_thread_and_index", ["threadId", "messageIndex"]),
 
+  // AI Generated Images - tracks all image generations from Gemini
+  aiGeneratedImages: defineTable({
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    userClerkId: v.string(),
+    prompt: v.string(),
+    model: v.string(), // e.g. "gemini-3-pro-image-preview"
+    storageKey: v.optional(v.string()), // R2 storage key
+    fileUrl: v.optional(v.string()), // Direct URL to image
+    mimeType: v.string(),
+    sizeBytes: v.optional(v.number()),
+    durationMs: v.number(), // How long generation took
+    promptTokens: v.optional(v.number()),
+    responseTokens: v.optional(v.number()),
+    totalTokens: v.optional(v.number()),
+    savedToFiles: v.boolean(), // Whether user saved it to project files
+    fileId: v.optional(v.id("files")), // Reference to files table if saved
+    referenceImageCount: v.optional(v.number()), // How many reference images were used
+    textResponse: v.optional(v.string()), // Any text response from model
+    error: v.optional(v.string()), // Error message if generation failed
+    success: v.boolean(),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_team", ["teamId"])
+    .index("by_user", ["userClerkId"])
+    .index("by_success", ["success"]),
+
   // AI Function Calls - tracks function calls for threading continuity
   aiFunctionCalls: defineTable({
     threadId: v.string(), // Reference to aiThreads

@@ -250,6 +250,16 @@ export default function FilesView() {
     return <FileText className="h-8 w-8" />;
   };
 
+  const isVideoFile = (file: { fileType?: string; mimeType?: string } | null) => {
+    if (!file) return false;
+    return file.fileType === "video" || file.mimeType?.startsWith("video/");
+  };
+
+  const isImageFile = (file: { fileType?: string; mimeType?: string } | null) => {
+    if (!file) return false;
+    return (file.fileType === "image" || file.mimeType?.startsWith("image/")) && !isVideoFile(file);
+  };
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -365,7 +375,7 @@ export default function FilesView() {
           <Card key={file._id} className="hover:shadow-lg transition-shadow">
             <CardContent className="p-4">
               <div className="aspect-square bg-gray-50 rounded-lg mb-3 flex items-center justify-center overflow-hidden">
-                {file.fileType === "image" && file.url ? (
+                {isImageFile(file) && file.url ? (
                   <Image
                     src={file.url}
                     alt={file.name}
@@ -374,10 +384,10 @@ export default function FilesView() {
                     height={100}
                     onClick={() => setFileForPreview(file)}
                   />
-                ) : file.fileType === "video" && file.url ? (
+                ) : isVideoFile(file) && file.url ? (
                   <div className="relative w-full h-full cursor-pointer" onClick={() => setFileForPreview(file)}>
                     <video 
-                      src={file.url} 
+                      src={file.url + "#t=0.1"} 
                       className="w-full h-full object-cover rounded-lg"
                       muted
                       preload="metadata"
@@ -406,7 +416,7 @@ export default function FilesView() {
                 
                 <div className="flex flex-wrap gap-1">
                   <Badge variant="secondary" className="text-xs">
-                    {file.fileType}
+                    {isVideoFile(file) ? "video" : file.fileType}
                   </Badge>
                   {file.size > 0 && (
                     <Badge variant="outline" className="text-xs">
@@ -490,7 +500,7 @@ export default function FilesView() {
             </DialogDescription>
           </DialogHeader>
           <div className="flex-1 overflow-auto flex items-center justify-center p-2">
-            {fileForPreview?.fileType === 'image' && fileForPreview?.url && (
+            {isImageFile(fileForPreview) && fileForPreview?.url && (
               <Image
                 src={fileForPreview.url}
                 alt={fileForPreview.name}
@@ -499,7 +509,7 @@ export default function FilesView() {
                 height={1200}
               />
             )}
-            {fileForPreview?.fileType === 'video' && fileForPreview?.url && (
+            {isVideoFile(fileForPreview) && fileForPreview?.url && (
               <video 
                 src={fileForPreview.url}
                 controls
@@ -528,4 +538,4 @@ export default function FilesView() {
       </Dialog>
     </div>
   );
-} 
+}

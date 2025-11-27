@@ -1,5 +1,5 @@
-import Navigation from "@/components/ui/landing/Navigation";
-import { Footer } from "@/components/ui/landing/Footer";
+import { Navbar } from "@/components/ui/landing/minimal/Navbar";
+import { Footer } from "@/components/ui/landing/minimal/Footer";
 import { Suspense } from "react";
 
 export default function MainLayout({
@@ -25,7 +25,7 @@ export default function MainLayout({
           </div>
         </div>
       }>
-        <Navigation />
+        <Navbar />
         <main className="flex-1">
           {children}
         </main>
