@@ -70,6 +70,8 @@ export default function FilesView() {
     url: string | null;
     _creationTime: number;
     mimeType: string;
+    origin?: "ai" | "general";
+    aiPrompt?: string;
   } | null>(null);
 
   const { project } = useProject();
@@ -423,6 +425,11 @@ export default function FilesView() {
                       {(file.size / 1024 / 1024).toFixed(1)}MB
                     </Badge>
                   )}
+                  {file.aiPrompt && (
+                    <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-700">
+                      AI
+                    </Badge>
+                  )}
                 </div>
 
                 <div className="flex gap-1">
@@ -494,10 +501,23 @@ export default function FilesView() {
       <Dialog open={!!fileForPreview} onOpenChange={() => setFileForPreview(null)}>
         <DialogContent className="!max-w-[95vw] !max-h-[95vh] !w-[95vw] !h-[95vh] flex flex-col p-0">
           <DialogHeader className="p-6 pb-2">
-            <DialogTitle>{fileForPreview?.name}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              {fileForPreview?.name}
+              {fileForPreview?.aiPrompt && (
+                <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-700">
+                  AI Generated
+                </Badge>
+              )}
+            </DialogTitle>
             <DialogDescription>
               {fileForPreview?.fileType} - Uploaded {fileForPreview && formatDistanceToNow(new Date(fileForPreview._creationTime), { addSuffix: true })}
             </DialogDescription>
+            {fileForPreview?.aiPrompt && (
+              <div className="mt-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                <p className="text-xs font-medium text-purple-700 mb-1">Prompt:</p>
+                <p className="text-sm text-purple-900">{fileForPreview.aiPrompt}</p>
+              </div>
+            )}
           </DialogHeader>
           <div className="flex-1 overflow-auto flex items-center justify-center p-2">
             {isImageFile(fileForPreview) && fileForPreview?.url && (

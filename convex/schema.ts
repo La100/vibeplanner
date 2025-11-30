@@ -240,6 +240,8 @@ export default defineSchema({
     )),
     // For moodboard images - which section they belong to
     moodboardSection: v.optional(v.string()),
+    // AI generation prompt (for AI-generated files)
+    aiPrompt: v.optional(v.string()),
   })
     .index("by_team", ["teamId"])
     .index("by_project", ["projectId"])

@@ -65,6 +65,7 @@ export const createFileRecord = internalMutation({
     mimeType: v.string(),
     size: v.number(),
     description: v.optional(v.string()),
+    aiPrompt: v.optional(v.string()),
   },
   returns: v.id("files"),
   handler: async (ctx, args) => {
@@ -103,7 +104,8 @@ export const createFileRecord = internalMutation({
       uploadedBy,
       version: 1,
       isLatest: true,
-      origin: "general",
+      origin: "general", // Keep as general so files appear in the list
+      aiPrompt: args.aiPrompt, // Store the prompt for display
     });
   },
 });

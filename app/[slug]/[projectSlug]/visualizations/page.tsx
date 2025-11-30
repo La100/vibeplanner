@@ -17,22 +17,8 @@ import {
   Save,
   Check,
   RotateCcw,
-  Image as ImageIcon,
-  Video,
   Sparkles,
-  Settings2,
-  Square,
-  RectangleHorizontal,
-  RectangleVertical,
 } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 interface ReferenceImage {
   base64: string;
@@ -50,17 +36,10 @@ interface Message {
   imageBase64?: string;
   imageMimeType?: string;
   imageStorageKey?: string;
-  videoUrl?: string;
-  videoStorageKey?: string;
   referenceImages?: ReferenceImage[];
   timestamp: Date;
   saved?: boolean;
-  type?: "image" | "video";
-  aspectRatio?: string;
 }
-
-type GenerationMode = "image" | "video";
-type AspectRatio = "16:9" | "9:16" | "1:1";
 
 export default function VisualizationsPage() {
   const { project } = useProject();
@@ -71,16 +50,12 @@ export default function VisualizationsPage() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [generationMode, setGenerationMode] = useState<GenerationMode>("image");
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
-  const [useSystemPrompt, setUseSystemPrompt] = useState(true);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const generateVisualization = useAction(api.ai.imageGen.generation.generateVisualization);
-  const generateVideo = useAction(api.ai.imageGen.videoGeneration.generateVideo);
   const saveGeneratedImage = useAction(api.ai.imageGen.generation.saveGeneratedImage);
   const getUploadUrl = useAction(api.ai.imageGen.generation.getUploadUrl);
 
@@ -218,8 +193,6 @@ export default function VisualizationsPage() {
       content: prompt,
       referenceImages: referenceImages.length > 0 ? [...referenceImages] : undefined,
       timestamp: new Date(),
-      type: generationMode,
-      aspectRatio: generationMode === "video" ? aspectRatio : undefined,
     };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -232,92 +205,63 @@ export default function VisualizationsPage() {
     setTimeout(scrollToBottom, 100);
 
     try {
-      if (generationMode === "video") {
-        // Video generation
-        const sourceImage = sentReferenceImages[0]; // Use first reference image as source
+      // Image generation
+      const history = messages.map(msg => ({
+        role: msg.role === "user" ? "user" as const : "model" as const,
+        text: msg.content,
+        imageStorageKey: msg.role === "assistant" ? msg.imageStorageKey : undefined,
+        imageBase64: (msg.role === "assistant" && !msg.imageStorageKey) ? msg.imageBase64 : undefined,
+        imageMimeType: msg.role === "assistant" ? msg.imageMimeType : undefined,
+      }));
+
+      const result = await generateVisualization({
+        prompt: userMessage.content,
+        referenceImages: sentReferenceImages.length > 0 
+          ? sentReferenceImages.map(img => ({
+              base64: img.storageKey ? undefined : img.base64,
+              storageKey: img.storageKey,
+              mimeType: img.mimeType,
+              name: img.name,
+            }))
+          : undefined,
+        projectId: project._id,
+        history: history.length > 0 ? history : undefined,
+      });
+
+      if (result.success && (result.imageBase64 || result.fileUrl)) {
+        // Use fileUrl if available, otherwise fallback to base64 data URL
+        const imageUrl = result.fileUrl || (result.imageBase64 ? `data:${result.mimeType};base64,${result.imageBase64}` : undefined);
         
-        const result = await generateVideo({
-          prompt: userMessage.content,
-          sourceImageBase64: sourceImage?.storageKey ? undefined : sourceImage?.base64,
-          sourceImageMimeType: sourceImage?.mimeType,
-          sourceImageStorageKey: sourceImage?.storageKey,
-          projectId: project._id,
-          aspectRatio: aspectRatio,
-        });
-
-        if (result.success && result.videoUrl) {
-          const assistantMessage: Message = {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: "Video generated successfully!",
-            videoUrl: result.videoUrl,
-            videoStorageKey: result.videoStorageKey,
-            timestamp: new Date(),
-            saved: true, // Videos are auto-saved
-            type: "video",
-            aspectRatio: aspectRatio,
-          };
-          setMessages((prev) => [...prev, assistantMessage]);
-          toast.success("Video generated!");
-        } else {
-          const errorMessage: Message = {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: result.error || "Video generation failed. Please try again.",
-            timestamp: new Date(),
-          };
-          setMessages((prev) => [...prev, errorMessage]);
-          toast.error(result.error || "Video generation failed");
-        }
+        const assistantMessage: Message = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: result.textResponse || "",
+          imageBase64: result.imageBase64,
+          imageMimeType: result.mimeType,
+          imageStorageKey: result.imageStorageKey,
+          imageUrl,
+          timestamp: new Date(),
+          saved: false, // User must click Save to add to project files
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } else if (!result.success) {
+        const errorMessage: Message = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: result.error || "Generation failed. Please try again.",
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, errorMessage]);
+        toast.error(result.error || "Generation failed");
       } else {
-        // Image generation (existing logic)
-        const history = messages.map(msg => ({
-          role: msg.role === "user" ? "user" as const : "model" as const,
-          text: msg.content,
-          imageStorageKey: msg.role === "assistant" ? msg.imageStorageKey : undefined,
-          imageBase64: (msg.role === "assistant" && !msg.imageStorageKey) ? msg.imageBase64 : undefined,
-          imageMimeType: msg.role === "assistant" ? msg.imageMimeType : undefined,
-        }));
-
-        const result = await generateVisualization({
-          prompt: userMessage.content,
-          referenceImages: sentReferenceImages.length > 0 
-            ? sentReferenceImages.map(img => ({
-                base64: img.storageKey ? undefined : img.base64,
-                storageKey: img.storageKey,
-                mimeType: img.mimeType,
-                name: img.name,
-              }))
-            : undefined,
-          projectId: project._id,
-          history: history.length > 0 ? history : undefined,
-          useSystemPrompt,
-        });
-
-        if (result.success && result.imageBase64) {
-          const assistantMessage: Message = {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: result.textResponse || "",
-            imageBase64: result.imageBase64,
-            imageMimeType: result.mimeType,
-            imageStorageKey: result.imageStorageKey,
-            imageUrl: result.fileUrl || `data:${result.mimeType};base64,${result.imageBase64}`,
-            timestamp: new Date(),
-            saved: false, // User must click Save to add to project files
-            type: "image",
-          };
-          setMessages((prev) => [...prev, assistantMessage]);
-        } else {
-          const errorMessage: Message = {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: result.error || "Generation failed. Please try again.",
-            timestamp: new Date(),
-          };
-          setMessages((prev) => [...prev, errorMessage]);
-          toast.error(result.error || "Generation failed");
-        }
+        // Success but no image (shouldn't happen, but handle gracefully)
+        const errorMessage: Message = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "No image was generated. The model may have returned only text.",
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, errorMessage]);
       }
     } catch (error) {
       const errorMessage: Message = {
@@ -400,29 +344,24 @@ export default function VisualizationsPage() {
     }
   };
 
-  const imageSuggestions = [
-    "Minimalist Scandinavian living room with natural oak floors",
-    "Japanese zen garden with stone pathway and bamboo",
-    "Industrial loft conversion with exposed steel beams",
-    "Mediterranean terrace with olive trees at sunset",
+  const suggestions = [
+    {
+      text: "Minimalist Scandinavian living room with natural oak floors",
+      image: "https://images.unsplash.com/photo-1598928506311-c55ded91a20c?q=80&w=800&auto=format&fit=crop"
+    },
+    {
+      text: "Japanese zen garden with stone pathway and bamboo",
+      image: "https://images.unsplash.com/photo-1585938389612-a552a28d6914?q=80&w=800&auto=format&fit=crop"
+    },
+    {
+      text: "Industrial loft conversion with exposed steel beams",
+      image: "https://images.unsplash.com/photo-1600607686527-6fb886090705?q=80&w=800&auto=format&fit=crop"
+    },
+    {
+      text: "Mediterranean terrace with olive trees at sunset",
+      image: "https://images.unsplash.com/photo-1523413651479-597eb2da0ad6?q=80&w=800&auto=format&fit=crop"
+    },
   ];
-
-  const videoSuggestions = [
-    "A slow camera pan across a modern minimalist kitchen at golden hour",
-    "Gentle waves lapping at a pristine beach with palm trees swaying",
-    "Time-lapse of clouds moving over a contemporary glass building",
-    "A peaceful walk through a Japanese garden with koi pond",
-  ];
-
-  const suggestions = generationMode === "video" ? videoSuggestions : imageSuggestions;
-
-  const getAspectRatioIcon = (ratio: AspectRatio) => {
-    switch (ratio) {
-      case "16:9": return <RectangleHorizontal className="h-4 w-4" />;
-      case "9:16": return <RectangleVertical className="h-4 w-4" />;
-      case "1:1": return <Square className="h-4 w-4" />;
-    }
-  };
 
   return (
     <div className="relative flex flex-col h-[calc(100vh-4rem)] bg-background overflow-hidden">
@@ -432,59 +371,13 @@ export default function VisualizationsPage() {
       <div className="absolute bottom-[-10%] right-[-10%] h-[500px] w-[500px] rounded-full bg-blue-100 blur-[100px] opacity-20 dark:bg-blue-900/20 pointer-events-none"></div>
 
       {/* Floating Mode Toggle - Top Right */}
-      <div className="absolute top-6 right-6 z-50 flex items-center gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-9 rounded-full px-3 text-muted-foreground hover:text-foreground hover:bg-muted/40"
-          onClick={resetChat}
-        >
-          <RotateCcw className="h-4 w-4 mr-2" />
-          Reset chat
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className={cn(
-            "h-9 rounded-full px-4 shadow-sm backdrop-blur-md border border-border/60 transition-all",
-            useSystemPrompt
-              ? "bg-emerald-500 text-white border-emerald-600 hover:bg-emerald-600"
-              : "bg-background/70 text-muted-foreground hover:text-foreground"
-          )}
-          onClick={() => setUseSystemPrompt((prev) => !prev)}
-          title="Toggle built-in architectural prompt for image generations"
-        >
-          <Settings2 className="h-4 w-4 mr-2" />
-          {useSystemPrompt ? "System prompt on" : "System prompt off"}
-        </Button>
-        <div className="flex bg-background/50 backdrop-blur-md border border-border/50 rounded-full p-1 shadow-sm">
-          <button
-            onClick={() => setGenerationMode("image")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-medium transition-all duration-200",
-              generationMode === "image"
-                ? "bg-foreground text-background shadow-sm"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-            )}
-          >
-            <ImageIcon className="h-3.5 w-3.5" />
-            Image
-          </button>
-          <button
-            onClick={() => setGenerationMode("video")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-medium transition-all duration-200",
-              generationMode === "video"
-                ? "bg-foreground text-background shadow-sm"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-            )}
-          >
-            <Video className="h-3.5 w-3.5" />
-            Video
-          </button>
-        </div>
+      <div className="fixed top-20 right-6 z-[9999] flex items-center gap-2">
+        {/* Show mode toggle only when chat is empty */}
+        {messages.length === 0 && !isGenerating && (
+          <>
+            {/* Removed video toggle */}
+          </>
+        )}
       </div>
 
       {/* Messages Area */}
@@ -515,30 +408,41 @@ export default function VisualizationsPage() {
                 transition={{ duration: 0.5, delay: 0.2 }}
                 className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl mx-auto"
               >
-                {suggestions.map((suggestion, index) => (
+                {suggestions.map((suggestion) => (
                   <button
-                    key={suggestion}
-                    onClick={() => setPrompt(suggestion)}
+                    key={suggestion.text}
+                    onClick={() => setPrompt(suggestion.text)}
                     className={cn(
-                      "group relative overflow-hidden rounded-3xl p-6 text-left transition-all duration-300",
-                      "bg-white/40 dark:bg-white/5 border border-white/10 shadow-sm",
-                      "hover:bg-white/60 hover:shadow-md hover:-translate-y-1",
-                      "backdrop-blur-sm"
+                      "group relative overflow-hidden rounded-3xl text-left transition-all duration-300 h-48",
+                      "hover:shadow-xl hover:-translate-y-1"
                     )}
                   >
-                    <div className="relative z-10 flex items-start gap-4">
-                      <div className={cn(
-                        "mt-1 h-8 w-8 shrink-0 rounded-full flex items-center justify-center",
-                        index % 2 === 0 ? "bg-blue-500/10 text-blue-600" : "bg-purple-500/10 text-purple-600"
-                      )}>
-                        <Sparkles className="h-4 w-4" />
+                    {/* Background Image */}
+                    <div className="absolute inset-0 z-0">
+                      <img 
+                        src={suggestion.image} 
+                        alt="" 
+                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                      />
+                      {/* Dark overlay for readability */}
+                      <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors duration-300" />
+                      {/* Gradient for text */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+                    </div>
+
+                    <div className="relative z-10 h-full flex flex-col justify-end p-6">
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className={cn(
+                          "h-8 w-8 shrink-0 rounded-full flex items-center justify-center backdrop-blur-md",
+                          "bg-white/20 text-white"
+                        )}>
+                          <Sparkles className="h-4 w-4" />
+                        </div>
                       </div>
-                      <p className="text-sm text-muted-foreground group-hover:text-foreground transition-colors leading-relaxed">
-                        {suggestion}
+                      <p className="text-white font-medium leading-snug text-lg drop-shadow-sm">
+                        {suggestion.text}
                       </p>
                     </div>
-                    {/* Decorative background pattern on hover */}
-                    <div className="absolute inset-0 -z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-br from-transparent via-white/20 to-transparent"></div>
                   </button>
                 ))}
               </motion.div>
@@ -546,29 +450,11 @@ export default function VisualizationsPage() {
           </div>
         ) : (
           <div className={cn(
-            "max-w-5xl mx-auto px-6 py-8 space-y-12",
+            "max-w-5xl mx-auto px-6 space-y-12",
             messages.length === 0 && isGenerating 
-              ? "h-full flex flex-col items-center justify-center" 
-              : "pb-48"
+              ? "h-full flex flex-col items-center justify-center py-8" 
+              : "pt-32 pb-48"
           )}>
-            {/* Reset button - only show when there are messages */}
-            {messages.length > 0 && (
-              <div className="flex justify-end sticky top-0 z-20 pt-2 pb-6">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setMessages([]);
-                    toast.success("Chat cleared");
-                  }}
-                  className="text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-full px-4 backdrop-blur-sm"
-                >
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  New session
-                </Button>
-              </div>
-            )}
-            
             {messages.map((message, index) => (
               <motion.div
                 key={message.id}
@@ -605,7 +491,7 @@ export default function VisualizationsPage() {
                         <div className="absolute inset-0 bg-gradient-to-br from-background via-muted/20 to-background z-0"></div>
                         
                         <div className="relative z-10 p-1">
-                          {message.content && !message.imageUrl && !message.videoUrl && (
+                          {message.content && !message.imageUrl && (
                             <div className="p-8">
                               <p className="text-lg text-muted-foreground leading-relaxed">
                                 {message.content}
@@ -613,54 +499,8 @@ export default function VisualizationsPage() {
                             </div>
                           )}
 
-                          {/* Video Player */}
-                          {message.videoUrl && (
-                            <div className="relative bg-black/5 rounded-[1.25rem] overflow-hidden">
-                              <video
-                                src={message.videoUrl}
-                                controls
-                                className={cn(
-                                  "w-full h-auto object-contain mx-auto",
-                                  message.aspectRatio === "9:16" ? "max-h-[80vh] max-w-[45vh]" : "max-h-[70vh]"
-                                )}
-                                poster=""
-                              >
-                                Your browser does not support the video tag.
-                              </video>
-                              
-                              {/* Overlay Actions */}
-                              <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300">
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  className="h-10 px-4 bg-white/90 hover:bg-white text-foreground shadow-lg rounded-full backdrop-blur-md"
-                                  onClick={() => {
-                                    if (message.videoUrl) {
-                                      const link = document.createElement("a");
-                                      link.href = message.videoUrl;
-                                      link.download = `video-${Date.now()}.mp4`;
-                                      document.body.appendChild(link);
-                                      link.click();
-                                      document.body.removeChild(link);
-                                      toast.success("Downloaded");
-                                    }
-                                  }}
-                                >
-                                  <Download className="h-4 w-4 mr-2" />
-                                  Download
-                                </Button>
-                                {message.saved && (
-                                  <div className="h-10 px-4 bg-emerald-500/90 text-white rounded-full flex items-center shadow-lg backdrop-blur-md">
-                                    <Check className="h-4 w-4 mr-2" />
-                                    Saved
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )}
-
                           {/* Image Display */}
-                          {message.imageUrl && !message.videoUrl && (
+                          {message.imageUrl && (
                             <div className="relative bg-black/5 rounded-[1.25rem] overflow-hidden">
                               <img
                                 src={message.imageUrl}
@@ -720,7 +560,7 @@ export default function VisualizationsPage() {
                     </div>
                     
                     {/* Caption if available */}
-                    {message.content && (message.imageUrl || message.videoUrl) && (
+                    {message.content && message.imageUrl && (
                       <p className="mt-4 text-muted-foreground text-sm ml-4 italic font-serif">
                         {message.content}
                       </p>
@@ -745,9 +585,7 @@ export default function VisualizationsPage() {
                   <div className="absolute inset-0 rounded-full border-t-2 border-foreground animate-spin"></div>
                 </div>
                 <span className="text-xl font-light animate-pulse">
-                  {generationMode === "video" 
-                    ? "Dreaming up your video scene..." 
-                    : "Visualizing your concept..."}
+                  Visualizing your concept...
                 </span>
               </motion.div>
             )}
@@ -815,6 +653,19 @@ export default function VisualizationsPage() {
               
               {/* Actions Group */}
               <div className="flex items-center gap-2 pb-1">
+                {messages.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    onClick={resetChat}
+                    title="Start new chat"
+                  >
+                    <RotateCcw className="h-5 w-5" />
+                  </Button>
+                )}
+
                 <Button
                   type="button"
                   variant="ghost"
@@ -830,43 +681,6 @@ export default function VisualizationsPage() {
                     <ImagePlus className="h-5 w-5" />
                   )}
                 </Button>
-                
-                {/* Aspect Ratio - Now here next to file upload, ONLY visible in video mode */}
-                {generationMode === "video" && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-9 px-3 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors gap-2"
-                        title="Select Aspect Ratio"
-                      >
-                        {getAspectRatioIcon(aspectRatio)}
-                        <span className="text-xs font-medium">{aspectRatio}</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-40">
-                      <DropdownMenuLabel>Aspect Ratio</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => setAspectRatio("16:9")}>
-                        <RectangleHorizontal className="mr-2 h-4 w-4" />
-                        <span>16:9 Widescreen</span>
-                        {aspectRatio === "16:9" && <Check className="ml-auto h-4 w-4" />}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setAspectRatio("9:16")}>
-                        <RectangleVertical className="mr-2 h-4 w-4" />
-                        <span>9:16 Vertical</span>
-                        {aspectRatio === "9:16" && <Check className="ml-auto h-4 w-4" />}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setAspectRatio("1:1")}>
-                        <Square className="mr-2 h-4 w-4" />
-                        <span>1:1 Square</span>
-                        {aspectRatio === "1:1" && <Check className="ml-auto h-4 w-4" />}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
               </div>
 
               {/* Separator */}
@@ -878,11 +692,9 @@ export default function VisualizationsPage() {
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder={
-              isUploading 
-                ? "Uploading images..." 
-                : generationMode === "video"
-                  ? "Describe the video scene you imagine..."
-                  : "Describe the visualization you imagine..."
+                  isUploading 
+                    ? "Uploading images..." 
+                    : "Describe the visualization you imagine..."
                 }
               rows={1}
               disabled={isUploading}
@@ -923,9 +735,6 @@ export default function VisualizationsPage() {
             </div>
           </motion.form>
           
-          <p className="text-center text-xs text-muted-foreground/40 mt-4 pb-2">
-            AI can make mistakes. Review generated visuals carefully.
-          </p>
         </div>
       </div>
 

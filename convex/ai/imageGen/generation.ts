@@ -38,7 +38,6 @@ export const generateVisualization = action({
     referenceImages: v.optional(v.array(referenceImageValidator)),
     projectId: v.id("projects"),
     history: v.optional(v.array(historyMessageValidator)),
-    useSystemPrompt: v.optional(v.boolean()),
   },
   returns: v.object({
     success: v.boolean(),
@@ -133,13 +132,10 @@ export const generateVisualization = action({
       }
       
       // Build current user message parts
-      const shouldUseSystemPrompt = args.useSystemPrompt !== false;
       const userPrompt = conversationContext 
         ? `${conversationContext}${args.prompt}`
         : args.prompt;
-      const enhancedPrompt = shouldUseSystemPrompt
-        ? `${IMAGE_GENERATION_CONFIG.SYSTEM_PROMPT}\n\n${userPrompt}`
-        : userPrompt;
+      const enhancedPrompt = `${IMAGE_GENERATION_CONFIG.SYSTEM_PROMPT}\n\n${userPrompt}`;
       
       const currentParts: Part[] = [{ text: enhancedPrompt }];
       
@@ -303,9 +299,11 @@ export const generateVisualization = action({
         console.error("Error auto-uploading generated image:", uploadError);
       }
 
+      // If we have a fileUrl, don't return base64 to avoid exceeding 1MB response limit
+      // The client can fetch the image via the URL
       return {
         success: true,
-        imageBase64, // Still return base64 for immediate UI update
+        imageBase64: fileUrl ? undefined : imageBase64, // Only return base64 if no URL available
         imageStorageKey, // Return key for history
         fileUrl, // Return URL if available
         mimeType: mimeType || "image/png",
@@ -441,6 +439,7 @@ export const saveGeneratedImage = action({
         mimeType: args.mimeType,
         size: size,
         description: `AI Generated: ${args.prompt.substring(0, 200)}`,
+        aiPrompt: args.prompt,
       });
 
       // Get the file URL
