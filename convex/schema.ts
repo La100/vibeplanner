@@ -401,17 +401,6 @@ export default defineSchema({
     .index("by_org_and_user", ["clerkOrgId", "clerkUserId"])
     .index("by_status", ["status"]),
 
-  aiSettings: defineTable({
-    projectId: v.id("projects"),
-    teamId: v.id("teams"),
-    isEnabled: v.boolean(),
-    indexingEnabled: v.optional(v.boolean()),
-    lastAutoIndexAt: v.optional(v.number()),
-    createdBy: v.string(),
-    enabledAt: v.optional(v.number()),
-    disabledAt: v.optional(v.number()),
-  }).index("by_project", ["projectId"]),
-
   // Users
   users: defineTable({
     clerkUserId: v.string(),
@@ -727,6 +716,7 @@ export default defineSchema({
     title: v.optional(v.string()), // Optional thread title
     lastMessageAt: v.number(), // Timestamp of last message
     lastResponseId: v.optional(v.string()), // OpenAI Response ID (not currently used)
+    agentThreadId: v.optional(v.string()), // Convex Agent Thread ID
   })
     .index("by_thread_id", ["threadId"])
     .index("by_project", ["projectId"])

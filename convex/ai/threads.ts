@@ -121,6 +121,7 @@ export const getThreadForResponses = internalQuery({
     threadId: v.string(),
     projectId: v.id("projects"),
     lastResponseId: v.optional(v.string()),
+    agentThreadId: v.optional(v.string()),
   })),
   handler: async (ctx, args) => {
     const thread = await ctx.db
@@ -137,7 +138,28 @@ export const getThreadForResponses = internalQuery({
       threadId: thread.threadId,
       projectId: thread.projectId,
       lastResponseId: thread.lastResponseId,
+      agentThreadId: thread.agentThreadId,
     };
+  },
+});
+
+// Helper to map legacy thread ID to agent thread ID
+export const saveAgentThreadMapping = internalMutation({
+  args: {
+    threadId: v.string(),
+    agentThreadId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const thread = await ctx.db
+      .query("aiThreads")
+      .withIndex("by_thread_id", (q) => q.eq("threadId", args.threadId))
+      .unique();
+
+    if (thread) {
+      await ctx.db.patch(thread._id, {
+        agentThreadId: args.agentThreadId,
+      });
+    }
   },
 });
 
@@ -474,6 +496,68 @@ export const clearThreadMessages = internalMutation({
   },
 });
 
+// Public mutation to clear a user's thread (messages + pending function calls)
+export const clearThreadForUser = mutation({
+  args: {
+    threadId: v.string(),
+    projectId: v.id("projects"),
+    userClerkId: v.string(),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized");
+    }
+    if (identity.subject !== args.userClerkId) {
+      throw new Error("Forbidden");
+    }
+
+    const thread = await ctx.db
+      .query("aiThreads")
+      .withIndex("by_thread_id", (q) => q.eq("threadId", args.threadId))
+      .unique();
+
+    if (!thread) {
+      return { success: true, message: "Thread already cleared" };
+    }
+
+    if (thread.projectId !== args.projectId || thread.userClerkId !== args.userClerkId) {
+      throw new Error("Thread does not belong to this project or user");
+    }
+
+    const messages = await ctx.db
+      .query("aiMessages")
+      .withIndex("by_thread", (q) => q.eq("threadId", args.threadId))
+      .collect();
+
+    const functionCalls = await ctx.db
+      .query("aiFunctionCalls")
+      .withIndex("by_thread", (q) => q.eq("threadId", args.threadId))
+      .collect();
+
+    for (const msg of messages) {
+      await ctx.db.delete(msg._id);
+    }
+
+    for (const call of functionCalls) {
+      await ctx.db.delete(call._id);
+    }
+
+    // Reset thread metadata so the next message starts fresh (new agent thread mapping)
+    await ctx.db.patch(thread._id, {
+      lastResponseId: undefined,
+      agentThreadId: undefined,
+      lastMessageAt: Date.now(),
+    });
+
+    return { success: true, message: "Thread history cleared" };
+  },
+});
+
 // Add message to thread
 export const addMessage = internalMutation({
   args: {
@@ -571,6 +655,36 @@ export const getPendingFunctionCalls = internalQuery({
   },
 });
 
+// Get pending items for UI confirmation
+export const listPendingItems = query({
+  args: {
+    threadId: v.string(),
+  },
+  returns: v.array(v.object({
+    _id: v.id("aiFunctionCalls"),
+    callId: v.string(),
+    functionName: v.string(),
+    arguments: v.string(),
+    responseId: v.string(),
+  })),
+  handler: async (ctx, args) => {
+    const calls = await ctx.db
+      .query("aiFunctionCalls")
+      .withIndex("by_thread_and_status", (q) =>
+        q.eq("threadId", args.threadId).eq("status", "pending")
+      )
+      .collect();
+
+    return calls.map(call => ({
+      _id: call._id,
+      callId: call.callId,
+      functionName: call.functionName,
+      arguments: call.arguments,
+      responseId: call.responseId,
+    }));
+  },
+});
+
 // Mark function calls as replayed
 export const markFunctionCallsAsReplayed = internalMutation({
   args: {
@@ -636,5 +750,56 @@ export const clearLastResponseId = mutation({
         lastResponseId: undefined,
       });
     }
+  },
+});
+
+// Save pending items from AI tool calls (for streaming chat)
+export const savePendingItems = internalMutation({
+  args: {
+    threadId: v.string(),
+    projectId: v.id("projects"),
+    items: v.array(v.object({
+      type: v.string(),
+      operation: v.optional(v.string()),
+      data: v.any(),
+      functionCall: v.optional(v.object({
+        callId: v.string(),
+        functionName: v.string(),
+        arguments: v.string(),
+      })),
+    })),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    // Get or create a response ID for grouping these items
+    const responseId = `stream_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+    for (const item of args.items) {
+      await ctx.db.insert("aiFunctionCalls", {
+        threadId: args.threadId,
+        projectId: args.projectId,
+        responseId,
+        callId: item.functionCall?.callId || `call_${Date.now()}`,
+        functionName: item.functionCall?.functionName || item.type,
+        arguments: item.functionCall?.arguments || JSON.stringify(item.data),
+        status: "pending",
+        createdAt: Date.now(),
+      });
+    }
+
+    // Update thread with response ID
+    const thread = await ctx.db
+      .query("aiThreads")
+      .withIndex("by_thread_id", (q) => q.eq("threadId", args.threadId))
+      .unique();
+
+    if (thread) {
+      await ctx.db.patch(thread._id, {
+        lastResponseId: responseId,
+        lastMessageAt: Date.now(),
+      });
+    }
+
+    return null;
   },
 });

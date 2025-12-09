@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -15,7 +14,9 @@ import {
   XIcon, 
   PlusIcon,
   CalendarIcon,
-  ExternalLinkIcon
+  ExternalLinkIcon,
+  ChevronDownIcon,
+  ChevronUpIcon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -105,6 +106,14 @@ export function ShoppingListSection({
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<EditFormData>({});
   const [showAddForm, setShowAddForm] = useState(false);
+  const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
+
+  const toggleDetails = (itemId: string) => {
+    setExpandedDetails(prev => ({
+      ...prev,
+      [itemId]: !prev[itemId]
+    }));
+  };
 
   const sectionTotal = items.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
 
@@ -192,30 +201,33 @@ export function ShoppingListSection({
 
 
   return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span>{sectionName}</span>
-            <Badge variant="secondary">{items.length} items</Badge>
-            {sectionTotal > 0 && (
-              <Badge variant="outline">{sectionTotal.toFixed(2)} {currencySymbol}</Badge>
-            )}
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowAddForm(!showAddForm)}
-          >
-            <PlusIcon className="h-4 w-4" />
-          </Button>
-        </CardTitle>
-      </CardHeader>
+    <div className="mb-10 rounded-[24px] sm:rounded-[32px] border border-[#E7E2D9] bg-white p-4 sm:p-8 shadow-[0_24px_60px_rgba(20,20,20,0.08)]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 sm:mb-8 gap-4">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+          <h2 className="text-xl sm:text-2xl font-medium font-[var(--font-display-serif)] text-[#1A1A1A]">{sectionName}</h2>
+          <span className="inline-flex items-center justify-center rounded-full bg-[#FAF7F2] border border-[#E7E2D9] px-3 py-1 text-xs font-medium text-[#8C8880]">
+            {items.length} items
+          </span>
+          {sectionTotal > 0 && (
+            <span className="inline-flex items-center justify-center rounded-full bg-[#FAF7F2] border border-[#E7E2D9] px-3 py-1 text-xs font-medium text-[#3C3A37]">
+              {sectionTotal.toFixed(2)} {currencySymbol}
+            </span>
+          )}
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="self-end sm:self-auto rounded-full hover:bg-[#FAF7F2]"
+          onClick={() => setShowAddForm(!showAddForm)}
+        >
+          <PlusIcon className="h-4 w-4" />
+        </Button>
+      </div>
       
-      <CardContent className="space-y-4">
+      <div className="space-y-4">
         {/* Add Item Form */}
         {showAddForm && (
-          <div className="border rounded-lg p-4 bg-gray-50">
+          <div className="mb-8 rounded-[24px] border border-[#E7E2D9] bg-[#FAF7F2] p-6">
             <AddItemForm
               sections={sections}
               teamMembers={teamMembers}
@@ -235,9 +247,9 @@ export function ShoppingListSection({
         )}
 
         {/* Items List */}
-        <div className="space-y-3">
+        <div className="space-y-4">
           {items.map((item) => (
-            <div key={item._id} className="border rounded-lg p-4 hover:shadow-sm transition-shadow">
+            <div key={item._id} className="group relative rounded-[20px] border border-[#E7E2D9]/50 bg-white p-5 transition-all hover:border-[#E7E2D9] hover:shadow-sm">
               {editingItemId === item._id ? (
                 // Edit Mode
                 <div className="space-y-4">
@@ -451,46 +463,54 @@ export function ShoppingListSection({
               ) : (
                 // View Mode
                 <div>
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex items-start gap-3 flex-1">
-                      {item.imageUrl && (
-                        <div className="w-20 h-20 rounded border overflow-hidden flex-shrink-0">
+                  <div className="flex flex-col sm:flex-row items-start justify-between gap-4 mb-2">
+                    <div className="flex items-start gap-4 flex-1 w-full">
+                      {item.imageUrl ? (
+                        <div className="w-24 h-24 sm:w-20 sm:h-20 rounded-xl border border-[#E7E2D9] overflow-hidden flex-shrink-0 bg-[#FAF7F2]">
                           <img 
                             src={item.imageUrl} 
                             alt={item.name}
                             className="w-full h-full object-cover"
                           />
                         </div>
+                      ) : (
+                        <div className="w-24 h-24 sm:w-20 sm:h-20 rounded-xl border border-[#E7E2D9] overflow-hidden flex-shrink-0 bg-[#FAF7F2] flex items-center justify-center text-[#C0B9AF]">
+                           <span className="text-xs">No image</span>
+                        </div>
                       )}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h4 className="font-medium truncate">{item.name}</h4>
+                      <div className="flex-1 min-w-0 py-1">
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <h4 className="font-medium text-lg text-[#1A1A1A] truncate pr-2">{item.name}</h4>
                           {item.priority && (
-                            <div className={cn("w-2 h-2 rounded-full", getPriorityColor(item.priority))} />
+                             <div className={cn("w-2 h-2 rounded-full mt-2 flex-shrink-0", getPriorityColor(item.priority))} />
                           )}
                         </div>
-                        <div className="flex items-center gap-4 text-sm text-gray-600">
-                          <span>Qty: {item.quantity}</span>
-                          {item.unitPrice && (
-                            <span>
-                              {item.unitPrice.toFixed(2)} {currencySymbol} each
-                            </span>
-                          )}
+                        
+                        <div className="flex flex-col gap-1 text-sm text-[#3C3A37]">
+                          <div className="flex items-center gap-3">
+                             <span className="bg-[#FAF7F2] px-2 py-0.5 rounded-md border border-[#E7E2D9] text-xs font-medium">Qty: {item.quantity}</span>
+                             {item.unitPrice && (
+                               <span className="text-[#8C8880]">
+                                 {item.unitPrice.toFixed(2)} {currencySymbol} / unit
+                               </span>
+                             )}
+                          </div>
                           {item.totalPrice && (
-                            <span className="font-medium">
+                            <span className="font-medium mt-1">
                               Total: {item.totalPrice.toFixed(2)} {currencySymbol}
                             </span>
                           )}
                         </div>
+
                         {item.assignedTo && (
-                          <div className="flex items-center gap-2 mt-1">
-                            <Avatar className="h-5 w-5">
+                          <div className="flex items-center gap-2 mt-3">
+                            <Avatar className="h-6 w-6 border border-white shadow-sm">
                               <AvatarImage src={teamMembers?.find(m => m.clerkUserId === item.assignedTo)?.imageUrl} />
-                              <AvatarFallback className="text-xs">
+                              <AvatarFallback className="text-[10px] bg-[#FAF7F2] text-[#3C3A37]">
                                 {getAssignedMemberName(item.assignedTo)?.[0]}
                               </AvatarFallback>
                             </Avatar>
-                            <span className="text-sm text-gray-600">
+                            <span className="text-xs text-[#666]">
                               {getAssignedMemberName(item.assignedTo)}
                             </span>
                           </div>
@@ -498,18 +518,31 @@ export function ShoppingListSection({
                       </div>
                     </div>
                     
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <Badge variant={getStatusColor(item.realizationStatus)}>
+                    <div className="flex items-center justify-between w-full sm:w-auto sm:flex-col sm:items-end gap-3 sm:gap-2 flex-shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#E7E2D9] sm:border-none mt-2 sm:mt-0">
+                      <Badge variant={getStatusColor(item.realizationStatus)} className="order-1 sm:order-none text-xs px-2.5 py-0.5">
                         {item.realizationStatus}
                       </Badge>
-                      <div className="flex gap-1">
+                      <div className="flex gap-1 order-2 sm:order-none">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-[#8C8880] hover:text-[#1A1A1A] hover:bg-[#FAF7F2]"
+                              onClick={() => toggleDetails(item._id)}
+                            >
+                              {expandedDetails[item._id] ? <ChevronUpIcon className="h-4 w-4" /> : <ChevronDownIcon className="h-4 w-4" />}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Show details</TooltipContent>
+                        </Tooltip>
                         {item.productLink && (
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-8 w-8 p-0"
+                                className="h-8 w-8 p-0 text-[#8C8880] hover:text-[#1A1A1A] hover:bg-[#FAF7F2]"
                                 onClick={() => window.open(item.productLink, '_blank')}
                               >
                                 <ExternalLinkIcon className="h-4 w-4" />
@@ -523,7 +556,7 @@ export function ShoppingListSection({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-8 w-8 p-0"
+                              className="h-8 w-8 p-0 text-[#8C8880] hover:text-[#1A1A1A] hover:bg-[#FAF7F2]"
                               onClick={() => handleStartEdit(item)}
                             >
                               <EditIcon className="h-4 w-4" />
@@ -536,7 +569,7 @@ export function ShoppingListSection({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-8 w-8 p-0 hover:bg-red-100 hover:text-red-600"
+                              className="h-8 w-8 p-0 text-[#8C8880] hover:bg-red-50 hover:text-red-600"
                               onClick={() => onDeleteItem(item._id)}
                             >
                               <TrashIcon className="h-4 w-4" />
@@ -548,13 +581,17 @@ export function ShoppingListSection({
                     </div>
                   </div>
                   
-                  <ShoppingListItemDetails item={item} />
+                  {expandedDetails[item._id] && (
+                    <div className="pt-4 border-t border-[#E7E2D9] mt-4 animate-in slide-in-from-top-2 duration-200">
+                      <ShoppingListItemDetails item={item} />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           ))}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

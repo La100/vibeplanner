@@ -10,7 +10,7 @@ interface ShoppingListItemDetailsProps {
 
 export function ShoppingListItemDetails({ item }: ShoppingListItemDetailsProps) {
     return (
-        <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2 text-sm text-gray-600">
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2 text-sm text-gray-600">
             {item.priority && (
                 <div className="flex items-center gap-2">
                     <span className="font-semibold">Priority:</span>

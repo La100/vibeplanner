@@ -9,7 +9,16 @@ export type PendingContentType =
   | "shopping"
   | "shoppingSection"
   | "survey"
-  | "contact";
+  | "contact"
+  | "create_task"
+  | "create_note"
+  | "create_shopping_item"
+  | "create_survey"
+  | "create_contact"
+  | "create_multiple_tasks"
+  | "create_multiple_notes"
+  | "create_multiple_shopping_items"
+  | "create_multiple_surveys";
 
 export type PendingOperation =
   | "create"
@@ -110,6 +119,69 @@ export const AIConfirmationGrid = ({
     (currentPage + 1) * itemsPerPage,
   );
 
+  const canonicalType = (type: PendingContentType): Exclude<PendingContentType,
+    "create_task" |
+    "create_note" |
+    "create_shopping_item" |
+    "create_survey" |
+    "create_contact" |
+    "create_multiple_tasks" |
+    "create_multiple_notes" |
+    "create_multiple_shopping_items" |
+    "create_multiple_surveys"
+  > => {
+    switch (type) {
+      case "create_task":
+      case "create_multiple_tasks":
+        return "task";
+      case "create_note":
+      case "create_multiple_notes":
+        return "note";
+      case "create_shopping_item":
+      case "create_multiple_shopping_items":
+        return "shopping";
+      case "create_survey":
+      case "create_multiple_surveys":
+        return "survey";
+      case "create_contact":
+        return "contact";
+      default:
+        return type;
+    }
+  };
+
+  const deriveOperation = (item: PendingContentItem): PendingOperation => {
+    if (item.operation) return item.operation;
+    const rawType = item.type as string;
+    if (rawType.startsWith("create_multiple_")) return "bulk_create";
+    if (rawType.startsWith("create_")) return "create";
+    return "create";
+  };
+
+  const typeLabels: Record<string, string> = {
+    task: "task",
+    note: "note",
+    shopping: "shopping item",
+    survey: "survey",
+    contact: "contact",
+    shoppingSection: "shopping section",
+  };
+
+  const operationVerb = (operation: PendingOperation) => {
+    switch (operation) {
+      case "bulk_create":
+      case "create":
+        return "create";
+      case "bulk_edit":
+      case "edit":
+        return "update";
+      case "delete":
+        return "delete";
+      default:
+        return "process";
+    }
+  };
+
   const handleConfirmItem = async (index: number) => {
     setProcessingItems((prev) => new Set([...prev, index]));
     try {
@@ -125,18 +197,21 @@ export const AIConfirmationGrid = ({
 
   const getItemTypeCounts = () => {
     const counts = pendingItems.reduce((acc, item) => {
-      const key = `${item.type}_${item.operation ?? "create"}`;
+      const type = canonicalType(item.type);
+      const operation = deriveOperation(item);
+      const key = `${type}__${operation}`;
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 
     return Object.entries(counts)
       .map(([key, count]) => {
-        const [type, operation] = key.split("_");
-        const label = operation === "create" ? type : `${operation} ${type}`;
-        return `${count} ${label}${count > 1 ? "s" : ""}`;
+        const [type, operation] = key.split("__") as [PendingContentType, PendingOperation];
+        const label = typeLabels[type] ?? type;
+        const verb = operationVerb(operation);
+        return `${count} ${label}${count === 1 ? "" : "s"} to ${verb}`;
       })
-      .join(", ");
+      .join(" • ");
   };
 
   if (pendingItems.length === 0) {

@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
+import { auth } from "@clerk/nextjs/server";
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
-
+/**
+ * AI Chat endpoint - simple request/response (no streaming)
+ */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -17,79 +19,56 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Call the Convex Agent action with advanced features (usage tracking, context search, etc.)
-    const result = await convex.action(api.ai.agentChat.chatWithAgent, {
+    // Get auth token from Clerk
+    const { getToken } = await auth();
+    const token = await getToken({ template: "convex" });
+
+    if (!token) {
+      return NextResponse.json(
+        { error: "Unauthorized - no token" },
+        { status: 401 }
+      );
+    }
+
+    // Create client with auth token
+    const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+    convex.setAuth(token);
+
+    // Generate threadId if not provided
+    const actualThreadId = threadId && threadId.trim().length > 0
+      ? threadId
+      : `thread-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+    // Call simple chat action - waits for full response
+    const result = await convex.action(api.ai.chat.sendMessage, {
       message,
       projectId: projectId as Id<"projects">,
       userClerkId,
-      threadId,
+      threadId: actualThreadId,
       fileId: fileId as Id<"files"> | undefined,
     });
 
-    // Create a streaming response
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        // Send metadata
-        controller.enqueue(
-          encoder.encode(
-            JSON.stringify({
-              type: "metadata",
-              mode: result.mode,
-              tokenUsage: result.tokenUsage,
-              threadId: result.threadId,
-            }) + "\n"
-          )
-        );
+    if (!result.success) {
+      return NextResponse.json(
+        { error: result.error || "Failed to get response" },
+        { status: 500 }
+      );
+    }
 
-        // Stream the response character by character for better UX
-        const text = result.response;
-        let i = 0;
-        const interval = setInterval(() => {
-          if (i < text.length) {
-            const chunk = text.slice(i, i + 10); // Send 10 chars at a time
-            controller.enqueue(
-              encoder.encode(
-                JSON.stringify({
-                  type: "token",
-                  delta: chunk,
-                }) + "\n"
-              )
-            );
-            i += 10;
-          } else {
-            clearInterval(interval);
-
-            // Send pending items if any
-            if (result.pendingItems && result.pendingItems.length > 0) {
-              controller.enqueue(
-                encoder.encode(
-                  JSON.stringify({
-                    type: "pendingItems",
-                    items: result.pendingItems,
-                  }) + "\n"
-                )
-              );
-            }
-
-            controller.close();
-          }
-        }, 20); // 20ms delay between chunks for smooth streaming
-      },
-    });
-
-    return new NextResponse(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
+    return NextResponse.json({
+      success: true,
+      threadId: result.threadId,
+      response: result.response,
+      tokenUsage: result.tokenUsage,
     });
   } catch (error) {
-    console.error("Error in AI stream endpoint:", error);
+    console.error("Error in AI chat endpoint:", error);
     return NextResponse.json(
       { error: (error as Error).message || "Internal server error" },
       { status: 500 }
     );
   }
 }
+
+// Allow longer timeouts for AI responses
+export const maxDuration = 120;

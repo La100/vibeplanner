@@ -131,20 +131,21 @@ export function AddItemForm({
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div>
-          <label className="text-sm font-medium">Product Name *</label>
+          <label className="text-sm font-medium text-[#3C3A37] mb-1.5 block">Product Name *</label>
           <Input
             value={newItemName}
             onChange={(e) => setNewItemName(e.target.value)}
             placeholder="e.g. Kitchen Countertop Navona"
+            className="h-12 rounded-[18px] border-[#E7E2D9] bg-white text-sm focus-visible:ring-[#6D8B73]"
           />
         </div>
         <div>
-          <label className="text-sm font-medium">Section</label>
+          <label className="text-sm font-medium text-[#3C3A37] mb-1.5 block">Section</label>
           <Select 
             value={newItemSectionId} 
             onValueChange={(value) => setNewItemSectionId(value as Id<"shoppingListSections"> | "none")}
           >
-            <SelectTrigger>
+            <SelectTrigger className="h-12 rounded-[18px] border-[#E7E2D9] bg-white text-sm focus-visible:ring-[#6D8B73]">
               <SelectValue placeholder="Select section" />
             </SelectTrigger>
             <SelectContent>
@@ -158,79 +159,87 @@ export function AddItemForm({
           </Select>
         </div>
         <div>
-          <label className="text-sm font-medium">Supplier</label>
+          <label className="text-sm font-medium text-[#3C3A37] mb-1.5 block">Supplier</label>
           <Input
             value={newItemSupplier}
             onChange={(e) => setNewItemSupplier(e.target.value)}
             placeholder="e.g. kronosfera.pl"
+            className="h-12 rounded-[18px] border-[#E7E2D9] bg-white text-sm focus-visible:ring-[#6D8B73]"
           />
         </div>
         <div>
-          <label className="text-sm font-medium">Catalog Number</label>
+          <label className="text-sm font-medium text-[#3C3A37] mb-1.5 block">Catalog Number</label>
           <Input
             value={newItemCatalogNumber}
             onChange={(e) => setNewItemCatalogNumber(e.target.value)}
             placeholder="e.g. BU1K367PH-3BC1"
+            className="h-12 rounded-[18px] border-[#E7E2D9] bg-white text-sm focus-visible:ring-[#6D8B73]"
           />
         </div>
         <div>
-          <label className="text-sm font-medium">Category</label>
+          <label className="text-sm font-medium text-[#3C3A37] mb-1.5 block">Category</label>
           <Input
             value={newItemCategory}
             onChange={(e) => setNewItemCategory(e.target.value)}
             placeholder="e.g. Furniture"
+            className="h-12 rounded-[18px] border-[#E7E2D9] bg-white text-sm focus-visible:ring-[#6D8B73]"
           />
         </div>
         <div>
-          <label className="text-sm font-medium">Dimensions</label>
+          <label className="text-sm font-medium text-[#3C3A37] mb-1.5 block">Dimensions</label>
           <Input
             value={newItemDimensions}
             onChange={(e) => setNewItemDimensions(e.target.value)}
             placeholder="e.g. 4100 x 1200"
+            className="h-12 rounded-[18px] border-[#E7E2D9] bg-white text-sm focus-visible:ring-[#6D8B73]"
           />
         </div>
         <div>
-          <label className="text-sm font-medium">Quantity</label>
+          <label className="text-sm font-medium text-[#3C3A37] mb-1.5 block">Quantity</label>
           <Input
             type="number"
             min="1"
             value={newItemQuantity}
             onChange={(e) => setNewItemQuantity(parseInt(e.target.value) || 1)}
+            className="h-12 rounded-[18px] border-[#E7E2D9] bg-white text-sm focus-visible:ring-[#6D8B73]"
           />
         </div>
         <div>
-          <label className="text-sm font-medium">Unit Price ({currencySymbol})</label>
+          <label className="text-sm font-medium text-[#3C3A37] mb-1.5 block">Unit Price ({currencySymbol})</label>
           <Input
             type="number"
             step="0.01"
             value={newItemUnitPrice}
             onChange={(e) => setNewItemUnitPrice(e.target.value)}
             placeholder="0.00"
+            className="h-12 rounded-[18px] border-[#E7E2D9] bg-white text-sm focus-visible:ring-[#6D8B73]"
           />
         </div>
         <div>
-          <label className="text-sm font-medium">Product Link</label>
+          <label className="text-sm font-medium text-[#3C3A37] mb-1.5 block">Product Link</label>
           <Input
             value={newItemProductLink}
             onChange={(e) => setNewItemProductLink(e.target.value)}
             placeholder="https://..."
+            className="h-12 rounded-[18px] border-[#E7E2D9] bg-white text-sm focus-visible:ring-[#6D8B73]"
           />
         </div>
         <div className="md:col-span-2 lg:col-span-3">
-          <label className="text-sm font-medium">Image URL</label>
+          <label className="text-sm font-medium text-[#3C3A37] mb-1.5 block">Image URL</label>
           <Input
             value={newItemImageUrl}
             onChange={(e) => setNewItemImageUrl(e.target.value)}
             placeholder="https://..."
+            className="h-12 rounded-[18px] border-[#E7E2D9] bg-white text-sm focus-visible:ring-[#6D8B73]"
           />
         </div>
         <div>
-          <label className="text-sm font-medium">Assign To</label>
+          <label className="text-sm font-medium text-[#3C3A37] mb-1.5 block">Assign To</label>
           <Select
             value={newItemAssignedTo}
             onValueChange={setNewItemAssignedTo}
           >
-            <SelectTrigger>
+            <SelectTrigger className="h-12 rounded-[18px] border-[#E7E2D9] bg-white text-sm focus-visible:ring-[#6D8B73]">
               <SelectValue placeholder="Select user" />
             </SelectTrigger>
             <SelectContent>
@@ -250,13 +259,13 @@ export function AddItemForm({
           </Select>
         </div>
         <div>
-          <label className="text-sm font-medium">Buy Before</label>
+          <label className="text-sm font-medium text-[#3C3A37] mb-1.5 block">Buy Before</label>
           <Popover>
             <PopoverTrigger asChild>
               <Button
                 variant={"outline"}
                 className={cn(
-                  "w-full justify-start text-left font-normal",
+                  "w-full justify-start text-left font-normal h-12 rounded-[18px] border-[#E7E2D9] bg-white text-sm hover:bg-[#FAF7F2]",
                   !newItemBuyBefore && "text-muted-foreground"
                 )}
               >
@@ -275,14 +284,19 @@ export function AddItemForm({
           </Popover>
         </div>
       </div>
-      <div className="flex justify-end">
-        <Button onClick={handleAddItem} disabled={isPending || !newItemName.trim()}>
+      <div className="flex justify-end gap-3">
+        <Button 
+          onClick={handleAddItem} 
+          disabled={isPending || !newItemName.trim()}
+          className="rounded-full bg-[#0E0E0E] px-6 h-11 text-white shadow-[0_14px_36px_rgba(14,14,14,0.18)] hover:bg-[#1F1F1F]"
+        >
           {isPending ? 'Adding...' : 'Add Product'}
         </Button>
         {!isInline && (
           <Button 
             variant="outline" 
             onClick={() => setIsExpanded(false)}
+            className="rounded-full border-[#E7E2D9] bg-white px-6 h-11 text-[#1A1A1A] hover:bg-[#FAF7F2]"
           >
             Cancel
           </Button>

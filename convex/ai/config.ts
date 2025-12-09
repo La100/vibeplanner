@@ -1,28 +1,17 @@
-/**
- * AI Configuration
- *
- * Central configuration for AI models and settings
- */
 
-/**
- * Default AI model to use
- */
 export const AI_MODEL = "gpt-5-mini";
 
-/**
- * AI model configuration
- */
+
 export const AI_CONFIG = {
   model: AI_MODEL,
   temperature: 1,
   maxSteps: 5,
 };
 
-/**
- * Calculate estimated cost in USD for token usage
- * Simple estimation - can be updated when pricing is available
- */
+
 export function calculateCost(_model: string, inputTokens: number, outputTokens: number): number {
-  // Rough estimate - update when official pricing is available
-  return ((inputTokens + outputTokens) / 1000000) * 5;
+  // Pricing: $1.25 per 1M input tokens, $10 per 1M output tokens (matches GPT-5 baseline used elsewhere)
+  const inputCost = (inputTokens / 1_000_000) * 1.25;
+  const outputCost = (outputTokens / 1_000_000) * 10;
+  return inputCost + outputCost;
 }

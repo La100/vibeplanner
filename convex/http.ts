@@ -5,49 +5,42 @@ import handleClerkWebhook from "./clerk";
 
 const http = httpRouter();
 
+// Simple AI chat endpoint - no streaming
 http.route({
   path: "/ai/stream",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return new Response("Unauthorized", { status: 401 });
+    }
+
+    const body = await request.json();
+    const { message, projectId, userClerkId, threadId, fileId } = body ?? {};
+
+    if (!message || !projectId || !userClerkId) {
+      return new Response("Missing required fields", { status: 400 });
+    }
+
     try {
-      const identity = await ctx.auth.getUserIdentity();
-      if (!identity) {
-        return new Response("Unauthorized", { status: 401 });
-      }
-
-      const body = await request.json();
-
-      const {
-        projectId,
-        threadId,
+      const result = await ctx.runAction(api.ai.chat.sendMessage, {
         message,
-        userClerkId,
-        fileId,
-      } = body ?? {};
-
-      if (!projectId || !message || !userClerkId) {
-        return new Response("Missing required fields", { status: 400 });
-      }
-
-      // Call streaming handler action to prepare data
-      const initResult = await ctx.runAction(api.ai.longContext.chatWithLongContextAgent, {
         projectId,
-        threadId,
-        message,
         userClerkId,
+        threadId: threadId || `thread-${Date.now()}`,
         fileId,
       });
 
-      return new Response(JSON.stringify(initResult), {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache",
-        },
+      return new Response(JSON.stringify(result), {
+        status: result.success ? 200 : 500,
+        headers: { "Content-Type": "application/json" },
       });
     } catch (error) {
-      console.error("AI stream error:", error);
-      return new Response("Internal Server Error", { status: 500 });
+      console.error("AI chat error:", error);
+      return new Response(JSON.stringify({ error: (error as Error).message }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
     }
   }),
 });

@@ -135,8 +135,8 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
   };
 
   const formatDate = (timestamp?: number) => {
-    if (!timestamp) return "Nie ustawiono";
-    return new Date(timestamp).toLocaleDateString("pl-PL");
+    if (!timestamp) return "Not set";
+    return new Date(timestamp).toLocaleDateString("en-US");
   };
 
   const totalTasks = tasks?.length || 0;
@@ -178,8 +178,8 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
           {/* Progress Bar */}
           <div className="mt-4">
             <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
-              <span>Postęp projektu</span>
-              <span>{completedTasks}/{totalTasks} zadań ({Math.round(progress)}%)</span>
+              <span>Project progress</span>
+              <span>{completedTasks}/{totalTasks} tasks ({Math.round(progress)}%)</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
               <div 
@@ -194,9 +194,9 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
         <div className="border-b border-gray-200">
           <nav className="flex space-x-8 px-6">
             {[
-              { id: "overview", label: "Przegląd" },
-              { id: "tasks", label: `Zadania (${tasks?.length || 0})` },
-              { id: "team", label: "Zespół" },
+              { id: "overview", label: "Overview" },
+              { id: "tasks", label: `Tasks (${tasks?.length || 0})` },
+              { id: "team", label: "Team" },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -219,11 +219,11 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
             <div className="space-y-6">
               {/* Project Info */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Informacje o projekcie</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Project information</h3>
                 <div className="bg-gray-50 rounded-lg p-4 space-y-3">
                   {project.description && (
                     <div>
-                      <h4 className="font-medium text-gray-700">Opis</h4>
+                      <h4 className="font-medium text-gray-700">Description</h4>
                       <p className="text-gray-600">{project.description}</p>
                     </div>
                   )}
@@ -233,7 +233,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                       <div className="flex items-center gap-2">
                         <User className="h-4 w-4 text-gray-400" />
                         <div>
-                          <p className="text-xs text-gray-500">Klient</p>
+                          <p className="text-xs text-gray-500">Client</p>
                           <p className="font-medium">{project.customer}</p>
                         </div>
                       </div>
@@ -243,7 +243,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                       <div className="flex items-center gap-2">
                         <MapPin className="h-4 w-4 text-gray-400" />
                         <div>
-                          <p className="text-xs text-gray-500">Lokalizacja</p>
+                          <p className="text-xs text-gray-500">Location</p>
                           <p className="font-medium">{project.location}</p>
                         </div>
                       </div>
@@ -253,7 +253,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                       <div className="flex items-center gap-2">
                         <Calendar className="h-4 w-4 text-gray-400" />
                         <div>
-                          <p className="text-xs text-gray-500">Data rozpoczęcia</p>
+                          <p className="text-xs text-gray-500">Start date</p>
                           <p className="font-medium">{formatDate(project.startDate)}</p>
                         </div>
                       </div>
@@ -263,7 +263,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                       <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4 text-gray-400" />
                         <div>
-                          <p className="text-xs text-gray-500">Data zakończenia</p>
+                          <p className="text-xs text-gray-500">End date</p>
                           <p className="font-medium">{formatDate(project.endDate)}</p>
                         </div>
                       </div>
@@ -273,8 +273,8 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                       <div className="flex items-center gap-2">
                         <DollarSign className="h-4 w-4 text-gray-400" />
                         <div>
-                          <p className="text-xs text-gray-500">Budżet</p>
-                          <p className="font-medium">{project.budget.toLocaleString("pl-PL")} PLN</p>
+                          <p className="text-xs text-gray-500">Budget</p>
+                          <p className="font-medium">{project.budget.toLocaleString("en-US")} PLN</p>
                         </div>
                       </div>
                     )}
@@ -284,7 +284,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
 
               {/* Recent Tasks */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Ostatnie zadania</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent tasks</h3>
                 <div className="space-y-2">
                   {tasks?.slice(0, 5).map((task) => (
                     <div key={task._id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
@@ -292,7 +292,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                       <div className="flex-1">
                         <p className="font-medium">{task.title}</p>
                         <p className="text-sm text-gray-500">
-                          {(task.endDate || task.startDate) && `Termin: ${formatDate((task.endDate || task.startDate)!)}`}
+                          {(task.endDate || task.startDate) && `Due: ${formatDate((task.endDate || task.startDate)!)}`}
                         </p>
                       </div>
                       {task.priority && task.priority !== null && (
@@ -319,10 +319,10 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                       onChange={(e) => setTaskFilter(e.target.value as "all" | "todo" | "in_progress" | "done")}
                       className="border border-gray-300 rounded-md px-3 py-1 text-sm"
                     >
-                      <option value="all">Wszystkie zadania</option>
-                      <option value="todo">Do zrobienia</option>
-                      <option value="in_progress">W trakcie</option>
-                      <option value="done">Ukończone</option>
+                      <option value="all">All tasks</option>
+                      <option value="todo">To do</option>
+                      <option value="in_progress">In progress</option>
+                      <option value="done">Done</option>
                     </select>
                   </div>
                 </div>
@@ -331,7 +331,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                   className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm"
                 >
                   <Plus className="h-4 w-4" />
-                  Nowe zadanie
+                  New task
                 </button>
               </div>
 
@@ -342,7 +342,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                     <div>
                       <input
                         type="text"
-                        placeholder="Tytuł zadania"
+                        placeholder="Task title"
                         value={newTask.title}
                         onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md"
@@ -351,7 +351,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                     </div>
                     <div>
                       <textarea
-                        placeholder="Opis zadania (opcjonalny)"
+                        placeholder="Task description (optional)"
                         value={newTask.description}
                         onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md h-20 resize-none"
@@ -360,20 +360,20 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                     <div className="space-y-4">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Priorytet</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
                           <select
                             value={newTask.priority}
                             onChange={(e) => setNewTask({ ...newTask, priority: e.target.value as "low" | "medium" | "high" | "urgent" })}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md"
                           >
-                            <option value="low">Niski</option>
-                            <option value="medium">Średni</option>
-                            <option value="high">Wysoki</option>
-                            <option value="urgent">Pilny</option>
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                            <option value="urgent">Urgent</option>
                           </select>
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Data rozpoczęcia</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Start date</label>
                           <input
                             type="date"
                             value={newTask.startDate}
@@ -382,7 +382,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Data zakończenia</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">End date</label>
                           <input
                             type="date"
                             value={newTask.endDate}
@@ -393,7 +393,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Szacowane godziny</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Estimated hours</label>
                           <input
                             type="number"
                             step="0.5"
@@ -404,10 +404,10 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Tagi</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
                           <input
                             type="text"
-                            placeholder="projektowanie, dokumentacja"
+                            placeholder="design, documentation"
                             value={newTask.tags}
                             onChange={(e) => setNewTask({ ...newTask, tags: e.target.value })}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md"
@@ -420,14 +420,14 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                         type="submit"
                         className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
                       >
-                        Utwórz zadanie
+                        Create task
                       </button>
                       <button
                         type="button"
                         onClick={() => setShowNewTaskForm(false)}
                         className="bg-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-400"
                       >
-                        Anuluj
+                        Cancel
                       </button>
                     </div>
                   </form>
@@ -488,10 +488,10 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                               onChange={(e) => handleStatusChange(task._id, e.target.value as "todo" | "in_progress" | "review" | "done")}
                               className="text-xs border border-gray-300 rounded px-2 py-1"
                             >
-                              <option value="todo">Do zrobienia</option>
-                              <option value="in_progress">W trakcie</option>
-                              <option value="review">Na review</option>
-                              <option value="done">Ukończone</option>
+                              <option value="todo">To do</option>
+                              <option value="in_progress">In progress</option>
+                              <option value="review">In review</option>
+                              <option value="done">Done</option>
                             </select>
                           </div>
                         </div>
@@ -515,7 +515,7 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
                 
                 {filteredTasks.length === 0 && (
                   <div className="text-center py-8 text-gray-500">
-                    {taskFilter === "all" ? "Brak zadań w tym projekcie" : `Brak zadań ze statusem "${taskFilter}"`}
+                    {taskFilter === "all" ? "No tasks in this project yet." : `No tasks with status "${taskFilter}".`}
                   </div>
                 )}
               </div>
@@ -524,11 +524,11 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
 
           {activeTab === "team" && (
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Zespół projektu</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Project team</h3>
               <div className="bg-gray-50 rounded-lg p-8 text-center">
                 <Users className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                 <p className="text-gray-500">
-                  Zarządzanie zespołem projektu będzie dostępne wkrótce.
+                  Project team management will be available soon.
                 </p>
               </div>
             </div>

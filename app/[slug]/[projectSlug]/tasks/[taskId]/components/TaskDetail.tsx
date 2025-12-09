@@ -297,7 +297,7 @@ export default function TaskDetail() {
                   </div>
                 ))}
                 {/* {comments?.length === 0 && (
-                  <p className="text-center text-muted-foreground py-4">Brak komentarzy. Bądź pierwszy!</p>
+                  <p className="text-center text-muted-foreground py-4">No comments yet. Be the first!</p>
                 )} */}
               </div>
             </div>

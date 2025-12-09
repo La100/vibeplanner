@@ -82,7 +82,7 @@ export const getProjectsForTeam = query({
     const member = await ctx.runQuery(api.teams.getCurrentUserTeamMember, { teamId: args.teamId });
 
     if (!member) {
-      throw new Error("Nie jesteś członkiem tego zespołu lub musisz być zalogowany.");
+      throw new Error("You are not a member of this team or you must be logged in.");
     }
 
     return await ctx.db
@@ -191,13 +191,13 @@ export const addShoppingListItem = mutation({
   handler: async (ctx, args): Promise<Id<"shoppingListItems">> => {
     const project = await ctx.db.get(args.projectId);
     if (!project) {
-        throw new Error("Nie znaleziono projektu.");
+        throw new Error("Project not found.");
     }
     
     const member: Doc<"teamMembers"> | null = await ctx.runQuery(api.teams.getCurrentUserTeamMember, { teamId: project.teamId });
 
     if (!member) {
-      throw new Error("Nie jesteś członkiem tego zespołu lub musisz być zalogowany.");
+      throw new Error("You are not a member of this team or you must be logged in.");
     }
 
     // Jeśli nie podano sectionId, pozostaw jako undefined

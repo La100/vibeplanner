@@ -40,10 +40,23 @@ export const getProjectShoppingItems = internalQuery({
   args: { projectId: v.id("projects") },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
-    return await ctx.db
-      .query("shoppingListItems")
-      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
-      .collect();
+    const [items, sections] = await Promise.all([
+      ctx.db
+        .query("shoppingListItems")
+        .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+        .collect(),
+      ctx.db
+        .query("shoppingListSections")
+        .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+        .collect(),
+    ]);
+
+    const sectionMap = new Map(sections.map((s) => [s._id, s.name]));
+
+    return items.map((item) => ({
+      ...item,
+      sectionName: item.sectionId ? sectionMap.get(item.sectionId) : undefined,
+    }));
   },
 });
 

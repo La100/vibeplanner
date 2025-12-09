@@ -509,7 +509,7 @@ export default function ShoppingListView() {
 
   return (
     <TooltipProvider>
-      <div className="w-full max-w-none px-4 sm:px-6 lg:px-8">
+      <div className="w-full max-w-6xl mx-auto px-6 pb-24 pt-8 sm:px-8">
         {/* Export Modal */}
         <ExportModal
           isOpen={isExportModalOpen}
@@ -531,8 +531,8 @@ export default function ShoppingListView() {
 
         {/* Main Add Product Form */}
         {showMainAddForm && (
-          <div className="mb-6 border rounded-lg p-4 bg-blue-50">
-            <h3 className="text-lg font-semibold mb-4">Add New Product</h3>
+          <div className="mb-10 rounded-[32px] border border-[#E7E2D9] bg-white p-8 shadow-[0_24px_60px_rgba(20,20,20,0.08)]">
+            <h3 className="text-2xl font-medium font-[var(--font-display-serif)] mb-6">Add New Product</h3>
             <AddItemForm
               sections={sections}
               teamMembers={teamMembers}
@@ -598,17 +598,17 @@ export default function ShoppingListView() {
         )}
 
         {/* Grand Total */}
-        <div className="bg-gray-50 border rounded-lg p-4">
-          <div className="space-y-2">
+        <div className="mt-12 rounded-[32px] border border-[#E7E2D9] bg-white p-8 shadow-[0_24px_60px_rgba(20,20,20,0.08)]">
+          <div className="space-y-4">
             {sectionTotals.map(({ section, total }) => (
-              <div key={section} className="flex justify-between items-center text-sm">
+              <div key={section} className="flex justify-between items-center text-base text-[#3C3A37]">
                 <span className="font-medium">{section}</span>
                 <span>{total.toFixed(2)} {currencySymbol}</span>
               </div>
             ))}
-            <div className="border-t pt-2 flex justify-between items-center font-bold text-lg">
-              <span>Grand Total:</span>
-              <span>{grandTotal.toFixed(2)} {currencySymbol}</span>
+            <div className="border-t border-[#E7E2D9] pt-4 flex justify-between items-center">
+              <span className="text-xl font-medium font-[var(--font-display-serif)]">Grand Total</span>
+              <span className="text-2xl font-medium font-[var(--font-display-serif)]">{grandTotal.toFixed(2)} {currencySymbol}</span>
             </div>
           </div>
         </div>

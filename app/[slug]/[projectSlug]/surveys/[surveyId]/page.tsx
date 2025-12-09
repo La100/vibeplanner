@@ -102,10 +102,10 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
       const response = await startResponse({ surveyId: routeParams.surveyId });
       if (response) {
         setCurrentResponseId(response._id);
-        toast.success("Rozpoczęto wypełnianie ankiety");
+        toast.success("Survey started");
       }
     } catch (error) {
-      toast.error("Nie można rozpocząć ankiety");
+      toast.error("Could not start survey");
       console.error(error);
     }
   };
@@ -155,10 +155,10 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
       };
 
       handleAnswerChange(questionId, fileAnswer);
-      toast.success("Plik został przesłany");
+      toast.success("File uploaded");
     } catch (error) {
       console.error("Error uploading file:", error);
-      toast.error("Błąd podczas przesyłania pliku");
+      toast.error("Error uploading file");
     }
   };
 
@@ -187,7 +187,7 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
     });
 
     if (missingAnswers.length > 0) {
-      toast.error("Proszę odpowiedzieć na wszystkie obowiązkowe pytania");
+      toast.error("Please answer all required questions");
       return;
     }
 
@@ -257,10 +257,10 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
 
       // Then submit the response
       await submitResponse({ responseId: currentResponseId });
-      toast.success("Ankieta została wysłana!");
+      toast.success("Survey submitted!");
       router.push(`/${routeParams.teamSlug}/${routeParams.projectSlug}/surveys`);
     } catch (error) {
-      toast.error("Błąd podczas wysyłania ankiety");
+      toast.error("Error submitting survey");
       console.error(error);
     } finally {
       setIsSubmitting(false);
@@ -305,20 +305,20 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
             onClick={() => router.back()}
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Wróć
+            Back
           </Button>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-green-600">Ankieta wypełniona</CardTitle>
+            <CardTitle className="text-green-600">Survey completed</CardTitle>
             <CardDescription>
-              Dziękujemy za wypełnienie ankiety "{survey.title}". Twoja odpowiedź została zapisana.
+              Thank you for completing "{survey.title}". Your response has been saved.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-gray-600">
-              Wypełniono: {new Date(userResponse?.submittedAt || 0).toLocaleString()}
+              Submitted: {new Date(userResponse?.submittedAt || 0).toLocaleString()}
             </p>
           </CardContent>
         </Card>
@@ -335,7 +335,7 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
           onClick={() => router.back()}
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Wróć
+          Back
         </Button>
         <div>
           <h1 className="text-3xl font-bold">{survey.title}</h1>
@@ -349,14 +349,14 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
       {!hasStarted ? (
         <Card>
           <CardHeader>
-            <CardTitle>Wypełnij ankietę</CardTitle>
+            <CardTitle>Fill out the survey</CardTitle>
             <CardDescription>
-              Kliknij poniżej, aby rozpocząć wypełnianie ankiety.
+              Click below to start answering the survey.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Button onClick={handleStartResponse}>
-              Rozpocznij ankietę
+              Start survey
             </Button>
           </CardContent>
         </Card>
@@ -366,10 +366,10 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
             <Card key={question._id}>
               <CardHeader>
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline">Pytanie {index + 1}</Badge>
+                  <Badge variant="outline">Question {index + 1}</Badge>
                   {question.isRequired && (
                     <Badge variant="destructive" className="text-xs">
-                      Obowiązkowe
+                      Required
                     </Badge>
                   )}
                 </div>
@@ -380,7 +380,7 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
                   <Input
                     value={String(answers[question._id] || "")}
                     onChange={(e) => handleAnswerChange(question._id, e.target.value)}
-                    placeholder="Twoja odpowiedź"
+                    placeholder="Your answer"
                   />
                 )}
 
@@ -453,11 +453,11 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
                   >
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="true" id={`${question._id}-yes`} />
-                      <Label htmlFor={`${question._id}-yes`}>Tak</Label>
+                      <Label htmlFor={`${question._id}-yes`}>Yes</Label>
                     </div>
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="false" id={`${question._id}-no`} />
-                      <Label htmlFor={`${question._id}-no`}>Nie</Label>
+                      <Label htmlFor={`${question._id}-no`}>No</Label>
                     </div>
                   </RadioGroup>
                 )}
@@ -467,10 +467,10 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
                       <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                       <div className="text-lg font-medium text-gray-900 mb-2">
-                        Prześlij plik
+                        Upload a file
                       </div>
                       <p className="text-sm text-gray-600 mb-4">
-                        Kliknij aby wybrać plik lub przeciągnij go tutaj
+                        Click to choose a file or drag and drop it here
                       </p>
                       <input
                         type="file"
@@ -488,7 +488,7 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
                         variant="outline"
                         onClick={() => document.getElementById(`file-${question._id}`)?.click()}
                       >
-                        Wybierz plik
+                        Choose file
                       </Button>
                     </div>
                     {(answers[question._id] as { fileName?: string })?.fileName && (
@@ -496,7 +496,7 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
                         <div className="flex items-center text-green-800">
                           <Upload className="h-4 w-4 mr-2" />
                           <span className="text-sm font-medium">
-                            Przesłano: {(answers[question._id] as { fileName: string })?.fileName}
+                            Uploaded: {(answers[question._id] as { fileName: string })?.fileName}
                           </span>
                         </div>
                       </div>
@@ -509,7 +509,7 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
                     type="number"
                     value={String(answers[question._id] || "")}
                     onChange={(e) => handleAnswerChange(question._id, parseFloat(e.target.value))}
-                    placeholder="Wprowadź liczbę"
+                    placeholder="Enter a number"
                   />
                 )}
               </CardContent>
@@ -521,11 +521,11 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
               variant="outline"
               onClick={() => router.back()}
             >
-              Anuluj
+              Cancel
             </Button>
             <Button onClick={handleSubmit} disabled={isSubmitting}>
               <Send className="h-4 w-4 mr-2" />
-              {isSubmitting ? "Wysyłanie..." : "Wyślij ankietę"}
+              {isSubmitting ? "Submitting..." : "Submit survey"}
             </Button>
           </div>
         </div>

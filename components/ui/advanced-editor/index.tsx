@@ -125,7 +125,7 @@ export default function AdvancedEditor({
       setLastSaved(new Date());
       // Usunięto toast popup - ciche auto-save
     } catch (error) {
-      toast.error("❌ Błąd podczas zapisywania");
+      toast.error("❌ Error while saving");
       console.error(error);
     } finally {
       setIsSaving(false);
@@ -353,7 +353,7 @@ export default function AdvancedEditor({
 
         <div className="ml-auto flex items-center gap-2">
           {hasChanges && (
-            <span className="text-xs text-orange-600">Niezapisane zmiany</span>
+            <span className="text-xs text-orange-600">Unsaved changes</span>
           )}
           
           {isSaving && (

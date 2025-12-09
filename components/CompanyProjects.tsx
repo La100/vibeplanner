@@ -98,7 +98,7 @@ export default function CompanyProjects() {
         router.push(`/${params.slug}/${newProjectSlug}`);
       }
     } catch (error) {
-      console.error("Błąd podczas tworzenia projektu:", error);
+      console.error("Error creating project:", error);
     }
   };
 

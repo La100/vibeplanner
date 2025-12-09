@@ -143,7 +143,7 @@ export const generateChatUploadUrl = mutation({
   },
 });
 
-// Utwórz folder
+// Create folder
 export const createFolder = mutation({
   args: {
     projectId: v.id("projects"),
@@ -230,7 +230,7 @@ export const addFile = mutation({
       return "other";
     };
 
-    // Utwórz rekord pliku
+    // Create file record
     const fileId = await ctx.db.insert("files", {
       name: args.fileName,
       teamId: project.teamId,

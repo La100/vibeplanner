@@ -75,7 +75,22 @@ const getPriorityLabel = (priority?: string) => {
 };
 
 interface PendingTask {
-  type: 'task' | 'note' | 'shopping' | 'survey' | 'contact' | 'shoppingSection';
+  type:
+    | 'task'
+    | 'note'
+    | 'shopping'
+    | 'survey'
+    | 'contact'
+    | 'shoppingSection'
+    | 'create_task'
+    | 'create_note'
+    | 'create_shopping_item'
+    | 'create_survey'
+    | 'create_contact'
+    | 'create_multiple_tasks'
+    | 'create_multiple_notes'
+    | 'create_multiple_shopping_items'
+    | 'create_multiple_surveys';
   operation?: 'create' | 'edit' | 'delete' | 'bulk_edit' | 'bulk_create';
   data: Record<string, unknown>;
   updates?: Record<string, unknown>;
@@ -110,6 +125,65 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
     typeof item.data.priority === "string" ? resolvePriorityKey(item.data.priority as string) : undefined;
   const priorityConfig = priorityKey ? PRIORITY_CONFIG[priorityKey] : undefined;
 
+  const canonicalType = (type: PendingTask['type']): Exclude<PendingTask['type'],
+    'create_task' |
+    'create_note' |
+    'create_shopping_item' |
+    'create_survey' |
+    'create_contact' |
+    'create_multiple_tasks' |
+    'create_multiple_notes' |
+    'create_multiple_shopping_items' |
+    'create_multiple_surveys'
+  > => {
+    switch (type) {
+      case 'create_task':
+      case 'create_multiple_tasks':
+        return 'task';
+      case 'create_note':
+      case 'create_multiple_notes':
+        return 'note';
+      case 'create_shopping_item':
+      case 'create_multiple_shopping_items':
+        return 'shopping';
+      case 'create_survey':
+      case 'create_multiple_surveys':
+        return 'survey';
+      case 'create_contact':
+        return 'contact';
+      default:
+        return type;
+    }
+  };
+
+  const deriveOperation = (pending: PendingTask): NonNullable<PendingTask['operation']> => {
+    if (pending.operation) return pending.operation;
+    const rawType = pending.type as string;
+    if (rawType.startsWith('create_multiple_')) return 'bulk_create';
+    if (rawType.startsWith('create_')) return 'create';
+    return 'create';
+  };
+
+  const resolvedType = canonicalType(item.type);
+  const resolvedOperation = deriveOperation(item);
+
+  const typeLabels: Record<string, string> = {
+    task: "task",
+    note: "note",
+    shopping: "shopping item",
+    survey: "survey",
+    contact: "contact",
+    shoppingSection: "shopping section",
+  };
+
+  const operationLabels: Record<NonNullable<PendingTask['operation']>, string> = {
+    create: "create",
+    edit: "edit",
+    delete: "delete",
+    bulk_edit: "bulk edit",
+    bulk_create: "bulk create",
+  };
+
   const getItemIcon = (type: string) => {
     switch (type) {
       case 'task': return <CheckSquare className="h-4 w-4" />;
@@ -122,13 +196,13 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
     }
   };
 
-  const getItemTitle = (item: PendingTask): string => {
+  const getItemTitle = (item: PendingTask, type: PendingTask['type'], operation: NonNullable<PendingTask['operation']>): string => {
     if (item.display) {
       return item.display.title;
     }
-    switch (item.type) {
+    switch (type) {
       case 'task':
-        if (item.operation === 'bulk_edit') {
+        if (operation === 'bulk_edit') {
           const changes = item.titleChanges || (Array.isArray(item.data.titleChanges) ? item.data.titleChanges as PendingTask['titleChanges'] : []);
           const firstChange = changes?.[0];
           if (firstChange) {
@@ -143,11 +217,11 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
           }
           return 'Bulk edit tasks';
         }
-        if (item.operation === 'bulk_create') {
+        if (operation === 'bulk_create') {
           const tasks = (item.data.tasks as Array<Record<string, unknown>>) || [];
           return `Create ${tasks.length} tasks`;
         }
-        if (item.operation === 'delete') {
+        if (operation === 'delete') {
           if (typeof item.data.title === 'string' && item.data.title) {
             return item.data.title as string;
           }
@@ -159,7 +233,7 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
           }
           return 'Task deletion';
         }
-        if (item.operation === 'edit') {
+        if (operation === 'edit') {
           // For edit operations, check updates first, then originalItem, then data
           const title = (item.updates?.title as string) ||
                        (item.originalItem?.title as string) ||
@@ -168,7 +242,7 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
         }
         return typeof item.data.title === 'string' ? item.data.title : 'Untitled Task';
       case 'note':
-        if (item.operation === 'edit') {
+        if (operation === 'edit') {
           // For edit operations, check updates first, then originalItem, then data
           const noteTitle = (item.updates?.title as string) ||
                            (item.originalItem?.title as string) ||
@@ -177,7 +251,7 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
         }
         return typeof item.data.title === 'string' ? item.data.title : 'Untitled Note';
       case 'shopping':
-        if (item.operation === 'edit') {
+        if (operation === 'edit') {
           const shoppingName = (item.updates?.name as string) ||
                               (item.originalItem?.name as string) ||
                               (item.data.name as string);
@@ -185,7 +259,7 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
         }
         return typeof item.data.name === 'string' ? item.data.name : 'Untitled Item';
       case 'survey':
-        if (item.operation === 'edit') {
+        if (operation === 'edit') {
           const surveyTitle = (item.updates?.title as string) ||
                              (item.originalItem?.title as string) ||
                              (item.data.title as string);
@@ -198,18 +272,18 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
     }
   };
 
-  const getItemDescription = (item: PendingTask): string => {
+  const getItemDescription = (item: PendingTask, type: PendingTask['type'], operation: NonNullable<PendingTask['operation']>): string => {
     if (item.display && item.display.description) {
       return item.display.description;
     }
-    switch (item.type) {
+    switch (type) {
       case 'task':
-        if (item.operation === 'bulk_create') {
+        if (operation === 'bulk_create') {
           const tasks = (item.data.tasks as Array<Record<string, unknown>>) || [];
           const previews = tasks.slice(0, 3).map(t => t.title || 'Untitled').join(', ');
           return tasks.length > 3 ? `${previews} and ${tasks.length - 3} more...` : previews;
         }
-        if (item.operation === 'bulk_edit') {
+        if (operation === 'bulk_edit') {
           if (typeof item.data.previousTitle === 'string' && typeof item.data.title === 'string') {
             return `${item.data.previousTitle} → ${item.data.title}`;
           }
@@ -232,7 +306,7 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
             : `${Array.isArray(item.selection?.taskIds) ? (item.selection?.taskIds as string[]).length : 0} selected tasks`;
           return targetLabel;
         }
-        if (item.operation === 'delete') {
+        if (operation === 'delete') {
           const parts: string[] = [];
           if (typeof item.data.currentTitle === 'string' && item.data.currentTitle) {
             parts.push(`Current title: ${item.data.currentTitle}`);
@@ -242,7 +316,7 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
           }
           return parts.join(' • ');
         }
-        if (item.operation === 'edit') {
+        if (operation === 'edit') {
           // For edit operations, show what's being changed
           const changes: string[] = [];
           if (item.updates?.title && item.originalItem?.title && item.updates.title !== item.originalItem.title) {
@@ -277,7 +351,7 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
           (item.data.endDate || item.data.startDate) && typeof (item.data.endDate || item.data.startDate) === 'number' && `Due: ${new Date((item.data.endDate || item.data.startDate) as number).toLocaleDateString()}`
         ].filter(Boolean).join(' • ');
       case 'note':
-        if (item.operation === 'edit') {
+        if (operation === 'edit') {
           // For edit operations, show what's being changed
           const changes: string[] = [];
           if (item.updates?.title && item.originalItem?.title && item.updates.title !== item.originalItem.title) {
@@ -298,7 +372,7 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
           item.data.content.substring(0, 100) + (item.data.content.length > 100 ? '...' : '') :
           '';
       case 'shopping':
-        if (item.operation === 'edit') {
+        if (operation === 'edit') {
           const changes: string[] = [];
           if (item.updates?.name && item.originalItem?.name && item.updates.name !== item.originalItem.name) {
             changes.push(`Name: ${item.originalItem.name} → ${item.updates.name}`);
@@ -327,7 +401,7 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
           item.data.supplier && `Supplier: ${item.data.supplier}`
         ].filter(Boolean).join(' • ');
       case 'survey':
-        if (item.operation === 'edit') {
+        if (operation === 'edit') {
           const changes: string[] = [];
           if (item.updates?.title && item.originalItem?.title && item.updates.title !== item.originalItem.title) {
             changes.push(`Title: ${item.originalItem.title} → ${item.updates.title}`);
@@ -351,7 +425,7 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
           item.data.role && `Role: ${item.data.role}`
         ].filter(Boolean).join(' • ');
       case 'shoppingSection':
-        return item.operation === 'delete'
+        return operation === 'delete'
           ? 'Section will be removed; items stay unsectioned'
           : 'Shopping list section for organizing items';
       default:
@@ -362,7 +436,7 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
   const getTypeColor = (type: string) => {
     switch (type) {
       case 'task':
-        return item.operation === 'bulk_edit'
+        return resolvedOperation === 'bulk_edit'
           ? 'bg-blue-600 text-white'
           : 'bg-blue-100 text-blue-700';
       case 'note': return 'bg-green-100 text-green-700';
@@ -405,22 +479,22 @@ export const ItemPreviewCard = ({ item, index, onConfirm, onReject, onEdit }: It
       )}
       <CardHeader className="pb-3">
         <div className="flex items-center gap-3">
-        <div className={`p-2 rounded-lg ${getTypeColor(item.type)}`}>
-            {item.display?.icon || getItemIcon(item.type)}
+        <div className={`p-2 rounded-lg ${getTypeColor(resolvedType)}`}>
+            {item.display?.icon || getItemIcon(resolvedType)}
           </div>
           <Badge variant="secondary" className="text-sm px-3 py-1">
-            {item.operation || 'create'} {item.type}
+            {operationLabels[resolvedOperation] ?? resolvedOperation ?? 'create'} {typeLabels[resolvedType] ?? resolvedType}
           </Badge>
         </div>
       </CardHeader>
 
       <CardContent className="pt-0 flex-1 flex flex-col">
         <h4 className="font-medium text-base mb-3 line-clamp-2 min-h-[3rem]">
-          {getItemTitle(item)}
+          {getItemTitle(item, resolvedType, resolvedOperation)}
         </h4>
         
         <p className="text-sm text-muted-foreground line-clamp-4 mb-4 min-h-[4rem] leading-relaxed">
-          {getItemDescription(item)}
+          {getItemDescription(item, resolvedType, resolvedOperation)}
         </p>
 
         {/* Tags/Priority indicators */}

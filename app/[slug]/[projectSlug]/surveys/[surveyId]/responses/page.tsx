@@ -68,7 +68,7 @@ export default function SurveyResponsesPage({ params }: SurveyResponsesPageProps
       case "text":
         return answer.textAnswer || "-";
       case "boolean":
-        return answer.booleanAnswer ? "Tak" : "Nie";
+        return answer.booleanAnswer ? "Yes" : "No";
       default:
         return "-";
     }
@@ -77,7 +77,7 @@ export default function SurveyResponsesPage({ params }: SurveyResponsesPageProps
 
   const getUserName = (respondentId: string) => {
     const user = users?.find(u => u.clerkUserId === respondentId);
-    return user?.name || user?.email || "Nieznany użytkownik";
+    return user?.name || user?.email || "Unknown user";
   };
 
   return (
@@ -91,11 +91,11 @@ export default function SurveyResponsesPage({ params }: SurveyResponsesPageProps
             className="shrink-0 bg-black text-white border-black hover:bg-neutral-900 hover:text-white"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Wróć do ankiet
+            Back to surveys
           </Button>
           <div className="flex-1">
             <h1 className="text-3xl font-bold tracking-tight">
-              {isClient ? "Moja odpowiedź" : "Odpowiedzi na ankietę"}
+              {isClient ? "My response" : "Survey responses"}
             </h1>
             <p className="text-muted-foreground mt-1">{survey.title}</p>
           </div>
@@ -103,50 +103,50 @@ export default function SurveyResponsesPage({ params }: SurveyResponsesPageProps
 
         <div className="grid gap-6 md:grid-cols-2 mb-6">
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Users className="h-5 w-5 text-black" />
-                {isClient ? "Status" : "Odpowiedzi"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {isClient ? (responses?.length ?? 0 > 0 ? "Wypełniona" : "Brak") : (responses?.length ?? 0)}
-              </div>
-              <p className="text-sm text-gray-600">
-                {isClient ? "Twoja odpowiedź" : "Łączna liczba odpowiedzi"}
-              </p>
-            </CardContent>
-          </Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Users className="h-5 w-5 text-black" />
+                  {isClient ? "Status" : "Responses"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {isClient ? (responses?.length ?? 0 > 0 ? "Submitted" : "None") : (responses?.length ?? 0)}
+                </div>
+                <p className="text-sm text-gray-600">
+                  {isClient ? "Your response" : "Total responses"}
+                </p>
+              </CardContent>
+            </Card>
 
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <FileText className="h-5 w-5 text-black" />
-                Pytania
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {survey.questions ? survey.questions.length : 0}
-              </div>
-              <p className="text-sm text-gray-600">Liczba pytań</p>
-            </CardContent>
-          </Card>
-        </div>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-black" />
+                  Questions
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {survey.questions ? survey.questions.length : 0}
+                </div>
+                <p className="text-sm text-gray-600">Number of questions</p>
+              </CardContent>
+            </Card>
+          </div>
 
         {((responses?.length ?? 0) === 0) ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>{isClient ? "Brak odpowiedzi" : "Brak odpowiedzi"}</CardTitle>
-              <CardDescription>
-                {isClient 
-                  ? "Nie wypełniłeś jeszcze tej ankiety." 
-                  : "Nikt jeszcze nie odpowiedział na tę ankietę."
-                }
-              </CardDescription>
-            </CardHeader>
-          </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>{isClient ? "No response yet" : "No responses"}</CardTitle>
+                <CardDescription>
+                  {isClient 
+                  ? "You have not filled out this survey yet." 
+                  : "No one has responded to this survey yet."
+                  }
+                </CardDescription>
+              </CardHeader>
+            </Card>
         ) : (
           <div className="space-y-6">
             {responses?.map((response, responseIndex) => (
@@ -158,11 +158,11 @@ export default function SurveyResponsesPage({ params }: SurveyResponsesPageProps
                         {getUserName(response.respondentId)}
                       </CardTitle>
                       <CardDescription>
-                        Wysłano: {new Date(response.submittedAt || 0).toLocaleString()}
+                        Submitted: {new Date(response.submittedAt || 0).toLocaleString()}
                       </CardDescription>
                     </div>
                     <span className="inline-block border border-black text-black bg-transparent rounded px-2 py-1 text-xs font-semibold">
-                      Odpowiedź #{responseIndex + 1}
+                      Response #{responseIndex + 1}
                     </span>
                   </div>
                 </CardHeader>
@@ -175,13 +175,13 @@ export default function SurveyResponsesPage({ params }: SurveyResponsesPageProps
                           <CardContent className="p-6">
                             <div className="flex items-center gap-3 mb-2">
                               <span className="inline-block border border-black text-black bg-transparent rounded px-2 py-1 text-xs font-semibold">
-                                Pytanie {questionIndex + 1}
+                                Question {questionIndex + 1}
                               </span>
                             </div>
                             <div className="font-medium mb-2">{question.questionText}</div>
                             <div className="bg-gray-50 p-3 rounded-lg">
                               {answer ? getAnswerDisplay(answer) : (
-                                <span className="text-gray-500 italic">Brak odpowiedzi</span>
+                                <span className="text-gray-500 italic">No answer</span>
                               )}
                             </div>
                           </CardContent>

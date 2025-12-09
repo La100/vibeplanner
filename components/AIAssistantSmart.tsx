@@ -30,7 +30,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useUser } from "@clerk/nextjs";
 import { useProject } from '@/components/providers/ProjectProvider';
-import { Loader2, Paperclip, X, Building, FileText, Image, File, Plus, ArrowUpRight, Square, MessageSquare } from "lucide-react";
+import { Loader2, Paperclip, X, FileText, ArrowUp, Square, MessageSquare, Sparkles } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import type { PendingContentItem } from "@/components/AIConfirmationGrid";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +40,22 @@ import { UniversalConfirmationDialog } from "@/components/UniversalConfirmationD
 import { AIConfirmationGrid } from "@/components/AIConfirmationGrid";
 
 type PendingItem = {
-  type: 'task' | 'note' | 'shopping' | 'survey' | 'contact' | 'shoppingSection';
+  type: 
+    | 'task' 
+    | 'note' 
+    | 'shopping' 
+    | 'survey' 
+    | 'contact' 
+    | 'shoppingSection'
+    | 'create_task'
+    | 'create_note'
+    | 'create_shopping_item'
+    | 'create_survey'
+    | 'create_contact'
+    | 'create_multiple_tasks'
+    | 'create_multiple_notes'
+    | 'create_multiple_shopping_items'
+    | 'create_multiple_surveys';
   operation?: 'create' | 'edit' | 'delete' | 'bulk_edit' | 'bulk_create';
   data: Record<string, unknown>;
   updates?: Record<string, unknown>;
@@ -62,6 +78,27 @@ type PendingItem = {
   };
   responseId?: string;
 };
+
+const pendingItemTypes: PendingItem["type"][] = [
+  "task",
+  "note",
+  "shopping",
+  "survey",
+  "contact",
+  "shoppingSection",
+  "create_task",
+  "create_note",
+  "create_shopping_item",
+  "create_survey",
+  "create_contact",
+  "create_multiple_tasks",
+  "create_multiple_notes",
+  "create_multiple_shopping_items",
+  "create_multiple_surveys",
+];
+
+const isPendingItemType = (value: unknown): value is PendingItem["type"] =>
+  typeof value === "string" && pendingItemTypes.includes(value as PendingItem["type"]);
 
 type TaskInput = {
   title: string;
@@ -131,28 +168,31 @@ type ChatHistoryEntry = {
   mode?: "full" | "recent";
   tokenUsage?: { totalTokens: number; estimatedCostUSD: number };
   fileInfo?: { name: string; size: number; type: string; id: string };
+  status?: "streaming" | "finished" | "aborted";
 };
 
-const normalizeModeForDisplay = (mode?: string | null): "full" | "recent" | undefined => {
-  if (!mode) {
-    return undefined;
-  }
+// Remove unknown shopping fields so Convex validators stay happy
+const sanitizeShoppingItemData = (data: Record<string, unknown>) => {
+  const allowedKeys = [
+    "name",
+    "quantity",
+    "notes",
+    "priority",
+    "buyBefore",
+    "supplier",
+    "category",
+    "unitPrice",
+    "totalPrice",
+    "sectionId",
+  ] as const;
 
-  const normalized = mode.toLowerCase();
-  if (
-    normalized === "full" ||
-    normalized.includes("advanced") ||
-    normalized.includes("long") ||
-    normalized.includes("rag")
-  ) {
-    return "full";
+  const sanitized: Record<string, unknown> = {};
+  for (const key of allowedKeys) {
+    if (data[key] !== undefined) {
+      sanitized[key] = data[key];
+    }
   }
-
-  if (normalized === "recent") {
-    return "recent";
-  }
-
-  return "recent";
+  return sanitized;
 };
 
 const computeNextMessageIndex = (history: ChatHistoryEntry[]) =>
@@ -162,7 +202,88 @@ const computeNextMessageIndex = (history: ChatHistoryEntry[]) =>
   ) + 1;
 
 const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
-  items.map((item) => {
+  items.map((originalItem) => {
+    // Normalize tool-based types (create_*, create_multiple_*) into canonical types and operations
+    const normalizeTypeAndOperation = (item: PendingItem) => {
+      let type = item.type;
+      let operation = item.operation;
+
+      // Map tool function names to canonical types/operations when the payload lacks them
+      const toolNameMapping: Record<string, { type: PendingItem["type"]; operation: PendingItem["operation"] }> = {
+        edit_task: { type: "task", operation: "edit" },
+        edit_multiple_tasks: { type: "task", operation: "bulk_edit" },
+        delete_task: { type: "task", operation: "delete" },
+        edit_note: { type: "note", operation: "edit" },
+        edit_multiple_notes: { type: "note", operation: "bulk_edit" },
+        delete_note: { type: "note", operation: "delete" },
+        edit_shopping_item: { type: "shopping", operation: "edit" },
+        edit_multiple_shopping_items: { type: "shopping", operation: "bulk_edit" },
+        delete_shopping_item: { type: "shopping", operation: "delete" },
+        create_shopping_section: { type: "shoppingSection", operation: "create" },
+        edit_shopping_section: { type: "shoppingSection", operation: "edit" },
+        delete_shopping_section: { type: "shoppingSection", operation: "delete" },
+        edit_survey: { type: "survey", operation: "edit" },
+        edit_multiple_surveys: { type: "survey", operation: "bulk_edit" },
+        delete_survey: { type: "survey", operation: "delete" },
+        delete_contact: { type: "contact", operation: "delete" },
+      };
+
+      if (toolNameMapping[type]) {
+        const mapped = toolNameMapping[type];
+        type = mapped.type;
+        operation = operation ?? mapped.operation;
+      }
+
+      switch (type) {
+        case "create_task":
+          type = "task";
+          operation = operation ?? "create";
+          break;
+        case "create_note":
+          type = "note";
+          operation = operation ?? "create";
+          break;
+        case "create_shopping_item":
+          type = "shopping";
+          operation = operation ?? "create";
+          break;
+        case "create_survey":
+          type = "survey";
+          operation = operation ?? "create";
+          break;
+        case "create_contact":
+          type = "contact";
+          operation = operation ?? "create";
+          break;
+        case "create_multiple_tasks":
+          type = "task";
+          operation = operation ?? "bulk_create";
+          break;
+        case "create_multiple_notes":
+          type = "note";
+          operation = operation ?? "bulk_create";
+          break;
+        case "create_multiple_shopping_items":
+          type = "shopping";
+          operation = operation ?? "bulk_create";
+          break;
+        case "create_multiple_surveys":
+          type = "survey";
+          operation = operation ?? "bulk_create";
+          break;
+        default:
+          break;
+      }
+
+      return {
+        ...item,
+        type,
+        operation: operation ?? item.operation ?? "create",
+      } satisfies PendingItem;
+    };
+
+    let item = normalizeTypeAndOperation(originalItem);
+
     if (item.type === "task") {
       const selection = item.selection || item.data;
       const taskIds = (selection?.taskIds || item.data?.taskIds) as unknown;
@@ -172,6 +293,30 @@ const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
           ...item,
           selection: { ...selection, taskIds: normalizedIds },
           data: { ...item.data, taskIds: normalizedIds },
+        };
+      }
+
+      if (item.operation === "bulk_create") {
+        const tasks = Array.isArray(item.data?.tasks)
+          ? (item.data!.tasks as TaskInput[])
+          : [];
+        const preview = tasks
+          .slice(0, 3)
+          .map((task) => task.title || "Untitled Task")
+          .join(" • ");
+        const remaining = Math.max(tasks.length - 3, 0);
+
+        return {
+          ...item,
+          display: {
+            title: `Create ${tasks.length} task${tasks.length === 1 ? "" : "s"}`,
+            description:
+              tasks.length === 0
+                ? "Review tasks before confirming."
+                : [preview, remaining > 0 ? `+${remaining} more` : null]
+                    .filter(Boolean)
+                    .join(" • "),
+          },
         };
       }
 
@@ -244,6 +389,30 @@ const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
     }
 
     if (item.type === "note") {
+      if (item.operation === "bulk_create") {
+        const notes = Array.isArray(item.data?.notes)
+          ? (item.data!.notes as NoteInput[])
+          : [];
+        const preview = notes
+          .slice(0, 3)
+          .map((note) => note.title || "Untitled Note")
+          .join(" • ");
+        const remaining = Math.max(notes.length - 3, 0);
+
+        return {
+          ...item,
+          display: {
+            title: `Create ${notes.length} note${notes.length === 1 ? "" : "s"}`,
+            description:
+              notes.length === 0
+                ? "Review notes before confirming."
+                : [preview, remaining > 0 ? `+${remaining} more` : null]
+                    .filter(Boolean)
+                    .join(" • "),
+          },
+        };
+      }
+
       const title = (item.data?.title as string) || (item.originalItem?.title as string) || "Note";
       item = {
         ...item,
@@ -260,6 +429,30 @@ const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
     }
 
     if (item.type === "shopping") {
+      if (item.operation === "bulk_create") {
+        const items = Array.isArray(item.data?.items)
+          ? (item.data!.items as ShoppingItemInput[])
+          : [];
+        const preview = items
+          .slice(0, 3)
+          .map((shoppingItem) => shoppingItem.name || "Untitled Item")
+          .join(" • ");
+        const remaining = Math.max(items.length - 3, 0);
+
+        return {
+          ...item,
+          display: {
+            title: `Create ${items.length} shopping item${items.length === 1 ? "" : "s"}`,
+            description:
+              items.length === 0
+                ? "Review shopping items before confirming."
+                : [preview, remaining > 0 ? `+${remaining} more` : null]
+                    .filter(Boolean)
+                    .join(" • "),
+          },
+        };
+      }
+
       const name = (item.data?.name as string) || (item.originalItem?.name as string) || "Shopping item";
       item = {
         ...item,
@@ -276,6 +469,30 @@ const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
     }
 
     if (item.type === "survey") {
+      if (item.operation === "bulk_create") {
+        const surveys = Array.isArray(item.data?.surveys)
+          ? (item.data!.surveys as Array<Record<string, unknown>>)
+          : [];
+        const preview = surveys
+          .slice(0, 3)
+          .map((survey) => (survey.title as string) || "Untitled Survey")
+          .join(" • ");
+        const remaining = Math.max(surveys.length - 3, 0);
+
+        return {
+          ...item,
+          display: {
+            title: `Create ${surveys.length} survey${surveys.length === 1 ? "" : "s"}`,
+            description:
+              surveys.length === 0
+                ? "Review surveys before confirming."
+                : [preview, remaining > 0 ? `+${remaining} more` : null]
+                    .filter(Boolean)
+                    .join(" • "),
+          },
+        };
+      }
+
       const title = (item.data?.title as string) || (item.originalItem?.title as string) || "Survey";
       item = {
         ...item,
@@ -370,103 +587,178 @@ const formatShoppingSectionDisplay = (item: PendingItem): PendingItem => {
 };
 
 const expandBulkEditItems = (items: PendingItem[]): PendingItem[] => {
-  if (items.length !== 1) {
-    return items;
-  }
+  // Process ALL items and expand bulk operations
+  return items.flatMap<PendingItem>((item) => {
+    // Format shopping sections with proper display
+    if (item.type === 'shoppingSection') {
+      return formatShoppingSectionDisplay(item);
+    }
 
-  const item = items[0];
-  if (item.type !== 'task' || item.operation !== 'bulk_edit') {
-    return items;
-  }
+    // Handle bulk_create operations - expand into individual items
+    if (item.operation === 'bulk_create') {
+      const tasks = Array.isArray(item.data?.tasks) ? (item.data.tasks as TaskInput[]) : [];
+      const notes = Array.isArray(item.data?.notes) ? (item.data.notes as NoteInput[]) : [];
+      const shoppingItems = Array.isArray(item.data?.items) ? (item.data.items as ShoppingItemInput[]) : [];
+      const surveys = Array.isArray(item.data?.surveys) ? (item.data.surveys as Array<Record<string, unknown>>) : [];
 
-  const taskDetails = Array.isArray(item.data?.taskDetails)
-    ? (item.data!.taskDetails as Array<{
-        taskId: string;
-        original?: Record<string, unknown>;
-        updates: Record<string, unknown>;
-        changeSummary?: string;
-      }>)
-    : [];
+      if (tasks.length > 0) {
+        return tasks.map((task) => ({
+          type: 'task' as const,
+          operation: 'create' as const,
+          data: task,
+          display: {
+            title: task.title || 'Untitled Task',
+            description: task.description || 'New task',
+          },
+          functionCall: item.functionCall,
+          responseId: item.responseId,
+        } satisfies PendingItem));
+      }
 
-  if (taskDetails.length > 0) {
-    return taskDetails.map((detail) => {
-      const taskId = detail.taskId;
-      const original = detail.original || {};
-      const updates = detail.updates || {};
-      const taskTitle =
-        (original?.title as string) ||
-        (item.data?.title as string) ||
-        (item.originalItem?.title as string) ||
-        "Task";
-      const description =
-        detail.changeSummary ||
-        Object.entries(updates)
-          .map(([key, value]) => `${key} → ${String(value)}`)
-          .join(" • ") ||
-        "Review task changes before confirming.";
+      if (notes.length > 0) {
+        return notes.map((note) => ({
+          type: 'note' as const,
+          operation: 'create' as const,
+          data: note,
+          display: {
+            title: note.title || 'Untitled Note',
+            description: note.content ? note.content.substring(0, 100) + (note.content.length > 100 ? '...' : '') : 'New note',
+          },
+          functionCall: item.functionCall,
+          responseId: item.responseId,
+        } satisfies PendingItem));
+      }
 
-      return {
-        type: 'task' as const,
-        operation: 'edit' as const,
-        data: {
-          ...original,
-          ...updates,
-          taskId,
-        },
-        updates,
-        originalItem: original,
-        selection: {
-          applyToAll: false,
-          taskIds: [taskId],
-        },
-        display: {
-          title: `Update task: ${taskTitle}`,
-          description,
-        },
-        functionCall: item.functionCall,
-        responseId: item.responseId,
-      } satisfies PendingItem;
-    });
-  }
+      if (shoppingItems.length > 0) {
+        return shoppingItems.map((shoppingItem) => ({
+          type: 'shopping' as const,
+          operation: 'create' as const,
+          data: shoppingItem,
+          display: {
+            title: shoppingItem.name || 'Untitled Item',
+            description: [
+              shoppingItem.notes,
+              shoppingItem.sectionName && `Section: ${shoppingItem.sectionName}`,
+              shoppingItem.category && `Category: ${shoppingItem.category}`,
+              shoppingItem.quantity && shoppingItem.quantity > 1 && `Qty: ${shoppingItem.quantity}`,
+            ].filter(Boolean).join(' • ') || 'New shopping item',
+          },
+          functionCall: item.functionCall,
+          responseId: item.responseId,
+        } satisfies PendingItem));
+      }
 
-  const titleChanges = item.titleChanges || (Array.isArray(item.data.titleChanges)
-    ? (item.data.titleChanges as PendingItem['titleChanges'])
-    : []);
+      if (surveys.length > 0) {
+        return surveys.map((survey) => ({
+          type: 'survey' as const,
+          operation: 'create' as const,
+          data: survey,
+          display: {
+            title: (survey.title as string) || 'Untitled Survey',
+            description: (survey.description as string) || 'New survey',
+          },
+          functionCall: item.functionCall,
+          responseId: item.responseId,
+        } satisfies PendingItem));
+      }
 
-  if (!titleChanges || titleChanges.length === 0) {
-    return items;
-  }
+      // If bulk_create but no recognized array, return as-is
+      return item;
+    }
 
-  const baseSelection = item.selection || item.data || {};
-  const baseUpdates = item.updates || (item.data?.updates as Record<string, unknown>) || {};
+    // Handle bulk_edit operations for tasks
+    if (item.type === 'task' && item.operation === 'bulk_edit') {
+      const taskDetails = Array.isArray(item.data?.taskDetails)
+        ? (item.data!.taskDetails as Array<{
+            taskId: string;
+            original?: Record<string, unknown>;
+            updates: Record<string, unknown>;
+            changeSummary?: string;
+          }>)
+        : [];
 
-  return titleChanges.map(change => {
-    const taskIdList = change.taskId ? [change.taskId] : Array.isArray(baseSelection.taskIds) ? (baseSelection.taskIds as string[]) : [];
-    return {
-      type: 'task' as const,
-      operation: 'bulk_edit' as const,
-      data: {
-        ...item.data,
-        title: change.newTitle,
-        previousTitle: change.originalTitle || change.currentTitle,
-        taskId: change.taskId,
-        titleChanges: [change],
-        taskIds: taskIdList,
-      },
-      updates: {
-        ...baseUpdates,
-        title: change.newTitle,
-      },
-      originalItem: {
-        title: change.originalTitle || change.currentTitle,
-      },
-      selection: {
-        applyToAll: false,
-        taskIds: taskIdList,
-        reason: (baseSelection as { reason?: string }).reason,
-      },
-      titleChanges: [change],
-    } satisfies PendingItem;
+      if (taskDetails.length > 0) {
+        return taskDetails.map((detail) => {
+          const taskId = detail.taskId;
+          const original = detail.original || {};
+          const updates = detail.updates || {};
+          const taskTitle =
+            (original?.title as string) ||
+            (item.data?.title as string) ||
+            (item.originalItem?.title as string) ||
+            "Task";
+          const description =
+            detail.changeSummary ||
+            Object.entries(updates)
+              .map(([key, value]) => `${key} → ${String(value)}`)
+              .join(" • ") ||
+            "Review task changes before confirming.";
+
+          return {
+            type: 'task' as const,
+            operation: 'edit' as const,
+            data: {
+              ...original,
+              ...updates,
+              taskId,
+            },
+            updates,
+            originalItem: original,
+            selection: {
+              applyToAll: false,
+              taskIds: [taskId],
+            },
+            display: {
+              title: `Update task: ${taskTitle}`,
+              description,
+            },
+            functionCall: item.functionCall,
+            responseId: item.responseId,
+          } satisfies PendingItem;
+        });
+      }
+
+      const titleChanges = item.titleChanges || (Array.isArray(item.data.titleChanges)
+        ? (item.data.titleChanges as PendingItem['titleChanges'])
+        : []);
+
+      if (titleChanges && titleChanges.length > 0) {
+        const baseSelection = item.selection || item.data || {};
+        const baseUpdates = item.updates || (item.data?.updates as Record<string, unknown>) || {};
+
+        return titleChanges.map(change => {
+          const taskIdList = change.taskId ? [change.taskId] : Array.isArray(baseSelection.taskIds) ? (baseSelection.taskIds as string[]) : [];
+          return {
+            type: 'task' as const,
+            operation: 'bulk_edit' as const,
+            data: {
+              ...item.data,
+              title: change.newTitle,
+              previousTitle: change.originalTitle || change.currentTitle,
+              taskId: change.taskId,
+              titleChanges: [change],
+              taskIds: taskIdList,
+            },
+            updates: {
+              ...baseUpdates,
+              title: change.newTitle,
+            },
+            originalItem: {
+              title: change.originalTitle || change.currentTitle,
+            },
+            selection: {
+              applyToAll: false,
+              taskIds: taskIdList,
+              reason: (baseSelection as { reason?: string }).reason,
+            },
+            titleChanges: [change],
+          } satisfies PendingItem;
+        });
+      }
+    }
+
+    // Return non-bulk items as-is
+    return item;
   });
 };
 
@@ -492,17 +784,7 @@ const extractBulkUpdates = (item: PendingItem) => {
 const AIAssistantSmart = () => {
   const { user } = useUser();
   const { project, team } = useProject();
-  const greetingName =
-    user?.firstName ||
-    user?.fullName?.split(" ")[0] ||
-    project?.name ||
-    "there";
-  
-  // Check if AI is enabled for this project
-  const aiSettings = useQuery(
-    api.ai.settings.getAISettings,
-    project ? { projectId: project._id } : "skip"
-  );
+
   const [message, setMessage] = useState("");
   const [chatHistory, setChatHistory] = useState<ChatHistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -525,7 +807,6 @@ const AIAssistantSmart = () => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const streamUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userThreads = useQuery(
     api.ai.threads.listThreadsForUser,
     project && user?.id
@@ -538,6 +819,106 @@ const AIAssistantSmart = () => {
       ? { threadId, projectId: project._id, userClerkId: user.id }
       : "skip"
   );
+
+  // Subscribe to saved messages from our custom aiMessages table
+  const savedMessages = useQuery(
+    api.ai.threads.listThreadMessages,
+    threadId && project && user?.id ? { threadId, projectId: project._id, userClerkId: user.id } : "skip"
+  );
+
+  // Load saved messages into chat history when they change
+  useEffect(() => {
+    if (!savedMessages || savedMessages.length === 0) return;
+
+    const historyFromSaved: ChatHistoryEntry[] = savedMessages.map((msg) => ({
+      role: msg.role,
+      content: msg.content,
+      mode: msg.metadata?.mode as 'full' | 'recent' | undefined,
+      messageIndex: msg.messageIndex,
+      tokenUsage: msg.tokenUsage,
+    }));
+
+    setChatHistory((prev) => {
+      // If server has more messages or different content, update
+      const hasMoreMessages = historyFromSaved.length > prev.length;
+      if (hasMoreMessages) {
+        return historyFromSaved;
+      }
+
+      // Check if last message changed
+      const lastSaved = historyFromSaved[historyFromSaved.length - 1];
+      const lastLocal = prev[prev.length - 1];
+      if (lastSaved && lastLocal && lastSaved.content !== lastLocal.content) {
+        return historyFromSaved;
+      }
+
+      return prev;
+    });
+  }, [savedMessages]);
+
+  // Fetch pending items for confirmation
+  const pendingFunctionCalls = useQuery(
+    api.ai.threads.listPendingItems,
+    threadId ? { threadId } : "skip"
+  );
+
+  useEffect(() => {
+    if (pendingFunctionCalls && pendingFunctionCalls.length > 0) {
+      const pendingItemsFromDB = pendingFunctionCalls.map<PendingItem | null>((call) => {
+        try {
+          const parsed = JSON.parse(call.arguments);
+          const parsedTypeValue = typeof parsed?.type === "string" ? parsed.type : undefined;
+          const parsedType = isPendingItemType(parsedTypeValue) ? parsedTypeValue : undefined;
+          const functionCallType = isPendingItemType(call.functionName) ? call.functionName : undefined;
+          // Determine structure based on how it was saved
+          // If it was a tool call, arguments is the tool input
+          return {
+            type: parsedType ?? functionCallType ?? "task",
+            operation: parsed.operation,
+            data: parsed.data || parsed,
+            updates: parsed.updates,
+            originalItem: parsed.originalItem,
+            selection: parsed.selection,
+            titleChanges: parsed.titleChanges,
+            functionCall: {
+              callId: call.callId,
+              functionName: call.functionName,
+              arguments: call.arguments,
+            },
+            responseId: call.responseId,
+          };
+        } catch (e) {
+          console.error("Failed to parse pending item:", e);
+          return null;
+        }
+      }).filter((i): i is PendingItem => i !== null);
+
+      if (pendingItemsFromDB.length > 0) {
+        const expanded = expandBulkEditItems(normalizePendingItems(pendingItemsFromDB));
+        setPendingItems(expanded);
+        setCurrentItemIndex(0);
+
+        const firstItem = expanded[0];
+        const shouldShowGrid = expanded.length > 1 || firstItem.operation === "bulk_edit" || firstItem.operation === "bulk_create";
+
+        if (shouldShowGrid) {
+          setShowConfirmationGrid(true);
+          setIsConfirmationDialogOpen(false);
+        } else {
+          setShowConfirmationGrid(false);
+          // Only open dialog if not already open to avoid flickering
+          setIsConfirmationDialogOpen(true);
+        }
+      }
+    } else if (pendingFunctionCalls && pendingFunctionCalls.length === 0 && pendingItems.length > 0) {
+      // If query returns empty but we have items, it means they were confirmed or we switched threads
+      // Clear local items
+      setPendingItems([]);
+      setShowConfirmationGrid(false);
+      setIsConfirmationDialogOpen(false);
+    }
+  }, [pendingFunctionCalls, pendingItems.length]);
+
   const quickPrompts = [
     {
       label: "Plan",
@@ -588,11 +969,6 @@ const AIAssistantSmart = () => {
   };
 
   const handleStopResponse = useCallback(() => {
-    // Clear any pending stream update timeout
-    if (streamUpdateTimeoutRef.current) {
-      clearTimeout(streamUpdateTimeoutRef.current);
-      streamUpdateTimeoutRef.current = null;
-    }
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       setIsLoading(false);
@@ -618,94 +994,9 @@ const AIAssistantSmart = () => {
     }
   }, [initialThreadSelectionDone]);
 
+  // Calculate session token totals from persisted messages
   useEffect(() => {
-    if (!persistedMessages) {
-      return;
-    }
-
-    setChatHistory((prev) => {
-      const maxPrevIndex = prev.reduce(
-        (max, entry) => (typeof entry.messageIndex === "number" ? Math.max(max, entry.messageIndex) : max),
-        -1
-      );
-      const maxServerIndex = persistedMessages.reduce(
-        (max, entry) => Math.max(max, entry.messageIndex),
-        -1
-      );
-
-      if (maxServerIndex < maxPrevIndex) {
-        return prev;
-      }
-
-      const formatted: ChatHistoryEntry[] = persistedMessages.map((entry) => {
-        const metadata = entry.metadata;
-        const fileInfo =
-          metadata?.fileId
-            ? {
-                id: metadata.fileId,
-                name: metadata.fileName ?? "Attachment",
-                type: metadata.fileType ?? "application/octet-stream",
-                size: metadata.fileSize ?? 0,
-              }
-            : undefined;
-
-        return {
-          role: entry.role,
-          content: entry.content,
-          messageIndex: entry.messageIndex,
-          mode: normalizeModeForDisplay(metadata?.mode),
-          tokenUsage: entry.tokenUsage
-            ? {
-                totalTokens: entry.tokenUsage.totalTokens,
-                estimatedCostUSD: entry.tokenUsage.estimatedCostUSD,
-              }
-            : undefined,
-          fileInfo,
-        };
-      });
-
-      const sanitized = formatted.filter(
-        (entry) => entry.role !== "assistant" || (entry.content?.trim?.().length ?? 0) > 0
-      );
-
-      const isSame =
-        prev.length === sanitized.length &&
-        prev.every((current, index) => {
-          const next = sanitized[index];
-          if (!next) {
-            return false;
-          }
-
-          const currentFileId = current.fileInfo?.id ?? null;
-          const nextFileId = next.fileInfo?.id ?? null;
-          const currentTokens = current.tokenUsage?.totalTokens ?? null;
-          const nextTokens = next.tokenUsage?.totalTokens ?? null;
-          const currentCost = current.tokenUsage?.estimatedCostUSD ?? null;
-          const nextCost = next.tokenUsage?.estimatedCostUSD ?? null;
-
-          return (
-            current.role === next.role &&
-            current.content === next.content &&
-            current.messageIndex === next.messageIndex &&
-            current.mode === next.mode &&
-            currentFileId === nextFileId &&
-            currentTokens === nextTokens &&
-            currentCost === nextCost
-          );
-        });
-
-      if (isSame) {
-        return prev;
-      }
-
-      return sanitized;
-    });
-  }, [persistedMessages]);
-
-  useEffect(() => {
-    if (!persistedMessages) {
-      return;
-    }
+    if (!persistedMessages) return;
 
     const totals = persistedMessages.reduce(
       (acc, entry) => {
@@ -720,16 +1011,6 @@ const AIAssistantSmart = () => {
 
     setSessionTokens(totals);
   }, [persistedMessages]);
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (streamUpdateTimeoutRef.current) {
-        clearTimeout(streamUpdateTimeoutRef.current);
-        streamUpdateTimeoutRef.current = null;
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (chatHistory.length === 0) {
@@ -749,80 +1030,6 @@ const AIAssistantSmart = () => {
       }
     }
   }, [chatHistory, currentMode]);
-  const userInitial =
-    (
-      user?.firstName?.[0] ??
-      user?.fullName?.[0] ??
-      user?.emailAddresses?.[0]?.emailAddress?.[0] ??
-      project?.name?.[0] ??
-      "U"
-    )
-      ?.toUpperCase?.() ?? "U";
-  
-  const TypingIndicator = () => (
-    <div className="flex items-center justify-start">
-      <span className="sr-only">Assistant is typing</span>
-      <div className="relative flex h-4 w-4 items-center justify-center">
-        <span className="absolute h-4 w-4 animate-ping rounded-full bg-primary/30" />
-        <span className="relative h-2.5 w-2.5 rounded-full bg-primary shadow-[0_0_12px] shadow-primary/50" />
-      </div>
-    </div>
-  );
-  
-  // Helper function to get file thumbnail/preview
-  const getFileIcon = (fileType: string) => {
-    if (fileType.startsWith('image/')) return Image;
-    if (fileType === 'application/pdf') return FileText;
-    return File;
-  };
-
-  // Helper function to create thumbnail component
-  const FileThumbnail = ({ fileInfo }: { fileInfo: { name: string; size: number; type: string; id: string; } }) => {
-    const fileWithURL = useQuery(api.files.getFileWithURL, { fileId: fileInfo.id as Id<"files"> });
-    const FileIcon = getFileIcon(fileInfo.type);
-
-    return (
-      <div className="mt-2 rounded-lg border border-border bg-card p-2">
-        <div className="flex items-start gap-2">
-          {fileInfo.type.startsWith('image/') && fileWithURL?.url ? (
-            <div className="flex-shrink-0">
-              <img
-                src={fileWithURL.url}
-                alt={fileInfo.name}
-                className="h-14 w-14 rounded-md border border-border/60 object-cover"
-                onError={(e) => {
-                  // Fallback to icon on error
-                  e.currentTarget.style.display = 'none';
-                  const nextElement = e.currentTarget.nextElementSibling as HTMLElement;
-                  if (nextElement) {
-                    nextElement.style.display = 'flex';
-                  }
-                }}
-              />
-              <div className="hidden h-14 w-14 items-center justify-center rounded-md border border-border bg-muted">
-                <FileIcon className="h-5 w-5 text-muted-foreground" />
-              </div>
-            </div>
-          ) : (
-            <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-md border border-border bg-muted">
-              <FileIcon className="h-5 w-5 text-muted-foreground" />
-            </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <p className="truncate text-xs font-medium text-foreground" title={fileInfo.name}>
-              {fileInfo.name}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {(fileInfo.size / 1024 / 1024).toFixed(1)} MB
-            </p>
-            <p className="text-xs capitalize text-muted-foreground/80">
-              {fileInfo.type.split('/')[1] || fileInfo.type}
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -861,6 +1068,7 @@ const AIAssistantSmart = () => {
   const deleteShoppingSection = useMutation(api.shopping.deleteShoppingListSection);
   const deleteSurvey = useMutation(api.surveys.deleteSurvey);
   const deleteContact = useMutation(api.contacts.deleteContact);
+  const clearThread = useMutation(api.ai.threads.clearThreadForUser);
 
   // Query for shopping sections
   const shoppingSections = useQuery(
@@ -875,10 +1083,6 @@ const AIAssistantSmart = () => {
 
   const handleSendMessage = async () => {
     if (!project || (!message.trim() && !selectedFile) || !user?.id) return;
-    if (!aiEnabled) {
-      toast.info("Enable the AI assistant to start chatting.");
-      return;
-    }
 
     const userMessage = message.trim();
     let currentThreadId = threadId;
@@ -957,18 +1161,18 @@ const AIAssistantSmart = () => {
         setMessage("");
       }
 
+      // Add placeholder for assistant response
       setChatHistory((prev) => {
         const nextIndex = computeNextMessageIndex(prev);
-        return [...prev, { role: "assistant", content: "", mode: currentMode ?? undefined, messageIndex: nextIndex }];
+        return [...prev, { role: "assistant", content: "Thinking...", mode: currentMode ?? undefined, messageIndex: nextIndex }];
       });
 
       abortControllerRef.current = new AbortController();
 
+      // Simple request/response - no streaming
       const response = await fetch("/api/ai/stream", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userMessage,
           projectId: project._id,
@@ -979,254 +1183,41 @@ const AIAssistantSmart = () => {
         signal: abortControllerRef.current!.signal,
       });
 
-      if (!response.body) {
-        throw new Error("Streaming response body is missing");
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Failed to get response");
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let pendingItemsFromStream: PendingItem[] = [];
-      let pendingItemsMode: "full" | "recent" | null = null;
-      let runningResponse = "";
-      let latestTokenUsage: { totalTokens: number; estimatedCostUSD: number } | null = null;
-      let partialLine = "";
-      
-      // Batch updates to prevent "Maximum update depth exceeded" error
-      // Use a ref-based throttling mechanism to avoid infinite update loops
-      const scheduleUpdate = () => {
-        // Clear any existing timeout
-        if (streamUpdateTimeoutRef.current) {
-          clearTimeout(streamUpdateTimeoutRef.current);
-        }
-        
-        // Schedule a new update with a small delay (throttling)
-        streamUpdateTimeoutRef.current = setTimeout(() => {
-          setChatHistory((prev) => {
-            // Check if there's actually a last entry to update
-            if (prev.length === 0) {
-              return prev;
-            }
-            
-            const lastIndex = prev.length - 1;
-            const lastEntry = prev[lastIndex];
-            
-            // Only update if content actually changed
-            if (lastEntry.content === runningResponse) {
-              return prev;
-            }
-            
-            const updated = [...prev];
-            updated[lastIndex] = {
-              ...lastEntry,
-              content: runningResponse,
-            };
-            return updated;
-          });
-          streamUpdateTimeoutRef.current = null;
-        }, 50); // Throttle to ~20 updates per second max
-      };
-
-      const handleStreamEvent = (event: { type?: string; [key: string]: unknown }) => {
-        switch (event.type) {
-          case "token": {
-            if (typeof event.delta === "string") {
-              runningResponse += event.delta;
-              scheduleUpdate();
-            }
-            break;
-          }
-          case "metadata": {
-            if (typeof event.mode === "string") {
-              const normalizedMode = normalizeModeForDisplay(event.mode);
-              pendingItemsMode = normalizedMode ?? null;
-              setCurrentMode(normalizedMode ?? null);
-            } else {
-              pendingItemsMode = null;
-              setCurrentMode(null);
-            }
-            const tokenUsageData =
-              event.tokenUsage && typeof event.tokenUsage === "object"
-                ? event.tokenUsage as { totalTokens?: number; estimatedCostUSD?: number }
-                : undefined;
-            if (
-              tokenUsageData &&
-              typeof tokenUsageData.totalTokens === "number" &&
-              typeof tokenUsageData.estimatedCostUSD === "number"
-            ) {
-              const { totalTokens, estimatedCostUSD } = tokenUsageData;
-              latestTokenUsage = {
-                totalTokens,
-                estimatedCostUSD,
-              };
-              setSessionTokens((prev) => ({
-                total: prev.total + totalTokens,
-                cost: prev.cost + estimatedCostUSD,
-              }));
-            }
-            if (typeof event.threadId === "string") {
-              setThreadId(event.threadId);
-            }
-            break;
-          }
-          case "pendingItems": {
-            if (Array.isArray(event.items)) {
-              pendingItemsFromStream = expandBulkEditItems(
-                normalizePendingItems(event.items as PendingItem[])
-              );
-            }
-            break;
-          }
-          case "error": {
-            const message = typeof event.message === "string" ? event.message : "Streaming error";
-            throw new Error(message);
-          }
-          default: {
-            break;
-          }
-        }
-      };
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        const combined = partialLine + chunk;
-        const fragments = combined.split("\n");
-        partialLine = fragments.pop() ?? "";
-        const lines = fragments.filter((line) => line.trim().length > 0);
-
-        for (const line of lines) {
-          const event = JSON.parse(line);
-          handleStreamEvent(event);
-        }
+      // Update thread ID if needed
+      if (result.threadId && result.threadId !== currentThreadId) {
+        setThreadId(result.threadId);
       }
 
-      if (partialLine.trim().length > 0) {
-        try {
-          const event = JSON.parse(partialLine);
-          handleStreamEvent(event);
-        } catch (error) {
-          console.error("Failed to parse final stream chunk", error);
-        }
-      }
-
-      // Clear any pending stream update timeout before final update
-      if (streamUpdateTimeoutRef.current) {
-        clearTimeout(streamUpdateTimeoutRef.current);
-        streamUpdateTimeoutRef.current = null;
-      }
-
-      setCurrentMode(pendingItemsMode);
-
+      // Update chat history with the response
       setChatHistory((prev) => {
         const updated = [...prev];
-        updated[updated.length - 1] = {
-          ...updated[updated.length - 1],
-          content: runningResponse,
-          mode: pendingItemsMode ?? updated[updated.length - 1].mode,
-          tokenUsage: latestTokenUsage ?? updated[updated.length - 1].tokenUsage,
-        };
+        const lastIndex = updated.length - 1;
+        if (updated[lastIndex]?.role === "assistant") {
+          updated[lastIndex] = {
+            ...updated[lastIndex],
+            content: result.response || "Done.",
+            tokenUsage: result.tokenUsage,
+          };
+        }
         return updated;
       });
 
-      if (pendingItemsFromStream.length > 0) {
-        // Expand bulk_create into individual items for grid display
-        const expandedItems: PendingItem[] = [];
-        for (const item of pendingItemsFromStream) {
-          if (item.operation === 'bulk_create') {
-            // Extract individual items from bulk operation
-            if (item.type === 'task' && item.data.tasks) {
-              const tasks = item.data.tasks as Array<Record<string, unknown>>;
-              tasks.forEach((taskData) => {
-                expandedItems.push({
-                  type: 'task',
-                  operation: 'create',
-                  data: taskData,
-                  functionCall: item.functionCall,
-                  responseId: item.responseId,
-                });
-              });
-            } else if (item.type === 'shopping' && item.data.items) {
-              const items = item.data.items as Array<Record<string, unknown>>;
-              items.forEach((shoppingData) => {
-                expandedItems.push({
-                  type: 'shopping',
-                  operation: 'create',
-                  data: shoppingData,
-                  functionCall: item.functionCall,
-                  responseId: item.responseId,
-                });
-              });
-            } else if (item.type === 'note' && item.data.notes) {
-              const notes = item.data.notes as Array<Record<string, unknown>>;
-              notes.forEach((noteData) => {
-                expandedItems.push({
-                  type: 'note',
-                  operation: 'create',
-                  data: noteData,
-                  functionCall: item.functionCall,
-                  responseId: item.responseId,
-                });
-              });
-            } else if (item.type === 'survey' && item.data.surveys) {
-              const surveys = item.data.surveys as Array<Record<string, unknown>>;
-              surveys.forEach((surveyData) => {
-                expandedItems.push({
-                  type: 'survey',
-                  operation: 'create',
-                  data: surveyData,
-                  functionCall: item.functionCall,
-                  responseId: item.responseId,
-                });
-              });
-            } else {
-              // If we can't expand it, keep it as is
-              expandedItems.push(item);
-            }
-          } else {
-            // Not a bulk_create, keep as is
-            expandedItems.push(item);
-          }
-        }
-
-        setPendingItems(expandedItems);
-        setCurrentItemIndex(0);
-
-        const firstItem = expandedItems[0];
-        const initialOperation = firstItem?.operation;
-        const shouldShowGrid =
-          expandedItems.length > 1 ||
-          firstItem.operation === "bulk_edit";
-
-        if (shouldShowGrid) {
-          setShowConfirmationGrid(true);
-          setIsConfirmationDialogOpen(false);
-        } else {
-          setShowConfirmationGrid(false);
-          const shouldExpandToDialog = initialOperation !== "bulk_edit";
-          setIsConfirmationDialogOpen(shouldExpandToDialog);
-
-          // For all other single item operations, show dialog
-          setIsConfirmationDialogOpen(shouldExpandToDialog);
-        }
-      }
     } catch (error) {
-      // Clear any pending stream update timeout on error
-      if (streamUpdateTimeoutRef.current) {
-        clearTimeout(streamUpdateTimeoutRef.current);
-        streamUpdateTimeoutRef.current = null;
-      }
-      
       if (error instanceof DOMException && error.name === "AbortError") {
         setChatHistory((prev) => {
           if (prev.length === 0) return prev;
           const updated = [...prev];
           const lastIndex = updated.length - 1;
-          const last = updated[lastIndex];
-          if (last?.role === "assistant") {
+          if (updated[lastIndex]?.role === "assistant") {
             updated[lastIndex] = {
-              ...last,
-              content: last.content || "Response stopped.",
+              ...updated[lastIndex],
+              content: "Response stopped.",
             };
           }
           return updated;
@@ -1234,11 +1225,17 @@ const AIAssistantSmart = () => {
       } else {
         console.error("Error sending message:", error);
         const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
-        setChatHistory((prev) => prev.slice(0, -1));
-        setChatHistory((prev) => [
-          ...prev,
-          { role: "assistant", content: `Sorry, I encountered an error: ${errorMessage}` },
-        ]);
+        setChatHistory((prev) => {
+          const updated = [...prev];
+          const lastIndex = updated.length - 1;
+          if (updated[lastIndex]?.role === "assistant") {
+            updated[lastIndex] = {
+              ...updated[lastIndex],
+              content: `Sorry, I encountered an error: ${errorMessage}`,
+            };
+          }
+          return updated;
+        });
         toast.error("Failed to send message");
       }
     } finally {
@@ -1312,6 +1309,7 @@ const AIAssistantSmart = () => {
         // Handle edit operations
         switch (currentItem.type) {
           case 'task':
+          case 'create_task':
             // Clean updates - remove technical fields that are only for UI display
             const cleanUpdates = { ...(currentItem.updates as Record<string, unknown>) };
             delete (cleanUpdates as Record<string, unknown>).assignedToName;
@@ -1322,13 +1320,15 @@ const AIAssistantSmart = () => {
             });
             break;
           case 'note':
+          case 'create_note':
             result = await editConfirmedNote({
               noteId: currentItem.originalItem?._id as Id<"notes">,
               updates: currentItem.updates as Record<string, unknown>
             });
             break;
-          case 'shopping': {
-            const updates = { ...(currentItem.updates as Record<string, unknown>) };
+      case 'shopping':
+      case 'create_shopping_item': {
+        const updates = { ...(currentItem.updates as Record<string, unknown>) };
             const fallbackCategory =
               updates["category"] ??
               (currentItem.data ? (currentItem.data as Record<string, unknown>)["category"] : undefined);
@@ -1343,9 +1343,12 @@ const AIAssistantSmart = () => {
 
             delete updates["sectionName"];
 
+            // Drop any AI-added fields not supported by validator
+            const sanitizedUpdates = sanitizeShoppingItemData(updates);
+
             result = await editConfirmedShoppingItem({
               itemId: currentItem.originalItem?._id as Id<"shoppingListItems">,
-              updates,
+              updates: sanitizedUpdates,
             });
             break;
           }
@@ -1357,13 +1360,14 @@ const AIAssistantSmart = () => {
             result = { success: true, message: "Shopping section updated successfully" };
             break;
           case 'survey':
+          case 'create_survey':
             result = await editConfirmedSurvey({
               surveyId: currentItem.originalItem?._id as Id<"surveys">,
               updates: currentItem.updates as Record<string, unknown>
             });
             break;
         default:
-          throw new Error(`Nieznany typ zawartości do edycji: ${currentItem.type}`);
+          throw new Error(`Unknown content type for edit: ${currentItem.type}`);
         }
       } else if (currentItem.operation === 'bulk_edit' || currentItem.operation === 'bulk_create') {
         // Use the shared confirmSingleItem function for bulk operations
@@ -1372,6 +1376,7 @@ const AIAssistantSmart = () => {
         // Handle create operations
         switch (currentItem.type) {
           case 'task':
+          case 'create_task':
             // Clean data - remove technical fields that are only for UI display
             const cleanTaskData = { ...(currentItem.data as Record<string, unknown>) };
             delete (cleanTaskData as Record<string, unknown>).assignedToName;
@@ -1382,12 +1387,14 @@ const AIAssistantSmart = () => {
             });
             break;
           case 'note':
+          case 'create_note':
             result = await createConfirmedNote({
               projectId: project._id,
               noteData: currentItem.data as { title: string; content: string; }
             });
             break;
-          case 'shopping': {
+          case 'shopping':
+          case 'create_shopping_item': {
             const rawShoppingData = currentItem.data as ShoppingItemInput;
             const { sectionName, ...shoppingItemData } = rawShoppingData;
             const targetSectionName = resolveSectionName(sectionName, rawShoppingData.category);
@@ -1399,9 +1406,11 @@ const AIAssistantSmart = () => {
               }
             }
 
+            const sanitizedItemData = sanitizeShoppingItemData(shoppingItemData);
+
             result = await createConfirmedShoppingItem({
               projectId: project._id,
-              itemData: shoppingItemData as {
+              itemData: sanitizedItemData as {
                 name: string;
                 quantity: number;
                 notes?: string;
@@ -1423,12 +1432,14 @@ const AIAssistantSmart = () => {
             result = { success: true, message: "Shopping section created successfully" };
             break;
           case 'survey':
+          case 'create_survey':
             result = await createConfirmedSurvey({
               projectId: project._id,
               surveyData: extractSurveyData(currentItem.data)
             });
             break;
-          case 'contact': {
+          case 'contact':
+          case 'create_contact': {
             const teamSlug = resolveTeamSlug();
             if (!teamSlug) {
               throw new Error("Missing team slug for contact creation");
@@ -1440,7 +1451,7 @@ const AIAssistantSmart = () => {
             break;
           }
           default:
-            throw new Error(`Nieznany typ zawartości: ${currentItem.type}`);
+            throw new Error(`Unknown content type: ${currentItem.type}`);
         }
       }
 
@@ -1462,21 +1473,11 @@ const AIAssistantSmart = () => {
           }
         }
 
-        // Add success message to chat with ID for reference
-        let successMessage = `✅ ${result.message}`;
-
-        // Include ID in the message so AI can reference it later
-        if ('taskId' in result && result.taskId) {
-          successMessage += ` (Task ID: ${result.taskId})`;
-        } else if ('noteId' in result && result.noteId) {
-          successMessage += ` (Note ID: ${result.noteId})`;
-        } else if ('itemId' in result && result.itemId) {
-          successMessage += ` (Shopping Item ID: ${result.itemId})`;
-        } else if ('surveyId' in result && result.surveyId) {
-          successMessage += ` (Survey ID: ${result.surveyId})`;
-        } else if ('contactId' in result && result.contactId) {
-          successMessage += ` (Contact ID: ${result.contactId})`;
-        }
+        // Add success message to chat with item name only (no ID)
+        const itemTitle = currentItem.data.title || currentItem.data.name || currentItem.data.content;
+        const successMessage = itemTitle
+          ? `✅ ${result.message}: ${itemTitle}`
+          : `✅ ${result.message}`;
 
         setChatHistory(prev => [...prev, {
           role: 'assistant',
@@ -1514,23 +1515,23 @@ const AIAssistantSmart = () => {
           const result = await confirmSingleItem(item);
           successCount++;
 
-          // Collect created item details with IDs
+          // Collect created item details (names only, no IDs)
           if (result.success) {
             if ('taskId' in result && result.taskId) {
               const title = (item.data as { title?: string }).title || 'Untitled';
-              createdItemsDetails.push(`Task "${title}" (ID: ${result.taskId})`);
+              createdItemsDetails.push(`Task "${title}"`);
             } else if ('noteId' in result && result.noteId) {
               const title = (item.data as { title?: string }).title || 'Untitled';
-              createdItemsDetails.push(`Note "${title}" (ID: ${result.noteId})`);
+              createdItemsDetails.push(`Note "${title}"`);
             } else if ('itemId' in result && result.itemId) {
               const name = (item.data as { name?: string }).name || 'Unnamed';
-              createdItemsDetails.push(`Shopping item "${name}" (ID: ${result.itemId})`);
+              createdItemsDetails.push(`Shopping item "${name}"`);
             } else if ('surveyId' in result && result.surveyId) {
               const title = (item.data as { title?: string }).title || 'Untitled';
-              createdItemsDetails.push(`Survey "${title}" (ID: ${result.surveyId})`);
+              createdItemsDetails.push(`Survey "${title}"`);
             } else if ('contactId' in result && result.contactId) {
               const name = (item.data as { name?: string }).name || 'Unnamed';
-              createdItemsDetails.push(`Contact "${name}" (ID: ${result.contactId})`);
+              createdItemsDetails.push(`Contact "${name}"`);
             }
           }
 
@@ -1794,6 +1795,7 @@ const AIAssistantSmart = () => {
     // Call appropriate function based on operation type
     if (item.operation === 'bulk_create') {
       switch (item.type) {
+        case 'create_multiple_tasks':
         case 'task': {
           const data = item.data as BulkTaskData;
           const tasks = Array.isArray(data.tasks) ? data.tasks : [];
@@ -1844,6 +1846,7 @@ const AIAssistantSmart = () => {
           };
           break;
         }
+        case 'create_multiple_notes':
         case 'note': {
           const data = item.data as BulkNoteData;
           const notes = Array.isArray(data.notes) ? data.notes : [];
@@ -1881,6 +1884,7 @@ const AIAssistantSmart = () => {
           };
           break;
         }
+        case 'create_multiple_shopping_items':
         case 'shopping': {
           const data = item.data as BulkShoppingData;
           const items = Array.isArray(data.items) ? data.items : [];
@@ -1892,21 +1896,43 @@ const AIAssistantSmart = () => {
           const createdIds: string[] = [];
           const errors: string[] = [];
 
+          // Pre-create all unique sections to avoid duplicates
+          const uniqueSectionNames = new Set<string>();
+          for (const shoppingData of items) {
+            const { sectionName } = shoppingData;
+            const targetSectionName = resolveSectionName(sectionName, shoppingData.category);
+            if (targetSectionName && !shoppingData.sectionId) {
+              uniqueSectionNames.add(targetSectionName);
+            }
+          }
+
+          // Create all sections upfront
+          const sectionNameToId = new Map<string, Id<"shoppingListSections">>();
+          for (const sectionName of uniqueSectionNames) {
+            const sectionId = await findOrCreateSection(sectionName);
+            if (sectionId) {
+              sectionNameToId.set(sectionName, sectionId);
+            }
+          }
+
+          // Now create items using pre-created section IDs
           for (const shoppingData of items) {
             try {
               const { sectionName, ...shoppingItemData } = shoppingData;
               const targetSectionName = resolveSectionName(sectionName, shoppingData.category);
 
               if (targetSectionName && !shoppingItemData.sectionId) {
-                const sectionId = await findOrCreateSection(targetSectionName);
+                const sectionId = sectionNameToId.get(targetSectionName);
                 if (sectionId) {
                   shoppingItemData.sectionId = sectionId;
                 }
               }
 
+              const sanitizedItemData = sanitizeShoppingItemData(shoppingItemData as Record<string, unknown>);
+
               const shoppingResult = await createConfirmedShoppingItem({
                 projectId: project._id,
-                itemData: shoppingItemData as {
+                itemData: sanitizedItemData as {
                   name: string;
                   quantity: number;
                   notes?: string;
@@ -1938,6 +1964,7 @@ const AIAssistantSmart = () => {
           };
           break;
         }
+        case 'create_contact':
         case 'contact': {
           const contacts = Array.isArray(
             (item.data as { contacts?: Array<Record<string, unknown>> }).contacts
@@ -1985,6 +2012,8 @@ const AIAssistantSmart = () => {
           };
           break;
         }
+        case 'create_multiple_surveys':
+        case 'create_survey':
         case 'survey': {
           const data = item.data as BulkSurveyData;
           const surveys = Array.isArray(data.surveys) ? data.surveys : [];
@@ -2089,9 +2118,11 @@ const AIAssistantSmart = () => {
 
           delete updates["sectionName"];
 
+          const sanitizedUpdates = sanitizeShoppingItemData(updates);
+
           result = await editConfirmedShoppingItem({
             itemId: item.originalItem?._id as Id<"shoppingListItems">,
-            updates,
+            updates: sanitizedUpdates,
           });
           break;
         }
@@ -2115,6 +2146,7 @@ const AIAssistantSmart = () => {
       // Handle create operations
       switch (item.type) {
       case 'task':
+      case 'create_task':
         if (item.operation === 'bulk_edit') {
           const selection = extractBulkSelection(item);
           const updates = extractBulkUpdates(item);
@@ -2210,12 +2242,16 @@ const AIAssistantSmart = () => {
           });
         }
         break;
+        case 'create_multiple_notes':
+        case 'create_note':
         case 'note':
           result = await createConfirmedNote({
             projectId: project._id,
             noteData: item.data as { title: string; content: string; }
           });
           break;
+        case 'create_multiple_shopping_items':
+        case 'create_shopping_item':
         case 'shopping': {
           const rawShoppingData = item.data as ShoppingItemInput;
           const { sectionName, ...shoppingItemData } = rawShoppingData;
@@ -2228,9 +2264,11 @@ const AIAssistantSmart = () => {
             }
           }
 
+          const sanitizedItemData = sanitizeShoppingItemData(shoppingItemData);
+
           result = await createConfirmedShoppingItem({
             projectId: project._id,
-            itemData: shoppingItemData as {
+            itemData: sanitizedItemData as {
               name: string;
               quantity: number;
               notes?: string;
@@ -2251,12 +2289,15 @@ const AIAssistantSmart = () => {
           });
           result = { success: true, message: "Shopping section created successfully" };
           break;
+        case 'create_multiple_surveys':
+        case 'create_survey':
         case 'survey':
           result = await createConfirmedSurvey({
             projectId: project._id,
             surveyData: extractSurveyData(item.data)
           });
           break;
+        case 'create_contact':
         case 'contact': {
           const teamSlug = resolveTeamSlug();
           if (!teamSlug) {
@@ -2315,7 +2356,7 @@ const AIAssistantSmart = () => {
     toast.info("Content creation cancelled");
   };
 
-  const handleContentEdit = (updatedItem: { type: 'task' | 'note' | 'shopping' | 'survey' | 'contact' | 'shoppingSection'; operation?: 'create' | 'edit' | 'delete' | 'bulk_edit' | 'bulk_create'; data: Record<string, unknown>; updates?: Record<string, unknown>; originalItem?: Record<string, unknown>; selection?: Record<string, unknown>; }) => {
+  const handleContentEdit = (updatedItem: PendingItem) => {
     // Update the current item in pendingItems array
     setPendingItems(prev => {
       const updated = [...prev];
@@ -2330,7 +2371,7 @@ const AIAssistantSmart = () => {
     setShowConfirmationGrid(true);
     toast.info("Item updated - returning to grid");
   } else {
-      toast.info("Element został zaktualizowany");
+      toast.info("Item updated");
     }
   };
 
@@ -2361,6 +2402,42 @@ const AIAssistantSmart = () => {
     toast.success("Chat cleared!");
   };
 
+  const handleClearChat = async () => {
+    handleStopResponse();
+
+    setIsLoading(true);
+
+    try {
+      if (project && user?.id && threadId) {
+        await clearThread({
+          threadId,
+          projectId: project._id,
+          userClerkId: user.id,
+        });
+      }
+
+      setChatHistory([]);
+      setPendingItems([]);
+      setCurrentItemIndex(0);
+      setShowConfirmationGrid(false);
+      setIsConfirmationDialogOpen(false);
+      setEditingItemIndex(null);
+      setSessionTokens({ total: 0, cost: 0 });
+      setCurrentMode(null);
+      setMessage("");
+      setSelectedFile(null);
+      setUploadedFileId(null);
+      setIsUploading(false);
+
+      toast.success("Chat history cleared");
+    } catch (error) {
+      console.error("Failed to clear chat", error);
+      toast.error("Could not clear chat history");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // ProjectProvider handles loading state, so project should always be available here
 
   const threadList = userThreads ?? [];
@@ -2372,423 +2449,464 @@ const AIAssistantSmart = () => {
   const mobileSelectValue = activeThreadExists ? (threadId as string) : "";
   const chatIsLoading = Boolean(threadId) && persistedMessages === undefined;
 
-  const aiEnabled = aiSettings?.isEnabled ?? true;
-  const isStartingFresh = !threadId && initialThreadSelectionDone;
-  const showEmptyState = !chatIsLoading && aiEnabled && chatHistory.length === 0;
-  const emptyStateTitle = !hasThreads
-    ? `Hi ${greetingName},`
-    : isStartingFresh
-    ? "Start a new renovation chat"
-    : "Select a renovation chat";
-  const emptyStateDescription = !hasThreads
-    ? "Bring your renovation plans, punch lists, and suppliers into one place."
-    : isStartingFresh
-    ? "Send the first update to kick off this renovation thread."
-    : "Browse your saved renovation chats or launch a fresh one for a new project area.";
+  const showEmptyState = !chatIsLoading && chatHistory.length === 0;
 
-  if (aiSettings === undefined) {
-    return (
-      <div className="flex items-center justify-center h-full bg-muted/30">
-        <div className="text-center space-y-4">
-          <div className="flex items-center justify-center gap-3 mb-6">
-            <Building className="h-8 w-8 text-black animate-pulse" />
-            <span className="text-2xl font-semibold text-foreground">VibePlanner</span>
-          </div>
-          <div className="flex items-center justify-center gap-2">
-            <div className="w-2 h-2 bg-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-            <div className="w-2 h-2 bg-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-            <div className="w-2 h-2 bg-foreground rounded-full animate-bounce"></div>
-          </div>
+  const renderInputArea = () => (
+    <motion.div 
+      initial={{ y: 100, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ delay: 0.3, type: "spring", stiffness: 100 }}
+      className={cn(
+        "relative rounded-[2rem] p-2",
+        "bg-background/80 backdrop-blur-xl border border-white/20 shadow-2xl dark:border-white/10",
+        "transition-all duration-300",
+        "focus-within:ring-1 focus-within:ring-white/20"
+      )}
+    >
+      <AnimatePresence>
+        {selectedFile && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10, height: 0 }}
+            animate={{ opacity: 1, y: -10, height: "auto" }}
+            exit={{ opacity: 0, y: 10, height: 0 }}
+            className="absolute bottom-full left-4 mb-2 flex items-center gap-2"
+          >
+             <div className="relative group">
+                <div className="flex items-center gap-2 bg-background/90 backdrop-blur p-2 rounded-xl border shadow-lg">
+                  <FileText className="h-8 w-8 text-primary" />
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium max-w-[120px] truncate">{selectedFile.name}</span>
+                    <span className="text-[10px] text-muted-foreground">{(selectedFile.size / 1024 / 1024).toFixed(1)} MB</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 rounded-full hover:bg-destructive/10 hover:text-destructive -mr-1"
+                    onClick={handleRemoveFile}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="flex items-end gap-3 pl-4 pr-3 py-3">
+        <input
+          ref={fileInputRef}
+          type="file"
+          onChange={handleFileSelect}
+          accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.xlsm,.txt,.json,.jsonl,.csv,.md,.py,.js,.ts,.html,.css,.xml,.rtf"
+          className="hidden"
+        />
+        
+        <div className="flex items-center gap-2 pb-1">
+          <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+              onClick={handleAttachmentClick}
+              disabled={isLoading || isUploading}
+              title="Attach file"
+            >
+              <Paperclip className="h-5 w-5" />
+            </Button>
         </div>
+
+        <div className="w-px h-8 bg-border/50 mb-1.5 hidden sm:block" />
+
+        <Textarea
+           ref={inputRef}
+           value={message}
+           onChange={(e) => setMessage(e.target.value)}
+           onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !isLoading && !isUploading) {
+                e.preventDefault();
+                handleSendMessage();
+              }
+            }}
+           placeholder="Ask anything about your project..."
+           rows={1}
+           disabled={isUploading}
+           className={cn(
+              "flex-1 resize-none bg-transparent border-0",
+              "text-base placeholder:text-muted-foreground/50",
+              "focus:outline-none focus-visible:ring-0",
+              "py-2.5 px-2",
+              "max-h-[200px] min-h-[44px]"
+           )}
+        />
+
+        <Button
+           onClick={isLoading && !isUploading ? handleStopResponse : handleSendMessage}
+           disabled={isUploading || (!message.trim() && !selectedFile && !isLoading)}
+           size="icon"
+           className={cn(
+             "h-10 w-10 rounded-full",
+             isLoading && !isUploading ? "bg-destructive text-destructive-foreground" : "bg-foreground text-background",
+             "shadow-md transition-all duration-200 hover:scale-105 active:scale-95",
+             "disabled:opacity-50 disabled:hover:scale-100"
+           )}
+        >
+           {isUploading ? (
+             <Loader2 className="h-5 w-5 animate-spin" />
+           ) : isLoading ? (
+             <Square className="h-4 w-4 fill-current" />
+           ) : (
+             <ArrowUp className="h-5 w-5" />
+           )}
+        </Button>
       </div>
-    );
-  }
+    </motion.div>
+  );
 
   return (
     <>
-      <div className="flex h-full min-h-0 bg-background text-foreground">
-      {/* Sidebar with chat history (desktop) */}
-      <aside
-        className={cn(
-          "hidden shrink-0 flex-col border-r border-border/60 bg-card/20 transition-all duration-200 md:flex md:sticky md:self-start md:top-4 md:max-h-[calc(100vh-2rem)] xl:top-8 xl:max-h-[calc(100vh-4rem)]",
-          showHistory ? "w-72 lg:w-80" : "w-0"
-        )}
-      >
-
-        <div
+      <div className="flex min-h-screen bg-background text-foreground overflow-x-hidden">
+        {/* Sidebar with chat history (desktop) */}
+        <aside
           className={cn(
-            "border-b border-border/60 px-4 py-5",
-            showHistory ? "block" : "hidden"
+            "hidden shrink-0 flex-col border-r border-border/60 bg-card/20 overflow-hidden transition-[width] duration-300 ease-out md:flex md:sticky md:self-start md:top-4 md:max-h-[calc(100vh-2rem)] xl:top-8 xl:max-h-[calc(100vh-4rem)]",
+            showHistory ? "w-72 lg:w-80" : "w-0"
           )}
         >
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <MessageSquare className="h-4 w-4 text-primary" />
-              <div>
-                <p className="text-sm font-semibold text-foreground">Project chats</p>
-                <p className="text-xs text-muted-foreground">All your renovation threads</p>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowHistory(false)}
-              className="h-7 w-7 rounded-full border border-border"
-            >
-              <span className="sr-only">Collapse chat history</span>
-              ×
-            </Button>
-          </div>
-          <Button
-            onClick={handleNewChat}
-            size="sm"
-            disabled={!aiEnabled}
-            className="mt-4 w-full justify-center"
+
+          <div
+            className={cn(
+              "border-b border-border/60 px-4 py-5 transition-all duration-200 ease-out",
+              showHistory ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 pointer-events-none"
+            )}
           >
-            Start new chat
-          </Button>
-        </div>
-        <div className={cn("flex-1 overflow-y-auto", showHistory ? "block" : "hidden")}>
-          {isThreadListLoading ? (
-            <div className="px-4 py-6 text-xs text-muted-foreground">Loading chat history…</div>
-          ) : hasThreads ? (
-            <div className="divide-y divide-border/60">
-              {threadList.map((thread) => {
-                const isActive = thread.threadId === threadId;
-                const previewRaw = (thread.lastMessagePreview ?? "").replace(/\s+/g, " ").trim();
-                const preview =
-                  previewRaw.length > 0
-                    ? previewRaw
-                    : thread.messageCount === 0
-                    ? "No messages yet."
-                    : thread.lastMessageRole === "assistant"
-                    ? "Assistant replied."
-                    : "You replied.";
-                const messageLabel = thread.messageCount === 1 ? "message" : "messages";
-                const relativeTime = formatDistanceToNow(
-                  new Date(thread.lastMessageAt ?? Date.now()),
-                  { addSuffix: true }
-                );
-
-                return (
-                  <button
-                    key={thread.threadId}
-                    onClick={() => handleThreadSelect(thread.threadId)}
-                    className={cn(
-                      "w-full px-4 py-3 text-left transition-colors focus:outline-none",
-                      isActive ? "bg-primary/10" : "hover:bg-muted/60"
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-foreground">{thread.title}</p>
-                        <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{preview}</p>
-                      </div>
-                      <span className="whitespace-nowrap text-[11px] text-muted-foreground">
-                        {relativeTime}
-                      </span>
-                    </div>
-                    <div className="mt-3 text-[11px] text-muted-foreground/80">
-                      {thread.messageCount > 0 ? (
-                        <>
-                          {thread.messageCount} {messageLabel} • Last{" "}
-                          {thread.lastMessageRole === "assistant" ? "assistant" : "you"}
-                        </>
-                      ) : (
-                        <>No messages yet</>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="px-4 py-6 text-xs text-muted-foreground">
-              No renovation chats yet. Start one and it will appear here.
-            </div>
-          )}
-        </div>
-      </aside>
-
-      {/* Main conversation area */}
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        {/* Mobile header */}
-        <div className="flex items-center gap-3 border-b border-border/60 px-4 py-3 md:hidden">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setShowHistory((prev) => !prev)}
-            className="h-8 w-8 rounded-full border border-border"
-          >
-            <span className="sr-only">Toggle chat history</span>
-            {showHistory ? "×" : "☰"}
-          </Button>
-          {hasThreads ? (
-            <div className="flex-1">
-              <label className="text-xs font-medium text-muted-foreground" htmlFor="mobile-thread-select">
-                Renovation chat
-              </label>
-              <select
-                id="mobile-thread-select"
-                value={mobileSelectValue}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  if (!value) {
-                    return;
-                  }
-                  handleThreadSelect(value);
-                }}
-                className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                <option value="" disabled>
-                  Select a conversation…
-                </option>
-                {threadList.map((thread) => (
-                  <option key={thread.threadId} value={thread.threadId}>
-                    {thread.title}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : (
-            <div className="flex-1 text-sm font-semibold text-foreground">New renovation chat</div>
-          )}
-          <Button onClick={handleNewChat} variant="outline" size="sm" disabled={!aiEnabled}>
-            New chat
-          </Button>
-        </div>
-
-        {/* Desktop toolbar */}
-        <div className="absolute left-6 top-6 hidden items-center gap-3 z-20 md:flex">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setShowHistory((prev) => !prev)}
-            className="h-9 w-9 rounded-lg border border-border bg-card shadow-md hover:bg-muted transition-all"
-            title={showHistory ? "Zamknij historię czatów" : "Otwórz historię czatów"}
-          >
-            <span className="sr-only">Toggle chat history</span>
-            <MessageSquare className="h-5 w-5" />
-          </Button>
-        </div>
-        
-        {/* Right side toolbar */}
-        <div className="absolute right-6 top-6 hidden items-center gap-3 text-xs text-muted-foreground md:flex">
-          {sessionTokens.total > 0 && (
-            <span>{sessionTokens.total.toLocaleString()} tokens (~${sessionTokens.cost.toFixed(4)})</span>
-          )}
-        </div>
-
-        <div className="flex-1 min-h-0 overflow-y-auto px-6">
-          {chatIsLoading ? (
-            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              Loading conversation…
-            </div>
-          ) : (
-            <div className="mx-auto flex max-w-3xl flex-col space-y-6 py-14">
-              {!aiEnabled && (
-                <div className="rounded-2xl border border-border bg-card p-8 text-center text-muted-foreground shadow-sm">
-                  <h3 className="text-lg font-semibold tracking-tight">Enable AI Assistant</h3>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Turn on the AI assistant in project settings to start chatting about tasks, notes, shopping lists, and surveys.
-                  </p>
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <MessageSquare className="h-4 w-4 text-primary" />
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Project chats</p>
+                  <p className="text-xs text-muted-foreground">All your renovation threads</p>
                 </div>
-              )}
-
-              {showEmptyState ? (
-                <div className="rounded-2xl border border-border bg-card/60 p-8 text-center shadow-sm">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-border bg-card text-lg text-muted-foreground">
-                    ✶
-                  </div>
-                  <div className="mt-6 space-y-2">
-                    <h1 className="text-3xl font-semibold tracking-tight">{emptyStateTitle}</h1>
-                    <p className="text-sm text-muted-foreground">{emptyStateDescription}</p>
-                  </div>
-                  <div className="mt-6 grid gap-3 text-left text-sm text-muted-foreground">
-                    <div className="rounded-xl border border-dashed border-border/60 bg-background/40 px-4 py-3">
-                      • Ask about schedules, dependencies, or the next milestones for this renovation.
-                    </div>
-                    <div className="rounded-xl border border-dashed border-border/60 bg-background/40 px-4 py-3">
-                      • Attach floor plans, invoices, or site photos—I'll surface the details that matter.
-                    </div>
-                    <div className="rounded-xl border border-dashed border-border/60 bg-background/40 px-4 py-3">
-                      • Use the quick actions below to spin up budgets, shopping lists, or site updates.
-                    </div>
-                  </div>
-                  <div className="mt-6 flex flex-wrap justify-center gap-2 text-sm text-muted-foreground">
-                    {quickPrompts.map((item) => (
-                      <button
-                        key={item.label}
-                        onClick={() => handleQuickPromptClick(item.prompt)}
-                        className="rounded-full border border-transparent bg-muted/40 px-3 py-1.5 transition hover:border-border hover:bg-muted"
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {chatHistory.map((chat, index) => {
-                    if (chat.role === "assistant" && chat.content === "") {
-                      return (
-                        <div key={index} className="flex justify-start">
-                          <TypingIndicator />
-                        </div>
-                      );
-                    }
-
-                    const isUser = chat.role === "user";
-
-                    return (
-                      <div
-                        key={index}
-                        className={`flex ${isUser ? "justify-end" : "justify-start"}`}
-                      >
-                        <div
-                          className={`flex max-w-full items-start gap-3 ${
-                            isUser ? "flex-row-reverse" : "flex-row"
-                          }`}
-                        >
-                          <div
-                            className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold uppercase ${
-                              isUser
-                                ? "bg-primary text-primary-foreground"
-                                : "border border-border bg-card text-muted-foreground"
-                            }`}
-                          >
-                            {isUser ? userInitial : "✶"}
-                          </div>
-
-                          <div
-                            className={`rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
-                              isUser
-                                ? "bg-primary text-primary-foreground"
-                                : "border border-border bg-card text-foreground"
-                            }`}
-                          >
-                            <p className="whitespace-pre-wrap">{chat.content}</p>
-                            {chat.fileInfo && (
-                              <div className="mt-3">
-                                <FileThumbnail fileInfo={chat.fileInfo} />
-                              </div>
-                            )}
-                            {chat.role === "assistant" && (chat.mode || chat.tokenUsage) && (
-                              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                                {chat.mode && (
-                                  <Badge variant="outline" className="border-border bg-muted/60 text-[11px] text-muted-foreground">
-                                    {chat.mode === "full" ? "Complete project data" : "Recent context search"}
-                                  </Badge>
-                                )}
-                                {chat.tokenUsage && (
-                                  <Badge variant="outline" className="border-border bg-muted/60 text-[11px] text-muted-foreground">
-                                    {chat.tokenUsage.totalTokens.toLocaleString()} tokens (${chat.tokenUsage.estimatedCostUSD.toFixed(4)})
-                                  </Badge>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  <div ref={messagesEndRef} />
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="bg-background px-6 pb-10 pt-4">
-          <div className="mx-auto max-w-3xl rounded-2xl border border-border bg-card p-5 shadow-sm">
-          <input
-            ref={fileInputRef}
-            type="file"
-            onChange={handleFileSelect}
-            accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.xlsm,.txt,.json,.jsonl,.csv,.md,.py,.js,.ts,.html,.css,.xml,.rtf"
-            className="hidden"
-          />
-
-          {selectedFile && (
-            <div className="mb-4 rounded-lg bg-muted/40 px-3 py-2">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Paperclip className="h-4 w-4" />
-                <span className="flex-1 truncate">{selectedFile.name}</span>
-                <span className="text-xs">
-                  {(selectedFile.size / 1024 / 1024).toFixed(1)} MB
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleRemoveFile}
-                  className="h-6 w-6 rounded-full p-0 text-muted-foreground hover:bg-muted"
-                >
-                  <X className="h-3 w-3" />
-                </Button>
               </div>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted"
-                onClick={handleAttachmentClick}
-                disabled={isLoading || isUploading || !aiEnabled}
+                onClick={() => setShowHistory(false)}
+                className="h-7 w-7 rounded-full border border-border"
               >
-                <Plus className="h-4 w-4" />
+                <span className="sr-only">Collapse chat history</span>
+                ×
+              </Button>
+            </div>
+            <Button
+              onClick={handleNewChat}
+              size="sm"
+              className="mt-4 w-full justify-center"
+            >
+              Start new chat
+            </Button>
+          </div>
+          <div
+            className={cn(
+              "flex-1 overflow-y-auto transition-all duration-200 ease-out",
+              showHistory ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 pointer-events-none"
+            )}
+          >
+            {isThreadListLoading ? (
+              <div className="px-4 py-6 text-xs text-muted-foreground">Loading chat history…</div>
+            ) : hasThreads ? (
+              <div className="divide-y divide-border/60">
+                {threadList.map((thread) => {
+                  const isActive = thread.threadId === threadId;
+                  const previewRaw = (thread.lastMessagePreview ?? "").replace(/\s+/g, " ").trim();
+                  const preview =
+                    previewRaw.length > 0
+                      ? previewRaw
+                      : thread.messageCount === 0
+                      ? "No messages yet."
+                      : thread.lastMessageRole === "assistant"
+                      ? "Assistant replied."
+                      : "You replied.";
+                  const messageLabel = thread.messageCount === 1 ? "message" : "messages";
+                  const relativeTime = formatDistanceToNow(
+                    new Date(thread.lastMessageAt ?? Date.now()),
+                    { addSuffix: true }
+                  );
+
+                  return (
+                    <button
+                      key={thread.threadId}
+                      onClick={() => handleThreadSelect(thread.threadId)}
+                      className={cn(
+                        "w-full px-4 py-3 text-left transition-colors focus:outline-none",
+                        isActive ? "bg-primary/10" : "hover:bg-muted/60"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-foreground">{thread.title}</p>
+                          <p className="mt-1 text-xs text-muted-foreground truncate whitespace-nowrap">{preview}</p>
+                        </div>
+                        <span className="whitespace-nowrap text-[11px] text-muted-foreground">
+                          {relativeTime}
+                        </span>
+                      </div>
+                      <div className="mt-3 text-[11px] text-muted-foreground/80">
+                        {thread.messageCount > 0 ? (
+                          <>
+                            {thread.messageCount} {messageLabel} • Last{" "}
+                            {thread.lastMessageRole === "assistant" ? "assistant" : "you"}
+                          </>
+                        ) : (
+                          <>No messages yet</>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="px-4 py-6 text-xs text-muted-foreground">
+                No renovation chats yet. Start one and it will appear here.
+              </div>
+            )}
+          </div>
+        </aside>
+
+        {/* Main conversation area */}
+        <div className="relative flex flex-1 flex-col">
+          
+          {/* Background Elements from Visualizations Page */}
+          <div className="absolute inset-0 -z-10 h-full w-full bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] [mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-50 dark:bg-[radial-gradient(#1f2937_1px,transparent_1px)] pointer-events-none"></div>
+          <div className="absolute top-[-10%] left-[-10%] h-[500px] w-[500px] rounded-full bg-purple-100 blur-[100px] opacity-20 dark:bg-purple-900/20 pointer-events-none"></div>
+          <div className="absolute bottom-[-10%] right-[-10%] h-[500px] w-[500px] rounded-full bg-blue-100 blur-[100px] opacity-20 dark:bg-blue-900/20 pointer-events-none"></div>
+
+          {/* Mobile header */}
+          <div className="flex items-center gap-3 border-b border-border/60 px-4 py-3 md:hidden z-20 bg-background/50 backdrop-blur">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowHistory((prev) => !prev)}
+              className="h-8 w-8 rounded-full border border-border"
+            >
+              <span className="sr-only">Toggle chat history</span>
+              {showHistory ? "×" : "☰"}
+            </Button>
+            {hasThreads ? (
+              <div className="flex-1">
+                <label className="text-xs font-medium text-muted-foreground" htmlFor="mobile-thread-select">
+                  Renovation chat
+                </label>
+                <select
+                  id="mobile-thread-select"
+                  value={mobileSelectValue}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (!value) {
+                      return;
+                    }
+                    handleThreadSelect(value);
+                  }}
+                  className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                >
+                  <option value="" disabled>
+                    Select a conversation…
+                  </option>
+                  {threadList.map((thread) => (
+                    <option key={thread.threadId} value={thread.threadId}>
+                      {thread.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="flex-1 text-sm font-semibold text-foreground">New renovation chat</div>
+            )}
+            <div className="flex items-center gap-2">
+              <Button onClick={handleClearChat} variant="ghost" size="sm" disabled={!threadId}>
+                Clear
+              </Button>
+              <Button onClick={handleNewChat} variant="outline" size="sm">
+                New chat
               </Button>
             </div>
           </div>
 
-          <div className="mt-3 flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2">
-            <Textarea
-              ref={inputRef}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && !isLoading && !isUploading && aiEnabled) {
-                  e.preventDefault();
-                  handleSendMessage();
-                }
-              }}
-              placeholder={selectedFile ? "Add a message (optional)" : "Ask about renovation tasks, materials, or next steps..."}
-              disabled={isUploading || !aiEnabled}
-              rows={1}
-              className="flex-1 resize-none border-none bg-transparent p-0 text-base text-foreground shadow-none placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
-            />
-            {isLoading && !isUploading ? (
-              <Button
-                onClick={handleStopResponse}
-                size="icon"
-                className="h-10 w-10 rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
-                title="Stop response"
-              >
-                <Square className="h-4 w-4" />
-                <span className="sr-only">Stop response</span>
-              </Button>
+          {/* Desktop toolbar */}
+          <div className="absolute left-6 top-6 hidden items-center gap-3 z-20 md:flex">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowHistory((prev) => !prev)}
+              className="h-9 w-9 rounded-lg border border-border bg-card shadow-md hover:bg-muted transition-all"
+              title={showHistory ? "Zamknij historię czatów" : "Otwórz historię czatów"}
+            >
+              <span className="sr-only">Toggle chat history</span>
+              <MessageSquare className="h-5 w-5" />
+            </Button>
+          </div>
+
+          {/* Right side toolbar */}
+          <div className="absolute right-6 top-6 hidden items-center gap-3 md:flex z-20">
+            {sessionTokens.cost > 0 && (
+              <span className="text-xs text-muted-foreground">
+                Estimated cost: ${sessionTokens.cost.toFixed(4)}
+              </span>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClearChat}
+              disabled={!threadId}
+            >
+              Clear chat
+            </Button>
+          </div>
+
+          <div className="flex-1 min-h-[70vh] overflow-y-auto px-6 pb-40 pt-10">
+            {chatIsLoading ? (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                Loading conversation…
+              </div>
             ) : (
-              <Button
-                onClick={handleSendMessage}
-                disabled={isUploading || !aiEnabled || (!message.trim() && !selectedFile)}
-                size="icon"
-                className="h-10 w-10 rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                {isUploading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+              <div className={cn(
+                  "mx-auto flex max-w-4xl flex-col space-y-8", // Increased width and spacing
+                  showEmptyState ? "h-full justify-center" : "pt-24"
+                )}>
+                {showEmptyState ? (
+                   <div className="flex flex-col items-center justify-center w-full">
+                      {/* Hero Section - Visualizations Style */}
+                      <motion.div 
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5 }}
+                        className="space-y-6 text-center mb-12"
+                      >
+                        <h1 className="text-6xl md:text-7xl font-bold tracking-tight text-foreground font-display">
+                          AI Assistant
+                        </h1>
+                        <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+                           Manage your project with <span className="italic font-serif text-foreground">intelligence</span>. 
+                           From planning to <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600 font-semibold">execution</span>.
+                        </p>
+                      </motion.div>
+
+                        {/* Quick Prompts as Cards */}
+                        <motion.div 
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.5, delay: 0.2 }}
+                          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-4xl w-full mx-auto"
+                        >
+                           {quickPrompts.slice(0, 3).map((item) => (
+                             <button
+                               key={item.label}
+                               onClick={() => handleQuickPromptClick(item.prompt)}
+                               className={cn(
+                                 "group relative overflow-hidden rounded-3xl text-left transition-all duration-300 h-40 p-6",
+                                 "bg-card/50 hover:bg-card border border-border/50 hover:border-primary/20 shadow-sm hover:shadow-xl hover:-translate-y-1"
+                               )}
+                             >
+                               <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                               
+                               <div className="relative z-10 flex flex-col h-full justify-between">
+                                 <div className="flex items-center gap-3">
+                                   <div className="h-8 w-8 rounded-full bg-background flex items-center justify-center shadow-sm text-primary">
+                                      <Sparkles className="h-4 w-4" />
+                                   </div>
+                                   <span className="font-medium text-foreground">{item.label}</span>
+                                 </div>
+                                 <p className="text-sm text-muted-foreground line-clamp-2 group-hover:text-foreground transition-colors">
+                                   {item.prompt}
+                                 </p>
+                               </div>
+                             </button>
+                           ))}
+                        </motion.div>
+                   </div>
                 ) : (
-                  <ArrowUpRight className="h-5 w-5" />
+                  <>
+                    <AnimatePresence initial={false}>
+                    {chatHistory.map((chat, index) => {
+                      const isUser = chat.role === "user";
+                      
+                      return (
+                        <motion.div
+                          key={index}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.5 }}
+                          className={cn("flex flex-col gap-4", isUser ? "items-end" : "items-start")}
+                        >
+                          {isUser ? (
+                            <div className="max-w-[85%]">
+                               <div className="bg-foreground text-background px-6 py-4 rounded-3xl rounded-tr-sm shadow-lg">
+                                 <p className="text-lg leading-relaxed whitespace-pre-wrap">{chat.content}</p>
+                               </div>
+                               {chat.fileInfo && (
+                                <div className="mt-2 justify-end flex">
+                                  <div className="bg-card border border-border rounded-xl p-2 text-xs flex items-center gap-2 max-w-[200px]">
+                                     <FileText className="h-4 w-4" />
+                                     <span className="truncate">{chat.fileInfo.name}</span>
+                                  </div>
+                                </div>
+                               )}
+                            </div>
+                          ) : (
+                            <div className="w-full max-w-4xl">
+                               {chat.content === "" && !chat.fileInfo ? (
+                                  <div className="flex items-center gap-2 pl-4">
+                                     <div className="h-2.5 w-2.5 rounded-full bg-foreground animate-pulse" />
+                                  </div>
+                               ) : (
+                               <div className="relative rounded-3xl border border-border/50 bg-card/50 backdrop-blur-sm shadow-xl overflow-hidden">
+                                  <div className="absolute inset-0 bg-gradient-to-br from-background via-muted/20 to-background z-0"></div>
+                                  <div className="relative z-10 p-8">
+                                      <div className="prose prose-neutral dark:prose-invert max-w-none leading-relaxed text-lg text-foreground/90">
+                                          <div dangerouslySetInnerHTML={{ __html: chat.content.replace(/\n/g, '<br/>') }} />
+                                      </div>
+
+                                      {/* Token stats badge */}
+                                      {chat.tokenUsage && (
+                                        <div className="mt-6 flex items-center gap-2">
+                                          <Badge variant="outline" className="bg-background/50 backdrop-blur border-border/50 text-xs text-muted-foreground font-normal">
+                                            Estimated cost: ${chat.tokenUsage.estimatedCostUSD.toFixed(4)}
+                                          </Badge>
+                                          {chat.mode && (
+                                            <Badge variant="outline" className="bg-background/50 backdrop-blur border-border/50 text-xs text-muted-foreground font-normal">
+                                              {chat.mode === "full" ? "Full Context" : "Recent Context"}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                      )}
+                                  </div>
+                               </div>
+                               )}
+                            </div>
+                          )}
+                        </motion.div>
+                      );
+                    })}
+                    </AnimatePresence>
+                    <div ref={messagesEndRef} className="h-4" />
+                  </>
                 )}
-              </Button>
+              </div>
             )}
           </div>
+
+          {/* Floating Input Area */}
+          <div
+            className={cn(
+              "absolute left-0 right-0 px-6 z-50 pointer-events-none",
+              showEmptyState ? "bottom-8 sm:bottom-12 md:bottom-14" : "bottom-6 md:bottom-8"
+            )}
+          >
+            <div className="max-w-3xl mx-auto pointer-events-auto">
+               {renderInputArea()}
+            </div>
+          </div>
+
         </div>
       </div>
-    </div>
-  </div>
 
     {/* Confirmation Grid Modal for Multiple Items */}
     {showConfirmationGrid && (

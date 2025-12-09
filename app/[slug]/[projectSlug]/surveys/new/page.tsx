@@ -44,9 +44,9 @@ async function NewSurveyContent({
       <div className="container mx-auto p-6">
         <Card>
           <CardHeader>
-            <CardTitle>Projekt nie znaleziony</CardTitle>
+            <CardTitle>Project not found</CardTitle>
             <CardDescription>
-              Nie można znaleźć projektu o podanej nazwie.
+              We couldn't find a project with that name.
             </CardDescription>
           </CardHeader>
         </Card>

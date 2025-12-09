@@ -9,6 +9,63 @@ import { v } from "convex/values";
 import { api } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 
+// Basic access control helpers for confirmed AI actions
+const requireIdentity = async (ctx: any) => {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    throw new Error("Unauthorized");
+  }
+  return identity;
+};
+
+const ensureProjectAccess = async (
+  ctx: any,
+  projectId: Id<"projects">,
+  requireWriteAccess = true,
+) => {
+  const identity = await requireIdentity(ctx);
+  const project = await ctx.runQuery(api.projects.getProject, { projectId });
+  if (!project) {
+    throw new Error("Project not found");
+  }
+
+  const membership = await ctx.runQuery(api.teams.getCurrentUserTeamMember, {
+    teamId: project.teamId,
+  });
+
+  if (!membership || membership.isActive === false) {
+    throw new Error("Forbidden");
+  }
+
+  if (requireWriteAccess && membership.role === "customer") {
+    throw new Error("Forbidden");
+  }
+
+  if (
+    membership.role === "member" &&
+    membership.projectIds &&
+    membership.projectIds.length > 0 &&
+    !membership.projectIds.includes(projectId)
+  ) {
+    throw new Error("Forbidden");
+  }
+
+  return { identity, project, membership };
+};
+
+const ensureTeamMembership = async (ctx: any, teamId: Id<"teams">) => {
+  const identity = await requireIdentity(ctx);
+  const membership = await ctx.runQuery(api.teams.getCurrentUserTeamMember, {
+    teamId,
+  });
+
+  if (!membership || membership.isActive === false) {
+    throw new Error("Forbidden");
+  }
+
+  return { identity, membership };
+};
+
 // ==================== CREATE CONFIRMED ACTIONS ====================
 
 export const createConfirmedTask = action({
@@ -34,10 +91,7 @@ export const createConfirmedTask = action({
   }),
   handler: async (ctx, args) => {
     try {
-      const project: any = await ctx.runQuery(api.projects.getProject, { projectId: args.projectId });
-      if (!project) {
-        throw new Error("Project not found");
-      }
+      const { project } = await ensureProjectAccess(ctx, args.projectId, true);
 
       let startDateNumber: number | undefined;
       let endDateNumber: number | undefined;
@@ -92,6 +146,8 @@ export const createConfirmedNote = action({
   }),
   handler: async (ctx, args) => {
     try {
+      await ensureProjectAccess(ctx, args.projectId, true);
+
       const noteId: any = await ctx.runMutation(api.notes.createNote, {
         projectId: args.projectId,
         title: args.noteData.title,
@@ -135,6 +191,8 @@ export const createConfirmedShoppingItem = action({
   }),
   handler: async (ctx, args) => {
     try {
+      const { project } = await ensureProjectAccess(ctx, args.projectId, true);
+
       let buyBeforeNumber: number | undefined;
       if (args.itemData.buyBefore) {
         buyBeforeNumber = new Date(args.itemData.buyBefore).getTime();
@@ -168,6 +226,41 @@ export const createConfirmedShoppingItem = action({
   },
 });
 
+export const createConfirmedShoppingSection = action({
+  args: {
+    projectId: v.id("projects"),
+    sectionData: v.object({
+      name: v.string(),
+    }),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    sectionId: v.optional(v.id("shoppingListSections")),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    try {
+      await ensureProjectAccess(ctx, args.projectId, true);
+
+      const sectionId: any = await ctx.runMutation(api.shopping.createShoppingListSection, {
+        name: args.sectionData.name,
+        projectId: args.projectId,
+      });
+
+      return {
+        success: true,
+        sectionId,
+        message: "Shopping section created successfully",
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to create shopping section: ${error}`,
+      };
+    }
+  },
+});
+
 export const createConfirmedSurvey = action({
   args: {
     projectId: v.id("projects"),
@@ -195,6 +288,8 @@ export const createConfirmedSurvey = action({
   }),
   handler: async (ctx, args) => {
     try {
+      await ensureProjectAccess(ctx, args.projectId, true);
+
       let startDateNumber: number | undefined;
       let endDateNumber: number | undefined;
       if (args.surveyData.startDate) {
@@ -273,6 +368,12 @@ export const createConfirmedContact = action({
   }),
   handler: async (ctx, args) => {
     try {
+      const team = await ctx.runQuery(api.teams.getTeamBySlug, { slug: args.teamSlug });
+      if (!team) {
+        throw new Error("Team not found");
+      }
+      await ensureTeamMembership(ctx, team._id);
+
       const contactId: any = await ctx.runMutation(api.contacts.createContact, {
         teamSlug: args.teamSlug,
         name: args.contactData.name,
@@ -326,6 +427,12 @@ export const editConfirmedTask = action({
   }),
   handler: async (ctx, args) => {
     try {
+      const task = await ctx.runQuery(api.tasks.getTask, { taskId: args.taskId });
+      if (!task) {
+        throw new Error("Task not found");
+      }
+      await ensureProjectAccess(ctx, task.projectId, true);
+
       let startDateNumber: number | undefined;
       let endDateNumber: number | undefined;
       if (args.updates.startDate) {
@@ -384,6 +491,8 @@ export const editConfirmedNote = action({
         };
       }
 
+      await ensureProjectAccess(ctx, currentNote.projectId, true);
+
       await ctx.runMutation(api.notes.updateNote, {
         noteId: args.noteId,
         title: args.updates.title || currentNote.title,
@@ -430,6 +539,12 @@ export const editConfirmedShoppingItem = action({
   }),
   handler: async (ctx, args) => {
     try {
+      const item = await ctx.runQuery(api.shopping.getShoppingListItem, { itemId: args.itemId });
+      if (!item) {
+        throw new Error("Shopping item not found");
+      }
+      await ensureProjectAccess(ctx, item.projectId, true);
+
       let buyBeforeNumber: number | undefined;
       if (args.updates.buyBefore) {
         buyBeforeNumber = new Date(args.updates.buyBefore).getTime();
@@ -462,6 +577,45 @@ export const editConfirmedShoppingItem = action({
       return {
         success: false,
         message: `Failed to update shopping item: ${error}`,
+      };
+    }
+  },
+});
+
+export const editConfirmedShoppingSection = action({
+  args: {
+    sectionId: v.id("shoppingListSections"),
+    updates: v.object({
+      name: v.optional(v.string()),
+    }),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    try {
+      const db = (ctx as any).db;
+      const section = db ? await db.get(args.sectionId) : null;
+      if (!section) {
+        throw new Error("Shopping section not found");
+      }
+
+      await ensureProjectAccess(ctx, section.projectId, true);
+
+      await ctx.runMutation(api.shopping.updateShoppingListSection, {
+        sectionId: args.sectionId,
+        name: args.updates.name ?? section.name,
+      });
+
+      return {
+        success: true,
+        message: "Shopping section updated successfully",
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to update shopping section: ${error}`,
       };
     }
   },
@@ -507,6 +661,13 @@ export const editConfirmedSurvey = action({
   }),
   handler: async (ctx, args) => {
     try {
+      const survey = await ctx.runQuery(api.surveys.getSurvey, { surveyId: args.surveyId });
+      if (!survey) {
+        throw new Error("Survey not found");
+      }
+
+      await ensureProjectAccess(ctx, survey.projectId, true);
+
       let startDateNumber: number | undefined;
       let endDateNumber: number | undefined;
       if (args.updates.startDate) {
@@ -616,6 +777,12 @@ export const deleteConfirmedTask = action({
   }),
   handler: async (ctx, args) => {
     try {
+      const task = await ctx.runQuery(api.tasks.getTask, { taskId: args.taskId });
+      if (!task) {
+        throw new Error("Task not found");
+      }
+      await ensureProjectAccess(ctx, task.projectId, true);
+
       await ctx.runMutation(api.tasks.deleteTask, {
         taskId: args.taskId,
       });
@@ -644,6 +811,12 @@ export const deleteConfirmedNote = action({
   }),
   handler: async (ctx, args) => {
     try {
+      const note = await ctx.runQuery(api.notes.getNote, { noteId: args.noteId });
+      if (!note) {
+        throw new Error("Note not found");
+      }
+      await ensureProjectAccess(ctx, note.projectId, true);
+
       await ctx.runMutation(api.notes.deleteNote, {
         noteId: args.noteId,
       });
@@ -672,6 +845,12 @@ export const deleteConfirmedShoppingItem = action({
   }),
   handler: async (ctx, args) => {
     try {
+      const item = await ctx.runQuery(api.shopping.getShoppingListItem, { itemId: args.itemId });
+      if (!item) {
+        throw new Error("Shopping item not found");
+      }
+      await ensureProjectAccess(ctx, item.projectId, true);
+
       await ctx.runMutation(api.shopping.deleteShoppingListItem, {
         itemId: args.itemId,
       });
@@ -689,6 +868,41 @@ export const deleteConfirmedShoppingItem = action({
   },
 });
 
+export const deleteConfirmedShoppingSection = action({
+  args: {
+    sectionId: v.id("shoppingListSections"),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    try {
+      const db = (ctx as any).db;
+      const section = db ? await db.get(args.sectionId) : null;
+      if (!section) {
+        throw new Error("Shopping section not found");
+      }
+
+      await ensureProjectAccess(ctx, section.projectId, true);
+
+      await ctx.runMutation(api.shopping.deleteShoppingListSection, {
+        sectionId: args.sectionId,
+      });
+
+      return {
+        success: true,
+        message: "Shopping section deleted successfully",
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to delete shopping section: ${error}`,
+      };
+    }
+  },
+});
+
 export const deleteConfirmedSurvey = action({
   args: {
     surveyId: v.id("surveys"),
@@ -701,6 +915,12 @@ export const deleteConfirmedSurvey = action({
   }),
   handler: async (ctx, args) => {
     try {
+      const survey = await ctx.runQuery(api.surveys.getSurvey, { surveyId: args.surveyId });
+      if (!survey) {
+        throw new Error("Survey not found");
+      }
+      await ensureProjectAccess(ctx, survey.projectId, true);
+
       await ctx.runMutation(api.surveys.deleteSurvey, {
         surveyId: args.surveyId,
       });
@@ -729,6 +949,12 @@ export const deleteConfirmedContact = action({
   }),
   handler: async (ctx, args) => {
     try {
+      const contact = await ctx.runQuery(api.contacts.getContact, { contactId: args.contactId });
+      if (!contact) {
+        throw new Error("Contact not found");
+      }
+      await ensureTeamMembership(ctx, contact.teamId as Id<"teams">);
+
       await ctx.runMutation(api.contacts.deleteContact, {
         contactId: args.contactId,
       });

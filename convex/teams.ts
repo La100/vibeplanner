@@ -513,8 +513,8 @@ export const getTeamMembers = query({
           .unique();
         return {
           ...member,
-          name: user?.name ?? "Użytkownik bez nazwy",
-          email: user?.email ?? "Brak emaila",
+          name: user?.name ?? "User without name",
+          email: user?.email ?? "No email",
           imageUrl: user?.imageUrl,
         };
       })
@@ -528,7 +528,7 @@ export const getProjectMembers = query({
     projectId: v.optional(v.id("projects"))
   },
   async handler(ctx, args) {
-    // Pobierz wszystkich członków zespołu
+    // Fetch all team members
     const teamMembers = await ctx.db
       .query("teamMembers")
       .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
@@ -537,7 +537,7 @@ export const getProjectMembers = query({
     const result = [];
     const processedUserIds = new Set();
 
-    // Przetwórz członków zespołu
+    // Process team members
     for (const member of teamMembers) {
       const user = await ctx.db
         .query("users")
@@ -546,8 +546,8 @@ export const getProjectMembers = query({
       
       result.push({
         ...member,
-        name: user?.name ?? "Użytkownik bez nazwy",
-        email: user?.email ?? "Brak emaila",
+        name: user?.name ?? "User without name",
+        email: user?.email ?? "No email",
         imageUrl: user?.imageUrl,
         source: "teamMember"
       });
@@ -555,7 +555,7 @@ export const getProjectMembers = query({
       processedUserIds.add(member.clerkUserId);
     }
 
-    // Jeśli podano projectId, dodaj customerów z tabeli customers
+    // If projectId is provided, add customers from the customers table
     if (args.projectId) {
       const projectCustomers = await ctx.db
         .query("customers")
@@ -624,7 +624,7 @@ export const removeTeamMember = mutation({
       throw new Error("Only admins can remove team members");
     }
 
-    // Znajdź członka do usunięcia
+    // Find the member to remove
     const targetMember = await ctx.db
       .query("teamMembers")
       .withIndex("by_team_and_user", q => 
@@ -636,15 +636,15 @@ export const removeTeamMember = mutation({
       throw new Error("Team member not found");
     }
 
-    // Nie pozwól usunąć siebie
+    // Do not allow removing yourself
     if (targetMember.clerkUserId === identity.subject) {
       throw new Error("Cannot remove yourself from the team");
     }
 
-    // Usuń członka
+    // Remove member
     await ctx.db.delete(targetMember._id);
 
-    // Jeśli to był customer, usuń też wpisy z tabeli customers
+    // If this was a customer, also remove entries from the customers table
     if (targetMember.role === "customer") {
       const customerRecords = await ctx.db
         .query("customers")
@@ -940,7 +940,7 @@ export const getAvailableOrgMembersForProject = query({
       existingProjectCustomers.map(customer => customer.email)
     );
 
-    // Pobierz wszystkich użytkowników zespołu, żeby sprawdzić emaile
+    // Fetch all team users to check emails
     const allMembersWithUsers = await Promise.all(
       allMembers.map(async (member) => {
         const user = await ctx.db
@@ -955,35 +955,35 @@ export const getAvailableOrgMembersForProject = query({
       })
     );
 
-    // POPRAWIONA LOGIKA: Pokaż tylko tych którzy mogą skorzystać z dodania jako project customer
+    // Improved logic: show only those who can be added as project customers
     const availableMembers = allMembersWithUsers.filter(memberWithUser => {
       const { user, ...member } = memberWithUser;
       
-      // Admin i Member już mają pełny dostęp do wszystkich projektów - nie trzeba ich dodawać jako project customers
+      // Admin and Member already have full access to all projects - no need to add them as project customers
       if (member.role === "admin" || member.role === "member") {
         return false;
       }
 
-      // Nie pokazuj tych którzy już są project customers dla tego projektu
+      // Skip those who are already project customers for this project
       if (existingProjectCustomerUserIds.has(member.clerkUserId)) {
         return false;
       }
       
-      // Sprawdź też po email (dla przypadków gdy klient nie ma jeszcze clerkUserId)
+      // Also check by email (when the client doesn't have a clerkUserId yet)
       if (user && existingProjectCustomerEmails.has(user.email)) {
         return false;
       }
 
-      // Dla customerów organizacyjnych: sprawdź czy już mają ten projekt w projectIds
+      // For organizational customers: check if they already have this project in projectIds
       if (member.role === "customer" && member.projectIds && member.projectIds.includes(args.projectId)) {
         return false;
       }
 
-      // Pokaż: Customer (którzy jeszcze nie mają dostępu do tego projektu)
+      // Show: Customers who don't yet have access to this project
       return true;
     });
 
-    // Formatuj wynik z danymi użytkowników
+    // Format result with user data
     const membersWithUserData = availableMembers.map(memberWithUser => {
       const { user, ...member } = memberWithUser;
       

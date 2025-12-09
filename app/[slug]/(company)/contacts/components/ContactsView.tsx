@@ -193,8 +193,8 @@ export function ContactsView() {
         <div className="text-center py-12">
           <p className="text-muted-foreground">
             {searchTerm || typeFilter !== "all"
-              ? "Nie znaleziono kontaktów spełniających kryteria"
-              : "Nie masz jeszcze żadnych kontaktów. Dodaj pierwszy kontakt aby rozpocząć."
+              ? "No contacts match your filters."
+              : "You don't have any contacts yet. Add your first contact to get started."
             }
           </p>
         </div>

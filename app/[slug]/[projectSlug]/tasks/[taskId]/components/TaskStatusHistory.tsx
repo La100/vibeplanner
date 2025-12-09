@@ -27,12 +27,12 @@ export default function TaskStatusHistory({}: TaskStatusHistoryProps) {
         <CardHeader>
           <CardTitle className="flex items-center text-lg">
             <Clock className="mr-2 h-5 w-5" />
-            Historia zmian statusu
+            Status history
           </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-muted-foreground text-center py-4">
-            Brak historii zmian statusu dla tego zadania.
+            No status history for this task yet.
           </p>
         </CardContent>
       </Card>
@@ -44,12 +44,12 @@ export default function TaskStatusHistory({}: TaskStatusHistoryProps) {
       <CardHeader>
         <CardTitle className="flex items-center text-lg">
           <Clock className="mr-2 h-5 w-5" />
-          Historia zmian statusu
+          Status history
         </CardTitle>
       </CardHeader>
       <CardContent>
         <p className="text-muted-foreground text-center py-4">
-          Historia zmian statusu nie jest jeszcze zaimplementowana.
+          Status history is not implemented yet.
         </p>
         {/* TODO: Implement task status history functionality */}
       </CardContent>

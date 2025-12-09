@@ -26,7 +26,7 @@ export default function TaskEditor({
         content: content, // Używamy pola 'content' dla rich text
       });
     } catch (error) {
-      console.error('Błąd podczas zapisywania zadania:', error);
+      console.error('Error saving task:', error);
       throw error; // Re-throw żeby AdvancedEditor mógł obsłużyć błąd
     }
   }, [taskId, updateTask]);

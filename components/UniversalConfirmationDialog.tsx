@@ -60,7 +60,22 @@ interface SurveyQuestion {
 }
 
 interface ContentItem {
-  type: 'task' | 'note' | 'shopping' | 'survey' | 'contact' | 'shoppingSection';
+  type:
+    | 'task'
+    | 'note'
+    | 'shopping'
+    | 'survey'
+    | 'contact'
+    | 'shoppingSection'
+    | 'create_task'
+    | 'create_note'
+    | 'create_shopping_item'
+    | 'create_survey'
+    | 'create_contact'
+    | 'create_multiple_tasks'
+    | 'create_multiple_notes'
+    | 'create_multiple_shopping_items'
+    | 'create_multiple_surveys';
   data: Record<string, unknown>;
   operation?: 'create' | 'edit' | 'delete' | 'bulk_edit' | 'bulk_create';
   originalItem?: Record<string, unknown>;
@@ -94,6 +109,36 @@ const statusColors = {
   done: "bg-green-100 text-green-800"
 };
 
+const canonicalType = (type: ContentItem['type']): Exclude<ContentItem['type'],
+  'create_task' |
+  'create_note' |
+  'create_shopping_item' |
+  'create_survey' |
+  'create_contact' |
+  'create_multiple_tasks' |
+  'create_multiple_notes' |
+  'create_multiple_shopping_items' |
+  'create_multiple_surveys'> => {
+  switch (type) {
+    case 'create_task':
+    case 'create_multiple_tasks':
+      return 'task';
+    case 'create_note':
+    case 'create_multiple_notes':
+      return 'note';
+    case 'create_shopping_item':
+    case 'create_multiple_shopping_items':
+      return 'shopping';
+    case 'create_survey':
+    case 'create_multiple_surveys':
+      return 'survey';
+    case 'create_contact':
+      return 'contact';
+    default:
+      return type;
+  }
+};
+
 const typeIcons = {
   task: "📝",
   note: "📄",
@@ -101,7 +146,7 @@ const typeIcons = {
   survey: "📊",
   contact: "👤",
   shoppingSection: "🏷️"
-};
+} as const;
 
 const typeLabels = {
   task: "task",
@@ -110,7 +155,7 @@ const typeLabels = {
   survey: "survey",
   contact: "contact",
   shoppingSection: "shopping section"
-};
+} as const;
 
 export function UniversalConfirmationDialog({
   isOpen,
@@ -125,6 +170,7 @@ export function UniversalConfirmationDialog({
 }: UniversalConfirmationDialogProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedItem, setEditedItem] = useState<ContentItem>(contentItem);
+  const normalizedType = canonicalType(contentItem.type);
   const { project } = useProject();
 
   // Get team members for assignment dropdown
@@ -974,7 +1020,7 @@ export function UniversalConfirmationDialog({
             <div className="w-6 h-6 bg-red-600 rounded-full flex items-center justify-center text-white text-xs">
               🗑️
             </div>
-            <span className="font-medium text-red-800">Delete: {typeLabels[contentItem.type]}</span>
+            <span className="font-medium text-red-800">Delete: {typeLabels[normalizedType] ?? normalizedType}</span>
           </div>
           <p className="text-sm text-red-700 mb-3">
             This action cannot be undone. The item will be permanently removed.
@@ -1094,25 +1140,27 @@ export function UniversalConfirmationDialog({
     bodyContent = renderBulkEditContent();
   } else if (contentItem.operation === 'bulk_create') {
     // For bulk_create, show summary - individual editing is done in grid
-    const tasks = (contentItem.data.tasks as Array<Record<string, unknown>>) || [];
+    const data = contentItem.data as Record<string, unknown>;
+    const items = (data.tasks || data.notes || data.items || data.surveys || []) as Array<Record<string, unknown>>;
+    
     bodyContent = (
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Creating {tasks.length} tasks. Use the grid view to review and edit individual tasks.
+          Creating {items.length} {typeLabels[normalizedType]}s. Use the grid view to review and edit individual items.
         </p>
         <div className="text-sm">
-          <strong>Tasks preview:</strong>
+          <strong>Preview:</strong>
           <ul className="list-disc list-inside mt-2 space-y-1">
-            {tasks.slice(0, 5).map((task, i) => (
-              <li key={i}>{String(task.title || 'Untitled')}</li>
+            {items.slice(0, 5).map((item, i) => (
+              <li key={i}>{String(item.title || item.name || item.content || 'Untitled')}</li>
             ))}
-            {tasks.length > 5 && <li className="text-muted-foreground">...and {tasks.length - 5} more</li>}
+            {items.length > 5 && <li className="text-muted-foreground">...and {items.length - 5} more</li>}
           </ul>
         </div>
       </div>
     );
   } else {
-    switch (contentItem.type) {
+    switch (canonicalType(contentItem.type)) {
       case 'task':
         bodyContent = renderTaskContent();
         break;
@@ -1155,8 +1203,9 @@ export function UniversalConfirmationDialog({
       case 'bulk_edit':
         return 'Confirm Bulk Edit';
       case 'bulk_create':
-        const tasks = (contentItem.data.tasks as Array<Record<string, unknown>>) || [];
-        return `Confirm Creation (${tasks.length} items)`;
+        const data = (contentItem.data as Record<string, unknown>);
+        const items = (data.tasks || data.notes || data.items || data.surveys || []) as Array<unknown>;
+        return `Confirm Creation (${items.length} items)`;
       case 'create':
       default:
         return 'Confirm Creation';
@@ -1165,7 +1214,7 @@ export function UniversalConfirmationDialog({
 
   const targetLabel = contentItem.operation === 'bulk_edit' || contentItem.operation === 'bulk_create'
     ? 'tasks'
-    : typeLabels[contentItem.type as keyof typeof typeLabels] ?? 'item';
+    : typeLabels[canonicalType(contentItem.type)] ?? 'item';
 
   const actionVerb = (() => {
     switch (contentItem.operation) {
@@ -1195,8 +1244,11 @@ export function UniversalConfirmationDialog({
             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
               contentItem.operation === 'delete' ? 'bg-red-100' : 'bg-blue-100'
             }`}>
-              {contentItem.operation === 'edit' ? '✏️' :
-               contentItem.operation === 'delete' ? '🗑️' : typeIcons[contentItem.type]}
+              {contentItem.operation === 'edit'
+              ? '✏️'
+              : contentItem.operation === 'delete'
+                  ? '🗑️'
+                  : typeIcons[normalizedType]}
             </div>
             {operationLabel}: {targetLabel}
             {totalItems > 1 && ` (${itemNumber}/${totalItems})`}
@@ -1205,7 +1257,7 @@ export function UniversalConfirmationDialog({
             AI wants to {actionVerb}{' '}
             {contentItem.operation === 'bulk_edit'
               ? 'multiple tasks'
-              : `a ${typeLabels[contentItem.type]}`}.
+              : `a ${typeLabels[normalizedType]}`}.
             {descriptionSuffix}
             {totalItems > 1 && ` ${totalItems - itemNumber + 1} items remaining to review.`}
           </DialogDescription>
@@ -1253,7 +1305,7 @@ export function UniversalConfirmationDialog({
               disabled={isLoading}
               className="bg-red-600 hover:bg-red-700 text-white"
             >
-              {isLoading ? "Deleting..." : `🗑️ Delete ${typeLabels[contentItem.type]}`}
+              {isLoading ? "Deleting..." : `🗑️ Delete ${typeLabels[normalizedType]}`}
             </Button>
           ) : contentItem.operation === 'edit' ? (
             <Button
@@ -1261,15 +1313,15 @@ export function UniversalConfirmationDialog({
               disabled={isLoading}
               className="bg-blue-600 hover:bg-blue-700"
             >
-              {isLoading ? "Updating..." : "✅ Update " + (typeLabels[contentItem.type as keyof typeof typeLabels] ?? 'item')}
+              {isLoading ? "Updating..." : `✅ Update ${typeLabels[normalizedType] ?? 'item'}`}
             </Button>
-          ) : contentItem.operation === 'create' ? (
+          ) : !contentItem.operation || contentItem.operation === 'create' ? (
             <Button
               onClick={onConfirm}
               disabled={isLoading}
               className="bg-green-600 hover:bg-green-700"
             >
-              {isLoading ? "Creating..." : `✅ Create ${typeLabels[contentItem.type as keyof typeof typeLabels]}`}
+              {isLoading ? "Creating..." : `✅ Create ${typeLabels[normalizedType]}`}
             </Button>
           ) : null}
         </DialogFooter>
