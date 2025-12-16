@@ -30,6 +30,14 @@ const referenceImageValidator = v.object({
   name: v.string(),
 });
 
+type GenerateVisualizationResult = {
+  success: boolean;
+  imageBase64?: string;
+  mimeType?: string;
+  textResponse?: string;
+  error?: string;
+};
+
 export const generateVisualization = action({
   args: {
     prompt: v.string(),
@@ -44,7 +52,7 @@ export const generateVisualization = action({
     textResponse: v.optional(v.string()),
     error: v.optional(v.string()),
   }),
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<GenerateVisualizationResult> => {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return {
@@ -54,6 +62,17 @@ export const generateVisualization = action({
     }
 
     try {
+      const aiAccess = await ctx.runQuery(internal.stripe.checkAIFeatureAccessByProject, {
+        projectId: args.projectId,
+      });
+
+      if (!aiAccess.allowed) {
+        return {
+          success: false,
+          error: aiAccess.message || "AI features are unavailable for this project.",
+        };
+      }
+
       const ai = new GoogleGenAI({ apiKey });
 
       const startTime = Date.now();

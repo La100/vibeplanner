@@ -1,7 +1,10 @@
 import { v } from "convex/values";
-import { query, mutation, internalMutation, internalAction, internalQuery } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
+import { internal, components } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { AI_MODEL, calculateCost } from "./ai/config";
+
+const DEFAULT_BILLING_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 // Stripe subscription plans configuration
 export const SUBSCRIPTION_PLANS = {
@@ -9,9 +12,10 @@ export const SUBSCRIPTION_PLANS = {
     id: "free",
     name: "Free",
     maxProjects: 3,
-    maxTeamMembers: 5,
+    maxTeamMembers: 1,
     maxStorageGB: 1,
     hasAdvancedFeatures: false,
+    hasAIFeatures: false,
     price: 0,
   },
   basic: {
@@ -21,7 +25,32 @@ export const SUBSCRIPTION_PLANS = {
     maxTeamMembers: 15,
     maxStorageGB: 10,
     hasAdvancedFeatures: false,
+    hasAIFeatures: false,
     price: 19,
+  },
+  ai: {
+    id: "ai",
+    name: "AI Pro",
+    maxProjects: 20,
+    maxTeamMembers: 25,
+    maxStorageGB: 50,
+    hasAdvancedFeatures: true,
+    hasAIFeatures: true,
+    price: 39,
+    aiMonthlySpendLimitCents: 1000, // $10 cap across chat + image generation
+    aiImageGenerationsLimit: 50,
+  },
+  ai_scale: {
+    id: "ai_scale",
+    name: "AI Scale",
+    maxProjects: 20,
+    maxTeamMembers: 25,
+    maxStorageGB: 50,
+    hasAdvancedFeatures: true,
+    hasAIFeatures: true,
+    price: 99,
+    aiMonthlySpendLimitCents: 5000, // 5x the AI Pro generation budget
+    aiImageGenerationsLimit: 250,
   },
   pro: {
     id: "pro",
@@ -30,7 +59,9 @@ export const SUBSCRIPTION_PLANS = {
     maxTeamMembers: 50,
     maxStorageGB: 100,
     hasAdvancedFeatures: true,
+    hasAIFeatures: true,
     price: 49,
+    aiImageGenerationsLimit: 50,
   },
   enterprise: {
     id: "enterprise",
@@ -39,9 +70,213 @@ export const SUBSCRIPTION_PLANS = {
     maxTeamMembers: 999,
     maxStorageGB: 1000,
     hasAdvancedFeatures: true,
+    hasAIFeatures: true,
     price: 199,
+    aiImageGenerationsLimit: 50,
   },
 } as const;
+
+function getEffectiveLimits(team: any) {
+  const plan = (team.subscriptionPlan || "free") as keyof typeof SUBSCRIPTION_PLANS;
+  const defaultLimits = SUBSCRIPTION_PLANS[plan];
+  const storedLimits = team.subscriptionLimits;
+
+  if (plan === "free") {
+    return {
+      ...defaultLimits,
+      ...(storedLimits || {}),
+      maxTeamMembers: Math.min(
+        storedLimits?.maxTeamMembers ?? defaultLimits.maxTeamMembers,
+        defaultLimits.maxTeamMembers
+      ),
+    };
+  }
+
+  return storedLimits || defaultLimits;
+}
+
+export function getBillingWindow(team: any) {
+  const now = Date.now();
+  const start = typeof team?.currentPeriodStart === "number"
+    ? team.currentPeriodStart
+    : now - DEFAULT_BILLING_WINDOW_MS;
+
+  const end = typeof team?.currentPeriodEnd === "number"
+    ? team.currentPeriodEnd
+    : now + DEFAULT_BILLING_WINDOW_MS;
+
+  return { start, end };
+}
+
+async function getTeamAIUsageSummary(ctx: any, teamId: Id<"teams">, windowStart: number) {
+  const tokenUsage = await ctx.db
+    .query("aiTokenUsage")
+    .withIndex("by_team", (q: any) => q.eq("teamId", teamId))
+    .filter((q: any) => q.gte(q.field("_creationTime"), windowStart))
+    .collect();
+
+  const aiSpendCentsFromChat = tokenUsage.reduce(
+    (sum: number, record: any) => sum + (record.estimatedCostCents || 0),
+    0
+  );
+
+  const totalTokensUsed = tokenUsage.reduce(
+    (sum: number, record: any) => sum + (record.totalTokens || 0),
+    0
+  );
+
+  const imageUsage = await ctx.db
+    .query("aiGeneratedImages")
+    .withIndex("by_team", (q: any) => q.eq("teamId", teamId))
+    .filter((q: any) => q.gte(q.field("_creationTime"), windowStart))
+    .collect();
+
+  const imageSpendCents = imageUsage.reduce((sum: number, record: any) => {
+    const promptTokens = record.promptTokens || 0;
+    const responseTokens = record.responseTokens || Math.max(0, (record.totalTokens || 0) - promptTokens);
+    const estimatedUSD = calculateCost(AI_MODEL, promptTokens, responseTokens);
+    return sum + Math.round(estimatedUSD * 100);
+  }, 0);
+
+  return {
+    tokenUsageCount: tokenUsage.length,
+    totalTokensUsed,
+    aiSpendCents: aiSpendCentsFromChat + imageSpendCents,
+    imageCount: imageUsage.length,
+    imageSpendCents,
+    windowStart,
+  };
+}
+
+async function evaluateAIAccess(ctx: any, team: any) {
+  const plan = (team.subscriptionPlan || "free") as keyof typeof SUBSCRIPTION_PLANS;
+  const limits = getEffectiveLimits(team);
+  const hasAIFeatures = (limits as any).hasAIFeatures === true;
+
+  if (!hasAIFeatures) {
+    return {
+      allowed: false,
+      message: "🚫 AI features require an AI-enabled subscription.",
+      currentPlan: team.subscriptionPlan || "free",
+      subscriptionStatus: team.subscriptionStatus || null,
+    };
+  }
+
+  if (team.subscriptionStatus && !["active", "trialing"].includes(team.subscriptionStatus)) {
+    return {
+      allowed: false,
+      message: "🚫 Your subscription is not active. Please update billing to continue using AI features.",
+      currentPlan: team.subscriptionPlan || "free",
+      subscriptionStatus: team.subscriptionStatus,
+    };
+  }
+
+  const spendLimitCents = (limits as any).aiMonthlySpendLimitCents || 0;
+  const imageLimit = (limits as any).aiImageGenerationsLimit;
+  const { start } = getBillingWindow(team);
+  const extraCreditsActive = team.aiExtraCreditsPeriodStart === start;
+  const extraCreditsCents = extraCreditsActive ? team.aiExtraCreditsCents || 0 : 0;
+
+  if (spendLimitCents || imageLimit) {
+    const usage = await getTeamAIUsageSummary(ctx, team._id as Id<"teams">, start);
+    const totalBudgetCents = spendLimitCents + extraCreditsCents;
+    const remainingBudgetCents = totalBudgetCents ? Math.max(totalBudgetCents - usage.aiSpendCents, 0) : undefined;
+    const remainingImages =
+      typeof imageLimit === "number" ? Math.max(imageLimit - usage.imageCount, 0) : undefined;
+
+    if (totalBudgetCents > 0 && usage.aiSpendCents >= totalBudgetCents) {
+      return {
+        allowed: false,
+        message: "🔒 AI credits for this billing period are exhausted. Add a top-up to continue.",
+        currentPlan: plan,
+        subscriptionStatus: team.subscriptionStatus || null,
+        remainingBudgetCents,
+        usage,
+        extraCreditsCents,
+      };
+    }
+
+    const enforceImageLimit = typeof imageLimit === "number" && imageLimit >= 0 && spendLimitCents === 0;
+
+    if (enforceImageLimit && usage.imageCount >= imageLimit) {
+      return {
+        allowed: false,
+        message: "🔒 Image generation limit for this plan is exhausted.",
+        currentPlan: plan,
+        subscriptionStatus: team.subscriptionStatus || null,
+        remainingBudgetCents,
+        remainingImages,
+        usage,
+        extraCreditsCents,
+      };
+    }
+
+    return {
+      allowed: true,
+      message: "AI features available",
+      currentPlan: plan,
+      subscriptionStatus: team.subscriptionStatus || null,
+      remainingBudgetCents,
+      remainingImages,
+      usage,
+      extraCreditsCents,
+    };
+  }
+
+  return {
+    allowed: true,
+    message: "AI features available",
+    currentPlan: team.subscriptionPlan || "free",
+    subscriptionStatus: team.subscriptionStatus || null,
+    extraCreditsCents,
+  };
+}
+
+// Manual top-up credits (can be called after Stripe payment or by admin)
+export const addAIExtraCredits = mutation({
+  args: {
+    teamId: v.id("teams"),
+    amountCents: v.number(), // cents to add for current billing period
+  },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // Only team admin can add credits
+    const membership = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", (q) =>
+        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!membership || membership.role !== "admin") {
+      throw new Error("Only admins can add AI credits");
+    }
+
+    const team = await ctx.db.get(args.teamId);
+    if (!team) {
+      throw new Error("Team not found");
+    }
+
+    const { start } = getBillingWindow(team);
+    const currentCredits = team.aiExtraCreditsPeriodStart === start ? team.aiExtraCreditsCents || 0 : 0;
+    const newCredits = currentCredits + Math.max(args.amountCents, 0);
+
+    await ctx.db.patch(args.teamId, {
+      aiExtraCreditsCents: newCredits,
+      aiExtraCreditsPeriodStart: start,
+    });
+
+    return {
+      success: true,
+      aiExtraCreditsCents: newCredits,
+      periodStart: start,
+    };
+  },
+});
 
 // Get subscription info for a team
 export const getTeamSubscription = query({
@@ -69,8 +304,8 @@ export const getTeamSubscription = query({
       throw new Error("Not authorized to view this team");
     }
 
-    const plan = team.subscriptionPlan || "free";
-    const subscriptionLimits = team.subscriptionLimits || SUBSCRIPTION_PLANS.free;
+    const plan = (team.subscriptionPlan || "free") as keyof typeof SUBSCRIPTION_PLANS;
+    const subscriptionLimits = getEffectiveLimits(team);
 
     return {
       teamId: args.teamId,
@@ -83,8 +318,185 @@ export const getTeamSubscription = query({
       trialEnd: team.trialEnd,
       cancelAtPeriodEnd: team.cancelAtPeriodEnd || false,
       limits: subscriptionLimits,
-      planDetails: SUBSCRIPTION_PLANS[plan],
+      planDetails: SUBSCRIPTION_PLANS[plan] || SUBSCRIPTION_PLANS.free,
     };
+  },
+});
+
+// Internal query to get team for Stripe operations
+export const getTeamForStripe = internalQuery({
+  args: { teamId: v.id("teams") },
+  async handler(ctx, args) {
+    return await ctx.db.get(args.teamId);
+  },
+});
+
+// Internal mutation to update team's Stripe customer ID
+export const updateTeamStripeCustomer = internalMutation({
+  args: {
+    teamId: v.id("teams"),
+    stripeCustomerId: v.string(),
+  },
+  async handler(ctx, args) {
+    await ctx.db.patch(args.teamId, {
+      stripeCustomerId: args.stripeCustomerId,
+    });
+  },
+});
+
+// Internal mutation to sync team subscription from Stripe
+export const syncTeamSubscriptionFromStripe = internalMutation({
+  args: {
+    teamId: v.string(),
+    stripeSubscriptionId: v.string(),
+    userId: v.optional(v.string()),
+  },
+  async handler(ctx, args) {
+    // Get subscription from Stripe component's database
+    const subscription = await ctx.runQuery(
+      components.stripe.public.getSubscription,
+      { stripeSubscriptionId: args.stripeSubscriptionId }
+    );
+
+    if (!subscription) {
+      console.log(`Subscription ${args.stripeSubscriptionId} not found in Stripe component`);
+      return;
+    }
+
+    // Determine plan from price ID
+    const plan = determinePlanFromPriceId(subscription.priceId);
+    const planKey = plan as keyof typeof SUBSCRIPTION_PLANS;
+    const limits = SUBSCRIPTION_PLANS[planKey] || SUBSCRIPTION_PLANS.free;
+
+    // Update team with subscription data
+    await ctx.db.patch(args.teamId as Id<"teams">, {
+      subscriptionId: subscription.stripeSubscriptionId,
+      subscriptionStatus: subscription.status as any,
+      subscriptionPlan: planKey,
+      subscriptionPriceId: subscription.priceId,
+      currentPeriodEnd: subscription.currentPeriodEnd,
+      cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+      subscriptionLimits: limits,
+    });
+
+    console.log(`Team ${args.teamId} subscription synced: plan=${plan}, status=${subscription.status}`);
+  },
+});
+
+// Helper function to determine plan from Stripe price ID
+function determinePlanFromPriceId(priceId: string): string {
+  const aiPriceId = process.env.STRIPE_AI_PRICE_ID;
+  const aiScalePriceId = process.env.STRIPE_AI_SCALE_PRICE_ID;
+
+  if (aiScalePriceId && priceId === aiScalePriceId) return "ai_scale";
+  if (aiPriceId && priceId === aiPriceId) return "ai";
+  return "ai"; // Default to base AI plan if unknown
+}
+
+// Update team to free plan
+export const updateTeamToFree = internalMutation({
+  args: { teamId: v.string() },
+  async handler(ctx, args) {
+    await ctx.db.patch(args.teamId as Id<"teams">, {
+      subscriptionStatus: null,
+      subscriptionId: undefined,
+      subscriptionPlan: "free",
+      subscriptionPriceId: undefined,
+      currentPeriodStart: undefined,
+      currentPeriodEnd: undefined,
+      trialEnd: undefined,
+      cancelAtPeriodEnd: false,
+      subscriptionLimits: SUBSCRIPTION_PLANS.free,
+    });
+  },
+});
+
+// Direct subscription sync mutation (for manual sync from Stripe API)
+export const syncSubscriptionDirectly = internalMutation({
+  args: {
+    teamId: v.id("teams"),
+    subscriptionId: v.string(),
+    status: v.string(),
+    priceId: v.string(),
+    currentPeriodEnd: v.number(),
+    cancelAtPeriodEnd: v.boolean(),
+  },
+  async handler(ctx, args) {
+    const plan = determinePlanFromPriceId(args.priceId);
+    const planKey = plan as keyof typeof SUBSCRIPTION_PLANS;
+    const limits = SUBSCRIPTION_PLANS[planKey] || SUBSCRIPTION_PLANS.free;
+
+    await ctx.db.patch(args.teamId, {
+      subscriptionId: args.subscriptionId,
+      subscriptionStatus: args.status as any,
+      subscriptionPlan: planKey,
+      subscriptionPriceId: args.priceId,
+      currentPeriodEnd: args.currentPeriodEnd,
+      cancelAtPeriodEnd: args.cancelAtPeriodEnd,
+      subscriptionLimits: limits,
+    });
+
+    console.log(`Team ${args.teamId} subscription synced directly: plan=${plan}, status=${args.status}`);
+    return { success: true, plan, status: args.status };
+  },
+});
+
+// Fix team AI access (one-time fix for existing teams)
+export const fixTeamAIAccess = internalMutation({
+  args: { teamId: v.string() },
+  async handler(ctx, args) {
+    const team = await ctx.db.get(args.teamId as Id<"teams">);
+    if (!team) {
+      throw new Error("Team not found");
+    }
+
+    const plan = team.subscriptionPlan || "free";
+    const planKey = plan as keyof typeof SUBSCRIPTION_PLANS;
+    const limits = SUBSCRIPTION_PLANS[planKey] || SUBSCRIPTION_PLANS.free;
+
+    await ctx.db.patch(args.teamId as Id<"teams">, {
+      subscriptionLimits: limits,
+    });
+
+    return { success: true, plan, limits };
+  },
+});
+
+// Public mutation to refresh team subscription limits (syncs with current plan definitions)
+export const refreshTeamLimits = mutation({
+  args: { teamId: v.id("teams") },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const team = await ctx.db.get(args.teamId);
+    if (!team) {
+      throw new Error("Team not found");
+    }
+
+    // Check if user is admin of this team
+    const membership = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", (q) =>
+        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!membership || !membership.isActive || membership.role !== "admin") {
+      throw new Error("Not authorized - admin access required");
+    }
+
+    const plan = team.subscriptionPlan || "free";
+    const planKey = plan as keyof typeof SUBSCRIPTION_PLANS;
+    const limits = SUBSCRIPTION_PLANS[planKey] || SUBSCRIPTION_PLANS.free;
+
+    await ctx.db.patch(args.teamId, {
+      subscriptionLimits: limits,
+    });
+
+    return { success: true, plan, limits };
   },
 });
 
@@ -111,8 +523,8 @@ export const checkTeamLimits = query({
       throw new Error("Team not found");
     }
 
-    const plan = team.subscriptionPlan || "free";
-    const limits = team.subscriptionLimits || SUBSCRIPTION_PLANS[plan];
+    const plan = (team.subscriptionPlan || "free") as keyof typeof SUBSCRIPTION_PLANS;
+    const limits = getEffectiveLimits(team);
 
     // Check subscription status
     if (team.subscriptionStatus && !["active", "trialing"].includes(team.subscriptionStatus)) {
@@ -168,333 +580,22 @@ export const checkTeamLimits = query({
           return {
             allowed: false,
             reason: "feature_not_available",
-            message: `This feature is not available in your ${plan} plan. Please upgrade to Pro or Enterprise.`,
-          };
-        }
-        break;
-      }
-
-      case "upload_file": {
-        // This would need additional logic to check current storage usage
-        // For now, we'll just check if the feature is available
-        const fileSizeGB = (args.additionalData?.fileSize || 0) / (1024 * 1024 * 1024);
-        if (fileSizeGB > limits.maxStorageGB) {
-          return {
-            allowed: false,
-            reason: "storage_limit_reached",
-            message: `File size exceeds your storage limit of ${limits.maxStorageGB}GB for your ${plan} plan.`,
-            limit: limits.maxStorageGB,
+            message: "Advanced features are not available on your current plan.",
           };
         }
         break;
       }
     }
 
-    return {
-      allowed: true,
-      limits,
-    };
+    return { allowed: true };
   },
 });
 
-// Public mutation to create checkout session URL (called from client)
-export const createCheckoutSession = mutation({
-  args: {
-    teamId: v.id("teams"),
-    priceId: v.string(),
-  },
-  async handler(ctx, args): Promise<string> {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    // Check if user is admin of this team
-    const membership = await ctx.db
-      .query("teamMembers")
-      .withIndex("by_team_and_user", (q) =>
-        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
-      )
-      .unique();
-
-    if (!membership || membership.role !== "admin") {
-      throw new Error("Only admins can manage subscriptions");
-    }
-
-    const team = await ctx.db.get(args.teamId);
-    if (!team) {
-      throw new Error("Team not found");
-    }
-
-    // Schedule internal action to create checkout session
-    return await ctx.scheduler.runAfter(0, internal.stripe.createCheckoutSessionInternal, {
-      teamId: args.teamId,
-      teamName: team.name,
-      priceId: args.priceId,
-      successUrl: `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/${team.slug}/settings?success=true`,
-      cancelUrl: `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/${team.slug}/settings?canceled=true`,
-    });
-  },
-});
-
-// Internal action for creating checkout session
-export const createCheckoutSessionInternal = internalAction({
-  args: {
-    teamId: v.id("teams"),
-    teamName: v.string(),
-    priceId: v.string(),
-    successUrl: v.string(),
-    cancelUrl: v.string(),
-  },
-  async handler(ctx, args): Promise<{ url: string }> {
-    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-
-    try {
-      // Get team to check for existing customer
-      const team: any = await ctx.runQuery(internal.stripe.getTeamForStripe, {
-        teamId: args.teamId,
-      });
-
-      if (!team) {
-        throw new Error("Team not found");
-      }
-
-      let customerId: string = team.stripeCustomerId;
-
-      // Create customer if doesn't exist
-      if (!customerId) {
-        const customer: any = await stripe.customers.create({
-          email: team.adminEmail || "admin@company.com",
-          name: args.teamName,
-          metadata: {
-            teamId: args.teamId,
-          },
-        });
-
-        customerId = customer.id;
-        await ctx.runMutation(internal.stripe.updateTeamStripeCustomer, {
-          teamId: args.teamId,
-          stripeCustomerId: customerId,
-        });
-      }
-
-      const session: any = await stripe.checkout.sessions.create({
-        customer: customerId,
-        payment_method_types: ['card'],
-        line_items: [
-          {
-            price: args.priceId,
-            quantity: 1,
-          },
-        ],
-        mode: 'subscription',
-        success_url: args.successUrl,
-        cancel_url: args.cancelUrl,
-        metadata: {
-          teamId: args.teamId,
-        },
-        subscription_data: {
-          trial_period_days: 14, // 14-day trial
-          metadata: {
-            teamId: args.teamId,
-          },
-        },
-      });
-
-      return { url: session.url };
-    } catch (error) {
-      console.error('Error creating checkout session:', error);
-      throw new Error('Failed to create checkout session');
-    }
-  },
-});
-
-// Internal query to get team data for Stripe operations
-export const getTeamForStripe = internalQuery({
-  args: { teamId: v.id("teams") },
-  async handler(ctx, args) {
-    const team = await ctx.db.get(args.teamId);
-    if (!team) return null;
-
-    // Get admin email for customer creation
-    const adminMember = await ctx.db
-      .query("teamMembers")
-      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
-      .filter((q) => q.eq(q.field("role"), "admin"))
-      .first();
-
-    let adminEmail = null;
-    if (adminMember) {
-      const adminUser = await ctx.db
-        .query("users")
-        .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", adminMember.clerkUserId))
-        .unique();
-      adminEmail = adminUser?.email;
-    }
-
-    return {
-      ...team,
-      adminEmail,
-    };
-  },
-});
-
-// Internal mutation to update team's Stripe customer ID
-export const updateTeamStripeCustomer = internalMutation({
-  args: {
-    teamId: v.id("teams"),
-    stripeCustomerId: v.string(),
-  },
-  async handler(ctx, args) {
-    await ctx.db.patch(args.teamId, {
-      stripeCustomerId: args.stripeCustomerId,
-    });
-  },
-});
-
-// Update team subscription from Stripe webhook
-export const updateTeamSubscription = internalMutation({
-  args: {
-    teamId: v.string(),
-    subscriptionId: v.string(),
-    subscriptionStatus: v.string(),
-    subscriptionPlan: v.string(),
-    priceId: v.string(),
-    currentPeriodStart: v.number(),
-    currentPeriodEnd: v.number(),
-    trialEnd: v.optional(v.number()),
-    cancelAtPeriodEnd: v.boolean(),
-  },
-  async handler(ctx, args) {
-    const planKey = args.subscriptionPlan as keyof typeof SUBSCRIPTION_PLANS;
-    const limits = SUBSCRIPTION_PLANS[planKey] || SUBSCRIPTION_PLANS.free;
-
-    await ctx.db.patch(args.teamId as Id<"teams">, {
-      subscriptionId: args.subscriptionId,
-      subscriptionStatus: args.subscriptionStatus as any,
-      subscriptionPlan: planKey,
-      subscriptionPriceId: args.priceId,
-      currentPeriodStart: args.currentPeriodStart,
-      currentPeriodEnd: args.currentPeriodEnd,
-      trialEnd: args.trialEnd,
-      cancelAtPeriodEnd: args.cancelAtPeriodEnd,
-      subscriptionLimits: limits,
-    });
-  },
-});
-
-// Update team to free plan
-export const updateTeamToFree = internalMutation({
-  args: { teamId: v.string() },
-  async handler(ctx, args) {
-    await ctx.db.patch(args.teamId as Id<"teams">, {
-      subscriptionStatus: null,
-      subscriptionId: undefined,
-      subscriptionPlan: "free",
-      subscriptionPriceId: undefined,
-      currentPeriodStart: undefined,
-      currentPeriodEnd: undefined,
-      trialEnd: undefined,
-      cancelAtPeriodEnd: false,
-      subscriptionLimits: SUBSCRIPTION_PLANS.free,
-    });
-  },
-});
-
-// Cancel subscription
-export const cancelSubscription = mutation({
-  args: {
-    teamId: v.id("teams"),
-    cancelAtPeriodEnd: v.boolean(),
-  },
-  async handler(ctx, args): Promise<string> {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    // Check if user is admin of this team
-    const membership = await ctx.db
-      .query("teamMembers")
-      .withIndex("by_team_and_user", (q) =>
-        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
-      )
-      .unique();
-
-    if (!membership || membership.role !== "admin") {
-      throw new Error("Only admins can manage subscriptions");
-    }
-
-    // Call internal action to cancel subscription
-    return await ctx.scheduler.runAfter(0, internal.stripe.cancelSubscriptionInternal, {
-      teamId: args.teamId,
-      cancelAtPeriodEnd: args.cancelAtPeriodEnd,
-    });
-  },
-});
-
-// Internal action to cancel subscription
-export const cancelSubscriptionInternal = internalAction({
-  args: {
-    teamId: v.id("teams"),
-    cancelAtPeriodEnd: v.boolean(),
-  },
-  async handler(ctx, args) {
-    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-
-    const team = await ctx.runQuery(internal.stripe.getTeamForStripe, {
-      teamId: args.teamId,
-    });
-
-    if (!team || !team.subscriptionId) {
-      throw new Error("No active subscription found");
-    }
-
-    try {
-      if (args.cancelAtPeriodEnd) {
-        // Cancel at period end
-        await stripe.subscriptions.update(team.subscriptionId, {
-          cancel_at_period_end: true,
-        });
-
-        await ctx.runMutation(internal.stripe.updateCancellationStatus, {
-          teamId: args.teamId,
-          cancelAtPeriodEnd: true,
-        });
-      } else {
-        // Cancel immediately
-        await stripe.subscriptions.cancel(team.subscriptionId);
-
-        await ctx.runMutation(internal.stripe.updateTeamToFree, {
-          teamId: args.teamId,
-        });
-      }
-
-      return { success: true };
-    } catch (error) {
-      console.error('Error cancelling subscription:', error);
-      throw new Error('Failed to cancel subscription');
-    }
-  },
-});
-
-// Update cancellation status
-export const updateCancellationStatus = internalMutation({
-  args: {
-    teamId: v.id("teams"),
-    cancelAtPeriodEnd: v.boolean(),
-  },
-  async handler(ctx, args) {
-    await ctx.db.patch(args.teamId, {
-      cancelAtPeriodEnd: args.cancelAtPeriodEnd,
-    });
-  },
-});
-
-// Check if team has access to AI features (internal query)
-export const checkAIFeatureAccess = internalQuery({
+// Internal query to check AI feature access by project ID
+export const checkAIFeatureAccessByProject = internalQuery({
   args: { projectId: v.id("projects") },
   async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
     const project = await ctx.db.get(args.projectId);
     if (!project) {
       return {
@@ -511,31 +612,219 @@ export const checkAIFeatureAccess = internalQuery({
       };
     }
 
-    // Check if team has advanced AI features
-    const subscriptionLimits = team.subscriptionLimits || SUBSCRIPTION_PLANS.free;
-    if (!subscriptionLimits.hasAdvancedFeatures) {
-      return {
-        allowed: false,
-        message: "🚫 AI features require Pro or Enterprise subscription. Please upgrade your plan to use AI task generation.",
-        currentPlan: team.subscriptionPlan || "free",
-        limits: subscriptionLimits,
-      };
+    if (identity) {
+      const membership = await ctx.db
+        .query("teamMembers")
+        .withIndex("by_team_and_user", (q) =>
+          q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
+        )
+        .unique();
+
+      if (membership && membership.role === "customer") {
+        return {
+          allowed: false,
+          message: "🚫 Customers do not have access to AI features.",
+          currentPlan: team.subscriptionPlan || "free",
+          subscriptionStatus: team.subscriptionStatus || null,
+        };
+      }
     }
 
-    // Check subscription status
-    if (team.subscriptionStatus && !["active", "trialing"].includes(team.subscriptionStatus)) {
-      return {
-        allowed: false,
-        message: "🚫 Your subscription is not active. Please update your billing information to use AI features.",
-        currentPlan: team.subscriptionPlan || "free",
-        subscriptionStatus: team.subscriptionStatus,
-      };
-    }
-
+    const access = await evaluateAIAccess(ctx, team);
     return {
-      allowed: true,
-      currentPlan: team.subscriptionPlan || "free",
-      limits: subscriptionLimits,
+      ...access,
+      limits: getEffectiveLimits(team),
     };
   },
-}); 
+});
+
+// Internal query to check AI feature access
+export const checkAIFeatureAccess = internalQuery({
+  args: { teamId: v.id("teams") },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    const team = await ctx.db.get(args.teamId);
+    if (!team) {
+      return {
+        allowed: false,
+        message: "Team not found",
+      };
+    }
+
+    if (identity) {
+      const membership = await ctx.db
+        .query("teamMembers")
+        .withIndex("by_team_and_user", (q) =>
+          q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
+        )
+        .unique();
+
+      if (membership && membership.role === "customer") {
+        return {
+          allowed: false,
+          message: "🚫 Customers do not have access to AI features.",
+          currentPlan: team.subscriptionPlan || "free",
+          subscriptionStatus: team.subscriptionStatus || null,
+        };
+      }
+    }
+
+    const access = await evaluateAIAccess(ctx, team);
+    return {
+      ...access,
+      limits: getEffectiveLimits(team),
+    };
+  },
+});
+
+// Public query to check AI access for a team (by teamId)
+export const checkTeamAIAccess = query({
+  args: { teamId: v.id("teams") },
+  returns: v.object({
+    hasAccess: v.boolean(),
+    message: v.string(),
+    currentPlan: v.string(),
+    subscriptionStatus: v.optional(v.union(
+      v.literal("active"),
+      v.literal("past_due"),
+      v.literal("canceled"),
+      v.literal("trialing"),
+      v.literal("incomplete"),
+      v.literal("incomplete_expired"),
+      v.literal("paused"),
+      v.literal("unpaid"),
+      v.null()
+    )),
+    subscriptionLimits: v.optional(v.any()),
+    remainingBudgetCents: v.optional(v.number()),
+    aiSpendCents: v.optional(v.number()),
+    aiImageCount: v.optional(v.number()),
+    billingWindowStart: v.optional(v.number()),
+    totalTokensUsed: v.optional(v.number()),
+    aiExtraCreditsCents: v.optional(v.number()),
+  }),
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return {
+        hasAccess: false,
+        message: "Not authenticated",
+        currentPlan: "free",
+        subscriptionStatus: null,
+      };
+    }
+
+    const team = await ctx.db.get(args.teamId);
+    if (!team) {
+      return {
+        hasAccess: false,
+        message: "Team not found",
+        currentPlan: "free",
+        subscriptionStatus: null,
+      };
+    }
+
+    // Check membership
+    const membership = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", (q) =>
+        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!membership || !membership.isActive) {
+      return {
+        hasAccess: false,
+        message: "Not a member of this team",
+        currentPlan: "free",
+        subscriptionStatus: null,
+      };
+    }
+
+    if (membership.role === "customer") {
+      return {
+        hasAccess: false,
+        message: "🚫 Customers do not have access to AI features.",
+        currentPlan: team.subscriptionPlan || "free",
+        subscriptionStatus: team.subscriptionStatus || null,
+        subscriptionLimits: getEffectiveLimits(team),
+      };
+    }
+
+    const access = await evaluateAIAccess(ctx, team);
+    const hasAccess = access.allowed;
+
+    return {
+      hasAccess,
+      message: access.message || (hasAccess ? "AI features available" : "AI features unavailable"),
+      currentPlan: team.subscriptionPlan || "free",
+      subscriptionStatus: team.subscriptionStatus || null,
+      subscriptionLimits: getEffectiveLimits(team),
+      remainingBudgetCents: (access as any).remainingBudgetCents,
+      aiSpendCents: (access as any).usage?.aiSpendCents,
+      aiImageCount: (access as any).usage?.imageCount,
+      billingWindowStart: (access as any).usage?.windowStart,
+      totalTokensUsed: (access as any).usage?.totalTokensUsed,
+      aiExtraCreditsCents: (access as any).extraCreditsCents,
+    };
+  },
+});
+
+// Query to get user's subscriptions from Stripe component
+export const getUserSubscriptions = query({
+  args: {},
+  async handler(ctx) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    return await ctx.runQuery(
+      components.stripe.public.listSubscriptionsByUserId,
+      { userId: identity.subject }
+    );
+  },
+});
+
+// Query to get user's payments from Stripe component  
+export const getUserPayments = query({
+  args: {},
+  async handler(ctx) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    return await ctx.runQuery(
+      components.stripe.public.listPaymentsByUserId,
+      { userId: identity.subject }
+    );
+  },
+});
+
+// Query to get user's invoices from Stripe component
+export const getUserInvoices = query({
+  args: {},
+  async handler(ctx) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    return await ctx.runQuery(
+      components.stripe.public.listInvoicesByUserId,
+      { userId: identity.subject }
+    );
+  },
+});
+
+// Query to get team's subscriptions from Stripe component (by org ID)
+export const getTeamSubscriptionsFromStripe = query({
+  args: { teamId: v.id("teams") },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const team = await ctx.db.get(args.teamId);
+    if (!team || !team.stripeCustomerId) return [];
+
+    return await ctx.runQuery(
+      components.stripe.public.listSubscriptions,
+      { stripeCustomerId: team.stripeCustomerId }
+    );
+  },
+});

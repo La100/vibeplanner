@@ -65,6 +65,17 @@ export const generateVisualization = action({
       };
     }
 
+    const aiAccess = await ctx.runQuery(internal.stripe.checkAIFeatureAccessByProject, {
+      projectId: args.projectId,
+    });
+
+    if (!aiAccess.allowed) {
+      return {
+        success: false,
+        error: aiAccess.message || "AI features are unavailable for this project.",
+      };
+    }
+
     const startTime = Date.now();
     
     try {

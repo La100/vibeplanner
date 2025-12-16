@@ -10,6 +10,7 @@ export default function OrganizationPage() {
         afterSelectOrganizationUrl="/:slug"
         afterCreateOrganizationUrl="/:slug"
         hideSlug={true}
+        skipInvitationScreen={true}
       />
     </div>
   );

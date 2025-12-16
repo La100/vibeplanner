@@ -6,13 +6,13 @@ import { useOrganization } from "@clerk/nextjs";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 
-import { Plus, FolderOpen, MapPin, DollarSign, Building2, Search } from "lucide-react";
+import { Plus, FolderOpen, MapPin, DollarSign, Building2, Search, AlertTriangle, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 
 
 export default function CompanyProjects() {
@@ -20,6 +20,7 @@ export default function CompanyProjects() {
   const params = useParams<{ slug: string }>();
   const { organization, isLoaded } = useOrganization();
   const [showNewProjectForm, setShowNewProjectForm] = useState(false);
+  const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Check if team exists first
@@ -61,11 +62,7 @@ export default function CompanyProjects() {
 
     // Check subscription limits first
     if (checkLimits && !checkLimits.allowed) {
-      if (checkLimits.reason === "project_limit_reached") {
-        alert(`You've reached the maximum number of projects (${checkLimits.limit}) for your current plan. Please upgrade to continue.`);
-      } else {
-        alert(checkLimits.message || "Unable to create project due to subscription limits.");
-      }
+      setShowUpgradeDialog(true);
       return;
     }
 
@@ -288,6 +285,71 @@ export default function CompanyProjects() {
           </Card>
         )}
       </div>
+
+      {/* Upgrade Dialog */}
+      <Dialog open={showUpgradeDialog} onOpenChange={setShowUpgradeDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="text-center sm:text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-orange-100 dark:bg-orange-900/20">
+              <AlertTriangle className="h-7 w-7 text-orange-600" />
+            </div>
+            <DialogTitle className="text-xl">Project limit reached</DialogTitle>
+            <DialogDescription className="text-base">
+              You&apos;ve reached the maximum number of projects ({checkLimits?.limit || 3}) for the Free plan.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="my-4 rounded-lg border bg-muted/50 p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-600">
+                <Sparkles className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <p className="font-semibold">AI Pro</p>
+                <p className="text-sm text-muted-foreground">$39/month</p>
+              </div>
+            </div>
+            <ul className="space-y-2 text-sm">
+              <li className="flex items-center gap-2">
+                <span className="text-green-500">✓</span>
+                <span>20 projects</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="text-green-500">✓</span>
+                <span>25 team members</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="text-green-500">✓</span>
+                <span>AI Assistant & image generation</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="text-green-500">✓</span>
+                <span>50 GB storage</span>
+              </li>
+            </ul>
+          </div>
+
+          <DialogFooter className="flex-col gap-2 sm:flex-col">
+            <Button
+              className="w-full bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700"
+              onClick={() => {
+                setShowUpgradeDialog(false);
+                router.push(`/${params.slug}/settings?tab=subscription`);
+              }}
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              Upgrade to AI Pro
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full"
+              onClick={() => setShowUpgradeDialog(false)}
+            >
+              Maybe later
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

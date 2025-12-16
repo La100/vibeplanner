@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useProject } from "@/components/providers/ProjectProvider";
-import { useAction } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -19,6 +19,21 @@ import {
   RotateCcw,
   Sparkles,
 } from "lucide-react";
+import { AISubscriptionWall } from "@/components/AISubscriptionWall";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  TOKEN_PRICE_USD,
+  GEMINI_IMAGE_2K_PRICE_USD,
+  tokensForGeminiImage,
+} from "@/lib/aiPricing";
+
+const formatTokens = (tokens?: number) => {
+  if (!tokens) return "0";
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(2)}M`;
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`;
+  return tokens.toString();
+};
 
 interface ReferenceImage {
   base64: string;
@@ -42,7 +57,7 @@ interface Message {
 }
 
 export default function VisualizationsPage() {
-  const { project } = useProject();
+  const { project, team } = useProject();
   const [messages, setMessages] = useState<Message[]>([]);
   const [prompt, setPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -50,6 +65,9 @@ export default function VisualizationsPage() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Check if team has AI access
+  const aiAccess = useQuery(api.stripe.checkTeamAIAccess, team?._id ? { teamId: team._id } : "skip");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -363,12 +381,128 @@ export default function VisualizationsPage() {
     },
   ];
 
+  // Show subscription wall if user doesn't have AI access
+  const isQuotaBlocked = !!(
+    aiAccess &&
+    !aiAccess.hasAccess &&
+    (
+      aiAccess.remainingBudgetCents === 0 ||
+      (typeof (aiAccess.subscriptionLimits as any)?.aiImageGenerationsLimit === "number" &&
+        (aiAccess.aiImageCount || 0) >= (aiAccess.subscriptionLimits as any).aiImageGenerationsLimit) ||
+      (aiAccess.message || "").toLowerCase().includes("wyczerpano")
+    )
+  );
+
+  if (aiAccess !== undefined && !aiAccess.hasAccess && team?._id) {
+    if (isQuotaBlocked) {
+      return (
+        <div className="flex min-h-screen items-center justify-center px-4 bg-background/50">
+          <Card className="max-w-lg w-full border-border/50 shadow-2xl rounded-3xl overflow-hidden bg-card/80 backdrop-blur-xl">
+            <CardHeader className="space-y-4 pb-2">
+              <Badge variant="secondary" className="w-fit bg-red-100 text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 border-0 px-3 py-1 rounded-full">
+                AI limit reached
+              </Badge>
+              <div className="space-y-2">
+                <CardTitle className="text-2xl font-display tracking-tight">AI allocation used</CardTitle>
+                <CardDescription className="text-base">{aiAccess.message}</CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-border/50 bg-muted/30 p-4 space-y-2">
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Tokens</div>
+                  <div className="text-2xl font-semibold font-display tracking-tight">{formatTokens(aiAccess.totalTokensUsed)}</div>
+                  {aiAccess.billingWindowStart && (
+                    <div className="text-xs text-muted-foreground">
+                      Since {new Date(aiAccess.billingWindowStart).toLocaleDateString()}
+                    </div>
+                  )}
+                </div>
+                <div className="rounded-2xl border border-border/50 bg-muted/30 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Image generations</span>
+                    <span className="text-xs font-medium text-foreground">
+                      {aiAccess.aiImageCount ?? 0}
+                      {typeof (aiAccess.subscriptionLimits as any)?.aiImageGenerationsLimit === "number"
+                        ? ` / ${(aiAccess.subscriptionLimits as any).aiImageGenerationsLimit}`
+                        : ""}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-violet-500 to-purple-500 rounded-full"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          typeof (aiAccess.subscriptionLimits as any)?.aiImageGenerationsLimit === "number"
+                            ? ((aiAccess.aiImageCount || 0) / (aiAccess.subscriptionLimits as any).aiImageGenerationsLimit) * 100
+                            : 100
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    return <AISubscriptionWall teamId={team._id} teamSlug={team.slug} />;
+  }
+
+  // Show loading state while checking access
+  if (aiAccess === undefined && team?._id) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-muted-foreground">Checking access...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative flex flex-col h-[calc(100vh-4rem)] bg-background overflow-hidden">
       {/* Background Elements from Landing Page */}
       <div className="absolute inset-0 -z-10 h-full w-full bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] [mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-50 dark:bg-[radial-gradient(#1f2937_1px,transparent_1px)] pointer-events-none"></div>
       <div className="absolute top-[-10%] left-[-10%] h-[500px] w-[500px] rounded-full bg-purple-100 blur-[100px] opacity-20 dark:bg-purple-900/20 pointer-events-none"></div>
       <div className="absolute bottom-[-10%] right-[-10%] h-[500px] w-[500px] rounded-full bg-blue-100 blur-[100px] opacity-20 dark:bg-blue-900/20 pointer-events-none"></div>
+
+      {aiAccess?.hasAccess && (
+        <div className="w-full px-4 sm:px-6 lg:px-8 mt-3 flex justify-end">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+            <div className="inline-flex items-center gap-3 rounded-full border border-border/50 bg-muted/25 px-4 py-2 shadow-sm">
+              <ImagePlus className="h-4 w-4 text-primary" />
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-1 text-foreground">
+                  <span className="text-sm font-semibold font-display leading-none">{aiAccess.aiImageCount ?? 0}</span>
+                  {typeof (aiAccess.subscriptionLimits as any)?.aiImageGenerationsLimit === "number" && (
+                    <span className="text-[11px] text-muted-foreground">
+                      / {(aiAccess.subscriptionLimits as any).aiImageGenerationsLimit}
+                    </span>
+                  )}
+                </div>
+                <div className="h-1 rounded-full bg-muted overflow-hidden w-24">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500/70 to-purple-500/70 rounded-full"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        typeof (aiAccess.subscriptionLimits as any)?.aiImageGenerationsLimit === "number"
+                          ? ((aiAccess.aiImageCount || 0) / (aiAccess.subscriptionLimits as any).aiImageGenerationsLimit) * 100
+                          : 100
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating Mode Toggle - Top Right */}
       <div className="fixed top-20 right-6 z-[9999] flex items-center gap-2">
@@ -381,9 +515,9 @@ export default function VisualizationsPage() {
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto relative z-10">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden relative z-10">
         {messages.length === 0 && !isGenerating ? (
-          <div className="h-full flex flex-col items-center justify-center px-6">
+          <div className="min-h-full flex flex-col items-center justify-center px-6 pt-20 pb-10">
             <div className="max-w-4xl w-full text-center space-y-12">
               {/* Hero Section */}
               <motion.div 
@@ -452,8 +586,8 @@ export default function VisualizationsPage() {
           <div className={cn(
             "max-w-5xl mx-auto px-6 space-y-12",
             messages.length === 0 && isGenerating 
-              ? "h-full flex flex-col items-center justify-center py-8" 
-              : "pt-32 pb-48"
+              ? "min-h-full flex flex-col items-center justify-center pt-20" 
+              : "pt-8 pb-4"
           )}>
             {messages.map((message, index) => (
               <motion.div
@@ -595,19 +729,20 @@ export default function VisualizationsPage() {
         )}
       </div>
 
-      {/* Floating Input Area */}
-      <div className="absolute bottom-6 left-0 right-0 px-6 z-50 pointer-events-none">
-        <div className="max-w-3xl mx-auto pointer-events-auto">
+      {/* Input Area */}
+      <div className="w-full px-2 sm:px-6 py-4 sm:py-6 z-50 mt-auto">
+        <div className="max-w-3xl mx-auto">
           <motion.form 
-            initial={{ y: 100, opacity: 0 }}
+            initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.3, type: "spring", stiffness: 100 }}
             onSubmit={handleSubmit}
             className={cn(
-              "relative rounded-[2rem] p-2",
-              "bg-background/80 backdrop-blur-xl border border-white/20 shadow-2xl dark:border-white/10",
+              "relative rounded-[2rem] p-1.5 sm:p-2",
+              "bg-background border border-border/50 shadow-sm",
               "transition-all duration-300",
-              "focus-within:ring-1 focus-within:ring-white/20"
+              "focus-within:ring-1 focus-within:ring-primary/20",
+              "hover:border-primary/20"
             )}
           >
             {/* Reference Images Preview - Floating above */}
@@ -641,7 +776,7 @@ export default function VisualizationsPage() {
               )}
             </AnimatePresence>
 
-            <div className="flex items-end gap-3 pl-4 pr-3 py-3">
+            <div className="flex items-end gap-2 sm:gap-3 pl-2 sm:pl-4 pr-2 sm:pr-3 py-2 sm:py-3">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -693,17 +828,17 @@ export default function VisualizationsPage() {
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder={
                   isUploading 
-                    ? "Uploading images..." 
-                    : "Describe the visualization you imagine..."
+                    ? "Uploading..." 
+                    : "Describe your vision..."
                 }
-              rows={1}
-              disabled={isUploading}
-              onPaste={handlePaste}
-              className={cn(
-                "flex-1 resize-none bg-transparent",
-                "text-base placeholder:text-muted-foreground/50",
-                "focus:outline-none",
-                "py-2.5 px-2",
+                rows={1}
+                disabled={isUploading}
+                onPaste={handlePaste}
+                className={cn(
+                  "flex-1 resize-none bg-transparent",
+                  "text-sm sm:text-base placeholder:text-muted-foreground/50",
+                  "focus:outline-none",
+                  "py-2.5 px-2",
                   "max-h-[200px] min-h-[44px]"
                 )}
                 onKeyDown={(e) => {

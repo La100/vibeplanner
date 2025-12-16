@@ -22,7 +22,7 @@ export function Hero() {
         >
           <span className="inline-flex items-center rounded-full border border-border bg-background/50 px-3 py-1 text-sm font-medium text-muted-foreground backdrop-blur-sm">
             <span className="flex h-2 w-2 rounded-full bg-green-500 mr-2 animate-pulse"></span>
-            VibePlanner 2.0 is here
+            VibePlanner is here
           </span>
         </motion.div>
 

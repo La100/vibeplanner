@@ -81,6 +81,14 @@ export const sendMessage = action({
       });
       if (!membership || membership.isActive === false) throw new Error("Forbidden");
 
+      const aiAccess = await ctx.runQuery(internal.stripe.checkAIFeatureAccessByProject, {
+        projectId: args.projectId,
+      });
+
+      if (!aiAccess.allowed) {
+        throw new Error(aiAccess.message || "AI features are unavailable for this project.");
+      }
+
       // Ensure thread exists
       await ctx.runMutation(internal.ai.threads.getOrCreateThread, {
         threadId: args.threadId,

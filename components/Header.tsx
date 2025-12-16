@@ -31,6 +31,8 @@ export function Header() {
             hidePersonal
             hideSlug
             afterSelectOrganizationUrl="/:slug"
+            afterCreateOrganizationUrl="/:slug"
+            skipInvitationScreen={true}
           />
           <UserButton />
         </SignedIn>

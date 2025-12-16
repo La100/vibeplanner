@@ -552,7 +552,7 @@ export const generateTaskDetailsFromPrompt = action({
     },
     handler: async (ctx, args): Promise<any> => {
         // 🔒 CHECK SUBSCRIPTION: AI features require Pro+ subscription
-        const subscriptionCheck = await ctx.runQuery(internal.stripe.checkAIFeatureAccess, { 
+        const subscriptionCheck = await ctx.runQuery(internal.stripe.checkAIFeatureAccessByProject, { 
             projectId: args.projectId 
         });
         

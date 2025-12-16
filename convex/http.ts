@@ -1,7 +1,9 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { internal, api } from "./_generated/api";
+import { internal, api, components } from "./_generated/api";
 import handleClerkWebhook from "./clerk";
+import { registerRoutes } from "@convex-dev/stripe";
+import type Stripe from "stripe";
 
 const http = httpRouter();
 
@@ -115,162 +117,116 @@ http.route({
   }),
 });
 
-// Stripe webhook endpoint
-http.route({
-  path: "/stripe",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    const body = await request.text();
-    const signature = request.headers.get("stripe-signature");
+// Register Stripe webhook handler using @convex-dev/stripe component
+registerRoutes(http, components.stripe, {
+  webhookPath: "/stripe/webhook",
+  events: {
+    // Update team subscription when checkout completes
+    "checkout.session.completed": async (ctx, event: Stripe.CheckoutSessionCompletedEvent) => {
+      const session = event.data.object;
+      const subscriptionId = session.subscription as string;
 
-    if (!signature) {
-      return new Response("No Stripe signature found", { status: 400 });
-    }
+      if (subscriptionId) {
+        // Metadata is on the subscription object, not on the session
+        // We need to fetch the subscription to get teamId
+        const stripe = new (await import("stripe")).default(process.env.STRIPE_SECRET_KEY!, {
+          apiVersion: "2025-11-17.clover",
+        });
 
-    try {
-      const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-      const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        const teamId = subscription.metadata?.teamId;
+        const subscriptionItem = subscription.items.data[0];
+        const priceId = subscriptionItem?.price.id || "";
+        const currentPeriodEnd = subscriptionItem?.current_period_end
+          ? subscriptionItem.current_period_end * 1000
+          : Date.now() + 30 * 24 * 60 * 60 * 1000;
 
-      if (!endpointSecret) {
-        throw new Error("Stripe webhook secret not configured");
+        if (teamId) {
+          console.log(`Checkout completed for team ${teamId}, subscription: ${subscriptionId}, status: ${subscription.status}`);
+
+          // Sync directly without relying on Stripe component database
+          await ctx.runMutation(internal.stripe.syncSubscriptionDirectly, {
+            teamId: teamId as any,
+            subscriptionId: subscriptionId,
+            status: subscription.status,
+            priceId,
+            currentPeriodEnd,
+            cancelAtPeriodEnd: subscription.cancel_at_period_end,
+          });
+        } else {
+          console.log(`Checkout completed but no teamId in subscription metadata: ${subscriptionId}`);
+        }
       }
+    },
+    
+    // Handle new subscription created
+    "customer.subscription.created": async (ctx, event: Stripe.CustomerSubscriptionCreatedEvent) => {
+      const subscription = event.data.object;
+      const teamId = subscription.metadata?.teamId;
+      const subscriptionItem = subscription.items.data[0];
+      const priceId = subscriptionItem?.price.id || "";
+      const currentPeriodEnd = subscriptionItem?.current_period_end
+        ? subscriptionItem.current_period_end * 1000
+        : Date.now() + 30 * 24 * 60 * 60 * 1000;
 
-      // Verify webhook signature
-      const event = stripe.webhooks.constructEvent(body, signature, endpointSecret);
+      if (teamId) {
+        console.log(`Subscription CREATED for team ${teamId}: ${subscription.status}`);
 
-      switch (event.type) {
-        case 'checkout.session.completed': {
-          const session = event.data.object;
-          const teamId = session.metadata?.teamId;
-          
-          if (teamId && session.subscription) {
-            // Get subscription details
-            const subscription = await stripe.subscriptions.retrieve(session.subscription);
-            
-            // Update team subscription
-            await ctx.runMutation(internal.stripe.updateTeamSubscription, {
-              teamId,
-              subscriptionId: subscription.id,
-              subscriptionStatus: subscription.status,
-              subscriptionPlan: determinePlanFromPriceId(subscription.items.data[0].price.id),
-              priceId: subscription.items.data[0].price.id,
-              currentPeriodStart: subscription.current_period_start * 1000,
-              currentPeriodEnd: subscription.current_period_end * 1000,
-              trialEnd: subscription.trial_end ? subscription.trial_end * 1000 : undefined,
-              cancelAtPeriodEnd: subscription.cancel_at_period_end,
-            });
-          }
-          break;
-        }
-
-        case 'invoice.payment_succeeded': {
-          const invoice = event.data.object;
-          if (invoice.subscription) {
-            const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
-            const teamId = subscription.metadata?.teamId;
-            
-            if (teamId) {
-              await ctx.runMutation(internal.stripe.updateTeamSubscription, {
-                teamId,
-                subscriptionId: subscription.id,
-                subscriptionStatus: subscription.status,
-                subscriptionPlan: determinePlanFromPriceId(subscription.items.data[0].price.id),
-                priceId: subscription.items.data[0].price.id,
-                currentPeriodStart: subscription.current_period_start * 1000,
-                currentPeriodEnd: subscription.current_period_end * 1000,
-                trialEnd: subscription.trial_end ? subscription.trial_end * 1000 : undefined,
-                cancelAtPeriodEnd: subscription.cancel_at_period_end,
-              });
-            }
-          }
-          break;
-        }
-
-        case 'invoice.payment_failed': {
-          const invoice = event.data.object;
-          if (invoice.subscription) {
-            const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
-            const teamId = subscription.metadata?.teamId;
-            
-            if (teamId) {
-              await ctx.runMutation(internal.stripe.updateTeamSubscription, {
-                teamId,
-                subscriptionId: subscription.id,
-                subscriptionStatus: 'past_due',
-                subscriptionPlan: determinePlanFromPriceId(subscription.items.data[0].price.id),
-                priceId: subscription.items.data[0].price.id,
-                currentPeriodStart: subscription.current_period_start * 1000,
-                currentPeriodEnd: subscription.current_period_end * 1000,
-                trialEnd: subscription.trial_end ? subscription.trial_end * 1000 : undefined,
-                cancelAtPeriodEnd: subscription.cancel_at_period_end,
-              });
-            }
-          }
-          break;
-        }
-
-        case 'customer.subscription.updated':
-        case 'customer.subscription.deleted': {
-          const subscription = event.data.object;
-          const teamId = subscription.metadata?.teamId;
-          
-          if (teamId) {
-            if (event.type === 'customer.subscription.deleted') {
-              // Revert to free plan
-              await ctx.runMutation(internal.stripe.updateTeamToFree, {
-                teamId,
-              });
-            } else {
-              // Update subscription
-              await ctx.runMutation(internal.stripe.updateTeamSubscription, {
-                teamId,
-                subscriptionId: subscription.id,
-                subscriptionStatus: subscription.status,
-                subscriptionPlan: determinePlanFromPriceId(subscription.items.data[0].price.id),
-                priceId: subscription.items.data[0].price.id,
-                currentPeriodStart: subscription.current_period_start * 1000,
-                currentPeriodEnd: subscription.current_period_end * 1000,
-                trialEnd: subscription.trial_end ? subscription.trial_end * 1000 : undefined,
-                cancelAtPeriodEnd: subscription.cancel_at_period_end,
-              });
-            }
-          }
-          break;
-        }
-
-        default:
-          console.log(`Unhandled Stripe event type: ${event.type}`);
+        await ctx.runMutation(internal.stripe.syncSubscriptionDirectly, {
+          teamId: teamId as any,
+          subscriptionId: subscription.id,
+          status: subscription.status,
+          priceId,
+          currentPeriodEnd,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        });
+      } else {
+        console.log(`Subscription created but no teamId in metadata: ${subscription.id}`);
       }
+    },
 
-      return new Response(JSON.stringify({ received: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+    // Handle subscription updates
+    "customer.subscription.updated": async (ctx, event: Stripe.CustomerSubscriptionUpdatedEvent) => {
+      const subscription = event.data.object;
+      const teamId = subscription.metadata?.teamId;
+      const subscriptionItem = subscription.items.data[0];
+      const priceId = subscriptionItem?.price.id || "";
+      const currentPeriodEnd = subscriptionItem?.current_period_end
+        ? subscriptionItem.current_period_end * 1000
+        : Date.now() + 30 * 24 * 60 * 60 * 1000;
 
-    } catch (error) {
-      console.error("Stripe webhook error:", error);
-      return new Response(JSON.stringify({ error: (error as Error).message }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-  }),
+      if (teamId) {
+        console.log(`Subscription updated for team ${teamId}: ${subscription.status}`);
+
+        await ctx.runMutation(internal.stripe.syncSubscriptionDirectly, {
+          teamId: teamId as any,
+          subscriptionId: subscription.id,
+          status: subscription.status,
+          priceId,
+          currentPeriodEnd,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        });
+      }
+    },
+    
+    // Handle subscription cancellation
+    "customer.subscription.deleted": async (ctx, event: Stripe.CustomerSubscriptionDeletedEvent) => {
+      const subscription = event.data.object;
+      const teamId = subscription.metadata?.teamId;
+      
+      if (teamId) {
+        console.log(`Subscription deleted for team ${teamId}`);
+        
+        await ctx.runMutation(internal.stripe.updateTeamToFree, {
+          teamId,
+        });
+      }
+    },
+  },
+  onEvent: async (ctx, event: Stripe.Event) => {
+    // Log all events for debugging
+    console.log(`Stripe event received: ${event.type}`);
+  },
 });
 
-// Helper function to determine plan from Stripe price ID
-function determinePlanFromPriceId(priceId: string): string {
-  // You'll need to set these to your actual Stripe price IDs
-  const priceIdToPlan: Record<string, string> = {
-    // Add your actual Stripe price IDs here
-    "price_basic_monthly": "basic",
-    "price_basic_yearly": "basic", 
-    "price_pro_monthly": "pro",
-    "price_pro_yearly": "pro",
-    "price_enterprise_monthly": "enterprise",
-    "price_enterprise_yearly": "enterprise",
-  };
-  
-  return priceIdToPlan[priceId] || "basic";
-}
-
-export default http; 
+export default http;

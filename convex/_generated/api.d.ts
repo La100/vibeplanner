@@ -15,10 +15,18 @@ import type * as ai_agent from "../ai/agent.js";
 import type * as ai_chat from "../ai/chat.js";
 import type * as ai_config from "../ai/config.js";
 import type * as ai_confirmedActions from "../ai/confirmedActions.js";
+import type * as ai_confirmedActions_contacts from "../ai/confirmedActions/contacts.js";
+import type * as ai_confirmedActions_helpers from "../ai/confirmedActions/helpers.js";
+import type * as ai_confirmedActions_index from "../ai/confirmedActions/index.js";
+import type * as ai_confirmedActions_notes from "../ai/confirmedActions/notes.js";
+import type * as ai_confirmedActions_shopping from "../ai/confirmedActions/shopping.js";
+import type * as ai_confirmedActions_surveys from "../ai/confirmedActions/surveys.js";
+import type * as ai_confirmedActions_tasks from "../ai/confirmedActions/tasks.js";
 import type * as ai_files from "../ai/files.js";
 import type * as ai_helpers_contextBuilder from "../ai/helpers/contextBuilder.js";
 import type * as ai_helpers_fileProcessor from "../ai/helpers/fileProcessor.js";
 import type * as ai_helpers_functionCallHandler from "../ai/helpers/functionCallHandler.js";
+import type * as ai_helpers_streamResponseBuilder from "../ai/helpers/streamResponseBuilder.js";
 import type * as ai_helpers_tokenUtils from "../ai/helpers/tokenUtils.js";
 import type * as ai_imageGen_config from "../ai/imageGen/config.js";
 import type * as ai_imageGen_generation from "../ai/imageGen/generation.js";
@@ -55,6 +63,7 @@ import type * as rag from "../rag.js";
 import type * as seedDummyData from "../seedDummyData.js";
 import type * as shopping from "../shopping.js";
 import type * as stripe from "../stripe.js";
+import type * as stripeActions from "../stripeActions.js";
 import type * as surveys from "../surveys.js";
 import type * as tasks from "../tasks.js";
 import type * as teams from "../teams.js";
@@ -68,14 +77,6 @@ import type {
   FunctionReference,
 } from "convex/server";
 
-/**
- * A utility for referencing Convex functions in your app's API.
- *
- * Usage:
- * ```js
- * const myFunctionReference = api.myModule.myFunction;
- * ```
- */
 declare const fullApi: ApiFromModules<{
   activityLog: typeof activityLog;
   adminFunctions: typeof adminFunctions;
@@ -84,10 +85,18 @@ declare const fullApi: ApiFromModules<{
   "ai/chat": typeof ai_chat;
   "ai/config": typeof ai_config;
   "ai/confirmedActions": typeof ai_confirmedActions;
+  "ai/confirmedActions/contacts": typeof ai_confirmedActions_contacts;
+  "ai/confirmedActions/helpers": typeof ai_confirmedActions_helpers;
+  "ai/confirmedActions/index": typeof ai_confirmedActions_index;
+  "ai/confirmedActions/notes": typeof ai_confirmedActions_notes;
+  "ai/confirmedActions/shopping": typeof ai_confirmedActions_shopping;
+  "ai/confirmedActions/surveys": typeof ai_confirmedActions_surveys;
+  "ai/confirmedActions/tasks": typeof ai_confirmedActions_tasks;
   "ai/files": typeof ai_files;
   "ai/helpers/contextBuilder": typeof ai_helpers_contextBuilder;
   "ai/helpers/fileProcessor": typeof ai_helpers_fileProcessor;
   "ai/helpers/functionCallHandler": typeof ai_helpers_functionCallHandler;
+  "ai/helpers/streamResponseBuilder": typeof ai_helpers_streamResponseBuilder;
   "ai/helpers/tokenUtils": typeof ai_helpers_tokenUtils;
   "ai/imageGen/config": typeof ai_imageGen_config;
   "ai/imageGen/generation": typeof ai_imageGen_generation;
@@ -124,6 +133,7 @@ declare const fullApi: ApiFromModules<{
   seedDummyData: typeof seedDummyData;
   shopping: typeof shopping;
   stripe: typeof stripe;
+  stripeActions: typeof stripeActions;
   surveys: typeof surveys;
   tasks: typeof tasks;
   teams: typeof teams;
@@ -131,14 +141,30 @@ declare const fullApi: ApiFromModules<{
   textExtraction: typeof textExtraction;
   users: typeof users;
 }>;
-declare const fullApiWithMounts: typeof fullApi;
 
+/**
+ * A utility for referencing Convex functions in your app's public API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = api.myModule.myFunction;
+ * ```
+ */
 export declare const api: FilterApi<
-  typeof fullApiWithMounts,
+  typeof fullApi,
   FunctionReference<any, "public">
 >;
+
+/**
+ * A utility for referencing Convex functions in your app's internal API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = internal.myModule.myFunction;
+ * ```
+ */
 export declare const internal: FilterApi<
-  typeof fullApiWithMounts,
+  typeof fullApi,
   FunctionReference<any, "internal">
 >;
 
@@ -1489,12 +1515,6 @@ export declare const components: {
         },
         null
       >;
-      getMessageSearchFields: FunctionReference<
-        "query",
-        "internal",
-        { messageId: string },
-        { embedding?: Array<number>; embeddingModel?: string; text?: string }
-      >;
       getMessagesByIds: FunctionReference<
         "query",
         "internal",
@@ -1761,6 +1781,12 @@ export declare const components: {
             | { message: string; type: "other" }
           >;
         }>
+      >;
+      getMessageSearchFields: FunctionReference<
+        "query",
+        "internal",
+        { messageId: string },
+        { embedding?: Array<number>; embeddingModel?: string; text?: string }
       >;
       listMessagesByThreadId: FunctionReference<
         "query",
@@ -3571,6 +3597,350 @@ export declare const components: {
           null
         >;
       };
+    };
+  };
+  stripe: {
+    private: {
+      handleCheckoutSessionCompleted: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          metadata?: any;
+          mode: string;
+          stripeCheckoutSessionId: string;
+          stripeCustomerId?: string;
+        },
+        null
+      >;
+      handleCustomerCreated: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          email?: string;
+          metadata?: any;
+          name?: string;
+          stripeCustomerId: string;
+        },
+        null
+      >;
+      handleCustomerUpdated: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          email?: string;
+          metadata?: any;
+          name?: string;
+          stripeCustomerId: string;
+        },
+        null
+      >;
+      handleInvoiceCreated: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          amountDue: number;
+          amountPaid: number;
+          created: number;
+          status: string;
+          stripeCustomerId: string;
+          stripeInvoiceId: string;
+          stripeSubscriptionId?: string;
+        },
+        null
+      >;
+      handleInvoicePaid: FunctionReference<
+        "mutation",
+        "internal",
+        { amountPaid: number; stripeInvoiceId: string },
+        null
+      >;
+      handleInvoicePaymentFailed: FunctionReference<
+        "mutation",
+        "internal",
+        { stripeInvoiceId: string },
+        null
+      >;
+      handlePaymentIntentSucceeded: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          amount: number;
+          created: number;
+          currency: string;
+          metadata?: any;
+          status: string;
+          stripeCustomerId?: string;
+          stripePaymentIntentId: string;
+        },
+        null
+      >;
+      handleSubscriptionCreated: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          cancelAtPeriodEnd: boolean;
+          currentPeriodEnd: number;
+          metadata?: any;
+          priceId: string;
+          quantity?: number;
+          status: string;
+          stripeCustomerId: string;
+          stripeSubscriptionId: string;
+        },
+        null
+      >;
+      handleSubscriptionDeleted: FunctionReference<
+        "mutation",
+        "internal",
+        { stripeSubscriptionId: string },
+        null
+      >;
+      handleSubscriptionUpdated: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          cancelAtPeriodEnd: boolean;
+          currentPeriodEnd: number;
+          metadata?: any;
+          quantity?: number;
+          status: string;
+          stripeSubscriptionId: string;
+        },
+        null
+      >;
+      updatePaymentCustomer: FunctionReference<
+        "mutation",
+        "internal",
+        { stripeCustomerId: string; stripePaymentIntentId: string },
+        null
+      >;
+      updateSubscriptionQuantityInternal: FunctionReference<
+        "mutation",
+        "internal",
+        { quantity: number; stripeSubscriptionId: string },
+        null
+      >;
+    };
+    public: {
+      createOrUpdateCustomer: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          email?: string;
+          metadata?: any;
+          name?: string;
+          stripeCustomerId: string;
+        },
+        string
+      >;
+      getCustomer: FunctionReference<
+        "query",
+        "internal",
+        { stripeCustomerId: string },
+        {
+          email?: string;
+          metadata?: any;
+          name?: string;
+          stripeCustomerId: string;
+        } | null
+      >;
+      getPayment: FunctionReference<
+        "query",
+        "internal",
+        { stripePaymentIntentId: string },
+        {
+          amount: number;
+          created: number;
+          currency: string;
+          metadata?: any;
+          orgId?: string;
+          status: string;
+          stripeCustomerId?: string;
+          stripePaymentIntentId: string;
+          userId?: string;
+        } | null
+      >;
+      getSubscription: FunctionReference<
+        "query",
+        "internal",
+        { stripeSubscriptionId: string },
+        {
+          cancelAtPeriodEnd: boolean;
+          currentPeriodEnd: number;
+          metadata?: any;
+          orgId?: string;
+          priceId: string;
+          quantity?: number;
+          status: string;
+          stripeCustomerId: string;
+          stripeSubscriptionId: string;
+          userId?: string;
+        } | null
+      >;
+      getSubscriptionByOrgId: FunctionReference<
+        "query",
+        "internal",
+        { orgId: string },
+        {
+          cancelAtPeriodEnd: boolean;
+          currentPeriodEnd: number;
+          metadata?: any;
+          orgId?: string;
+          priceId: string;
+          quantity?: number;
+          status: string;
+          stripeCustomerId: string;
+          stripeSubscriptionId: string;
+          userId?: string;
+        } | null
+      >;
+      listInvoices: FunctionReference<
+        "query",
+        "internal",
+        { stripeCustomerId: string },
+        Array<{
+          amountDue: number;
+          amountPaid: number;
+          created: number;
+          orgId?: string;
+          status: string;
+          stripeCustomerId: string;
+          stripeInvoiceId: string;
+          stripeSubscriptionId?: string;
+          userId?: string;
+        }>
+      >;
+      listInvoicesByOrgId: FunctionReference<
+        "query",
+        "internal",
+        { orgId: string },
+        Array<{
+          amountDue: number;
+          amountPaid: number;
+          created: number;
+          orgId?: string;
+          status: string;
+          stripeCustomerId: string;
+          stripeInvoiceId: string;
+          stripeSubscriptionId?: string;
+          userId?: string;
+        }>
+      >;
+      listInvoicesByUserId: FunctionReference<
+        "query",
+        "internal",
+        { userId: string },
+        Array<{
+          amountDue: number;
+          amountPaid: number;
+          created: number;
+          orgId?: string;
+          status: string;
+          stripeCustomerId: string;
+          stripeInvoiceId: string;
+          stripeSubscriptionId?: string;
+          userId?: string;
+        }>
+      >;
+      listPayments: FunctionReference<
+        "query",
+        "internal",
+        { stripeCustomerId: string },
+        Array<{
+          amount: number;
+          created: number;
+          currency: string;
+          metadata?: any;
+          orgId?: string;
+          status: string;
+          stripeCustomerId?: string;
+          stripePaymentIntentId: string;
+          userId?: string;
+        }>
+      >;
+      listPaymentsByOrgId: FunctionReference<
+        "query",
+        "internal",
+        { orgId: string },
+        Array<{
+          amount: number;
+          created: number;
+          currency: string;
+          metadata?: any;
+          orgId?: string;
+          status: string;
+          stripeCustomerId?: string;
+          stripePaymentIntentId: string;
+          userId?: string;
+        }>
+      >;
+      listPaymentsByUserId: FunctionReference<
+        "query",
+        "internal",
+        { userId: string },
+        Array<{
+          amount: number;
+          created: number;
+          currency: string;
+          metadata?: any;
+          orgId?: string;
+          status: string;
+          stripeCustomerId?: string;
+          stripePaymentIntentId: string;
+          userId?: string;
+        }>
+      >;
+      listSubscriptions: FunctionReference<
+        "query",
+        "internal",
+        { stripeCustomerId: string },
+        Array<{
+          cancelAtPeriodEnd: boolean;
+          currentPeriodEnd: number;
+          metadata?: any;
+          orgId?: string;
+          priceId: string;
+          quantity?: number;
+          status: string;
+          stripeCustomerId: string;
+          stripeSubscriptionId: string;
+          userId?: string;
+        }>
+      >;
+      listSubscriptionsByUserId: FunctionReference<
+        "query",
+        "internal",
+        { userId: string },
+        Array<{
+          cancelAtPeriodEnd: boolean;
+          currentPeriodEnd: number;
+          metadata?: any;
+          orgId?: string;
+          priceId: string;
+          quantity?: number;
+          status: string;
+          stripeCustomerId: string;
+          stripeSubscriptionId: string;
+          userId?: string;
+        }>
+      >;
+      updateSubscriptionMetadata: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          metadata: any;
+          orgId?: string;
+          stripeSubscriptionId: string;
+          userId?: string;
+        },
+        null
+      >;
+      updateSubscriptionQuantity: FunctionReference<
+        "action",
+        "internal",
+        { quantity: number; stripeSubscriptionId: string },
+        null
+      >;
     };
   };
 };

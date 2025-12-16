@@ -1,14 +1,13 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useState, useEffect } from "react";
+import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { SUBSCRIPTION_PLANS } from "@/convex/stripe";
 
-import { CreditCard, Crown, Zap, Users, FolderOpen, HardDrive, Check } from "lucide-react";
+import { Crown, Zap, Users, FolderOpen, HardDrive, Check, Sparkles, Brain, ExternalLink, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
 
 import { toast } from "sonner";
 
@@ -18,265 +17,226 @@ interface SubscriptionCardProps {
 
 export function SubscriptionCard({ teamId }: SubscriptionCardProps) {
   const [loading, setLoading] = useState(false);
-  const [cancelLoading, setCancelLoading] = useState(false);
-  
+  const [portalLoading, setPortalLoading] = useState(false);
+
   const subscription = useQuery(api.stripe.getTeamSubscription, { teamId });
-  const createCheckoutSession = useMutation(api.stripe.createCheckoutSession);
-  const cancelSubscription = useMutation(api.stripe.cancelSubscription);
+  const storageUsage = useQuery(api.files.getTeamStorageUsage, { teamId });
+  const createCheckoutSession = useAction(api.stripeActions.createCheckoutSession);
+  const createBillingPortalSession = useAction(api.stripeActions.createBillingPortalSession);
+  const ensureSubscriptionSynced = useAction(api.stripeActions.ensureSubscriptionSynced);
+
+  // Auto-sync subscription from Stripe if needed (runs once on mount)
+  useEffect(() => {
+    if (subscription && subscription.stripeCustomerId && subscription.subscriptionPlan === "free") {
+      ensureSubscriptionSynced({ teamId }).catch(console.error);
+    }
+  }, [subscription?.stripeCustomerId, subscription?.subscriptionPlan, teamId, ensureSubscriptionSynced]);
 
   if (!subscription) {
-    return <div>Ładowanie...</div>;
+    return <div className="h-24 w-full animate-pulse rounded-xl bg-muted/20" />;
   }
 
+  // Check if subscription is active (has subscriptionId and active status)
+  const hasActiveSubscription = subscription.subscriptionId && 
+    (subscription.subscriptionStatus === "active" || subscription.subscriptionStatus === "trialing");
   const isActive = subscription.subscriptionStatus === "active" || subscription.subscriptionStatus === "trialing";
   const isTrial = subscription.subscriptionStatus === "trialing";
   const isPastDue = subscription.subscriptionStatus === "past_due";
 
   const handleUpgrade = async (priceId: string) => {
+    if (!priceId) {
+      toast.error("Price ID is not configured");
+      return;
+    }
+    
     setLoading(true);
     try {
-      await createCheckoutSession({
+      const result = await createCheckoutSession({
         teamId,
         priceId,
       });
       
-      toast.success("Przekierowywanie do płatności zostało zlecone. Sprawdź email lub odśwież stronę za chwilę.");
+      if (result.url) {
+        window.location.href = result.url;
+      } else {
+        toast.error("Failed to create checkout session");
+      }
     } catch (error) {
       console.error("Error creating checkout session:", error);
-      toast.error("Błąd podczas przekierowania do płatności");
+      toast.error("Error creating checkout session");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCancel = async (cancelAtPeriodEnd: boolean) => {
-    setCancelLoading(true);
+  const handleManageSubscription = async () => {
+    setPortalLoading(true);
     try {
-      await cancelSubscription({
+      const result = await createBillingPortalSession({
         teamId,
-        cancelAtPeriodEnd,
       });
-      
-      toast.success(
-        cancelAtPeriodEnd 
-          ? "Subskrypcja zostanie anulowana na koniec okresu rozliczeniowego"
-          : "Subskrypcja została anulowana"
-      );
+
+      if (result.url) {
+        window.location.href = result.url;
+      } else {
+        toast.error("Failed to open Stripe portal");
+      }
     } catch (error) {
-      console.error("Error cancelling subscription:", error);
-      toast.error("Błąd podczas anulowania subskrypcji");
+      console.error("Error creating billing portal session:", error);
+      toast.error("Error opening Stripe portal");
     } finally {
-      setCancelLoading(false);
+      setPortalLoading(false);
     }
   };
 
   const formatDate = (timestamp?: number) => {
     if (!timestamp) return "N/A";
-    return new Date(timestamp).toLocaleDateString("pl-PL");
-  };
-
-  const getPlanIcon = (plan: string) => {
-    switch (plan) {
-      case "free": return <Users className="h-5 w-5" />;
-      case "basic": return <FolderOpen className="h-5 w-5" />;
-      case "pro": return <Zap className="h-5 w-5" />;
-      case "enterprise": return <Crown className="h-5 w-5" />;
-      default: return <Users className="h-5 w-5" />;
-    }
+    return new Date(timestamp).toLocaleDateString("en-US", { year: 'numeric', month: 'long', day: 'numeric' });
   };
 
   const getStatusBadge = () => {
-    if (isTrial) return <Badge variant="secondary">Okres próbny</Badge>;
-    if (isActive) return <Badge variant="default">Aktywna</Badge>;
-    if (isPastDue) return <Badge variant="destructive">Zaległość</Badge>;
-    if (subscription.cancelAtPeriodEnd) return <Badge variant="outline">Do anulowania</Badge>;
-    return <Badge variant="outline">Nieaktywna</Badge>;
+    if (isTrial) return <Badge variant="secondary" className="font-normal">Trial Period</Badge>;
+    if (isActive) return <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-700 font-normal">Active</Badge>;
+    if (isPastDue) return <Badge variant="destructive" className="font-normal">Past Due</Badge>;
+    if (subscription.cancelAtPeriodEnd) return <Badge variant="outline" className="text-orange-600 border-orange-200 font-normal">Ends soon</Badge>;
+    return <Badge variant="outline" className="font-normal">Inactive</Badge>;
   };
 
   return (
-    <div className="space-y-6">
-      {/* Current Plan */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {getPlanIcon(subscription.subscriptionPlan)}
-              <div>
-                <CardTitle className="text-xl">
-                  Plan {subscription.planDetails.name}
-                </CardTitle>
-                <CardDescription>
-                  {subscription.planDetails.price === 0 
-                    ? "Darmowy plan" 
-                    : `${subscription.planDetails.price} PLN/miesiąc`
-                  }
-                </CardDescription>
-              </div>
-            </div>
-            {getStatusBadge()}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Plan Limits */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="flex items-center gap-2">
-              <FolderOpen className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm">
-                {subscription.limits.maxProjects} projektów
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm">
-                {subscription.limits.maxTeamMembers} członków
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <HardDrive className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm">
-                {subscription.limits.maxStorageGB} GB storage
-              </span>
-            </div>
+    <div className="space-y-8">
+      {/* Current Plan Card - Clean Horizontal Layout */}
+      <Card className="border-border/10 shadow-sm bg-card/40 overflow-hidden">
+        <CardContent className="p-8">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 mb-8">
+             <div className="flex items-center gap-4">
+                <div className="h-12 w-12 rounded-xl bg-violet-100 dark:bg-violet-900/20 flex items-center justify-center">
+                   <Sparkles className="h-6 w-6 text-violet-600 dark:text-violet-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-xl font-medium tracking-tight">{subscription.planDetails.name} Plan</h3>
+                    {getStatusBadge()}
+                  </div>
+                  <p className="text-muted-foreground font-light mt-1">
+                    {subscription.planDetails.price === 0 
+                      ? "Free forever" 
+                      : `$${subscription.planDetails.price} / month`
+                    }
+                  </p>
+                </div>
+             </div>
+
+             {subscription.subscriptionPlan !== "free" && (
+                <Button
+                  variant="outline"
+                  className="bg-transparent border-border/20 hover:bg-muted/50"
+                  onClick={handleManageSubscription}
+                  disabled={portalLoading}
+                >
+                  <Settings className="h-4 w-4 mr-2" />
+                  {portalLoading ? "Opening..." : "Manage Subscription"}
+                  <ExternalLink className="h-3 w-3 ml-2 opacity-50" />
+                </Button>
+              )}
           </div>
 
-          {/* Subscription Details */}
+          <div className="h-px bg-border/10 mb-8" />
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8">
+            <div className="space-y-2">
+               <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">Projects</span>
+               <div className="flex items-center gap-2">
+                 <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                 <span className="text-sm font-medium">{subscription.limits.maxProjects} projects</span>
+               </div>
+            </div>
+            
+            <div className="space-y-2">
+               <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">Team Size</span>
+               <div className="flex items-center gap-2">
+                 <Users className="h-4 w-4 text-muted-foreground" />
+                 <span className="text-sm font-medium">{subscription.limits.maxTeamMembers} users</span>
+               </div>
+            </div>
+
+            <div className="space-y-2">
+               <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">Storage</span>
+               <div className="flex items-center gap-2">
+                 <HardDrive className="h-4 w-4 text-muted-foreground" />
+                 <span className="text-sm font-medium">{subscription.limits.maxStorageGB} GB</span>
+               </div>
+               {storageUsage && (
+                  <Progress value={storageUsage.percentUsed} className="h-1 bg-muted/20" indicatorClassName="bg-foreground" />
+               )}
+            </div>
+
+            <div className="space-y-2">
+               <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">AI Features</span>
+               <div className="flex items-center gap-2">
+                 <Brain className={`h-4 w-4 ${subscription.planDetails.hasAIFeatures ? 'text-violet-500' : 'text-muted-foreground'}`} />
+                 <span className={`text-sm font-medium ${subscription.planDetails.hasAIFeatures ? 'text-violet-600' : 'text-muted-foreground'}`}>
+                   {subscription.planDetails.hasAIFeatures ? 'Enabled' : 'Disabled'}
+                 </span>
+               </div>
+            </div>
+          </div>
+          
           {isActive && subscription.currentPeriodEnd && (
-            <div className="pt-4 border-t">
-              <p className="text-sm text-muted-foreground">
-                {isTrial ? "Okres próbny kończy się" : "Odnowi się"}: {formatDate(subscription.currentPeriodEnd)}
-              </p>
-              {subscription.cancelAtPeriodEnd && (
-                <p className="text-sm text-orange-600 mt-1">
-                  Subskrypcja zostanie anulowana na koniec okresu rozliczeniowego
-                </p>
-              )}
+            <div className="mt-8 pt-6 border-t border-border/10 flex justify-end">
+               <p className="text-xs text-muted-foreground/60 font-light">
+                 {isTrial ? "Trial ends" : "Renews on"} {formatDate(subscription.currentPeriodEnd)}
+               </p>
             </div>
           )}
-
-          {/* Action Buttons */}
-          <div className="flex gap-2 pt-4">
-            {subscription.subscriptionPlan === "free" ? (
-              <Button onClick={() => handleUpgrade("price_basic_monthly")} disabled={loading}>
-                <CreditCard className="h-4 w-4 mr-2" />
-                Upgrade do Basic
-              </Button>
-            ) : (
-              <>
-                {!subscription.cancelAtPeriodEnd && (
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" disabled={cancelLoading}>
-                        Anuluj subskrypcję
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Anuluj subskrypcję</DialogTitle>
-                        <DialogDescription>
-                          Wybierz, kiedy chcesz anulować subskrypcję.
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <Button 
-                          variant="outline" 
-                          className="w-full"
-                          onClick={() => handleCancel(true)}
-                          disabled={cancelLoading}
-                        >
-                          Anuluj na koniec okresu rozliczeniowego
-                        </Button>
-                        <Button 
-                          variant="destructive" 
-                          className="w-full"
-                          onClick={() => handleCancel(false)}
-                          disabled={cancelLoading}
-                        >
-                          Anuluj natychmiast
-                        </Button>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                )}
-              </>
-            )}
-          </div>
         </CardContent>
       </Card>
 
-      {/* Available Plans */}
-      {subscription.subscriptionPlan !== "enterprise" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Dostępne plany</CardTitle>
-            <CardDescription>
-              Wybierz plan odpowiedni dla Twojego zespołu
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {Object.entries({
-                basic: { priceId: "price_basic_monthly", popular: false },
-                pro: { priceId: "price_pro_monthly", popular: true },
-                enterprise: { priceId: "price_enterprise_monthly", popular: false },
-              }).map(([planKey, planData]) => {
-                const plan = SUBSCRIPTION_PLANS?.[planKey as keyof typeof SUBSCRIPTION_PLANS] || {
-                  name: planKey,
-                  price: 0,
-                  maxProjects: 0,
-                  maxTeamMembers: 0,
-                  hasAdvancedFeatures: false,
-                };
-                
-                const isCurrent = subscription.subscriptionPlan === planKey;
-                
-                return (
-                  <Card key={planKey} className={`relative ${planData.popular ? 'border-primary' : ''}`}>
-                    {planData.popular && (
-                      <Badge className="absolute -top-3 left-1/2 transform -translate-x-1/2">
-                        Najpopularniejszy
-                      </Badge>
-                    )}
-                    <CardHeader className="pb-4">
-                      <CardTitle className="text-lg">{plan.name}</CardTitle>
-                      <div className="text-2xl font-bold">
-                        {plan.price} PLN
-                        <span className="text-sm font-normal text-muted-foreground">/miesiąc</span>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Check className="h-4 w-4 text-green-500" />
-                          <span className="text-sm">{plan.maxProjects} projektów</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Check className="h-4 w-4 text-green-500" />
-                          <span className="text-sm">{plan.maxTeamMembers} członków zespołu</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Check className="h-4 w-4 text-green-500" />
-                          <span className="text-sm">{plan.maxStorageGB} GB storage</span>
-                        </div>
-                        {plan.hasAdvancedFeatures && (
-                          <div className="flex items-center gap-2">
-                            <Check className="h-4 w-4 text-green-500" />
-                            <span className="text-sm">Zaawansowane funkcje</span>
-                          </div>
-                        )}
-                      </div>
-                      
-                      <Button 
-                        className="w-full mt-4"
-                        variant={isCurrent ? "outline" : "default"}
-                        disabled={isCurrent || loading}
-                        onClick={() => !isCurrent && handleUpgrade(planData.priceId)}
-                      >
-                        {isCurrent ? "Aktualny plan" : "Wybierz plan"}
-                      </Button>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+      {/* Upgrade Promo Card - Minimal Gradient */}
+      {!hasActiveSubscription && subscription.subscriptionPlan !== "ai" && (
+        <Card className="relative overflow-hidden rounded-xl border border-transparent bg-gradient-to-br from-violet-500/5 to-purple-500/10 shadow-none hover:shadow-sm transition-all">
+          <CardContent className="p-8 grid md:grid-cols-2 gap-8 items-center">
+            <div className="space-y-4">
+               <div className="flex items-center gap-3">
+                 <div className="h-10 w-10 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shadow-lg shadow-primary/20">
+                    <Sparkles className="h-5 w-5" />
+                 </div>
+                 <h3 className="text-xl font-bold tracking-tight">Upgrade to AI Pro</h3>
+               </div>
+               <p className="text-muted-foreground font-light leading-relaxed max-w-sm">
+                 Unlock the full power of VibePlanner with AI-driven insights, more storage, and unlimited potential.
+               </p>
+               <div className="flex flex-wrap gap-4 pt-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-primary" />
+                    <span>20 projects</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-primary" />
+                    <span>25 team members</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-primary" />
+                    <span>50 GB storage</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-primary" />
+                    <span>AI Assistant</span>
+                  </div>
+               </div>
+            </div>
+
+            <div className="flex flex-col items-start md:items-end justify-center gap-4">
+               <div className="text-right">
+                  <span className="text-3xl font-bold tracking-tight">$39</span>
+                  <span className="text-muted-foreground ml-1">/ month</span>
+               </div>
+               <Button 
+                className="w-full md:w-auto h-12 px-8 rounded-full text-base font-medium shadow-xl shadow-primary/20 hover:shadow-primary/30 transition-all"
+                disabled={loading}
+                onClick={() => handleUpgrade(process.env.NEXT_PUBLIC_STRIPE_AI_PRICE_ID || "")}
+              >
+                {loading ? "Processing..." : "Upgrade Now"}
+              </Button>
             </div>
           </CardContent>
         </Card>

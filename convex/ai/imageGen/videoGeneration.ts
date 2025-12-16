@@ -51,6 +51,17 @@ export const generateVideo = action({
       };
     }
 
+    const aiAccess = await ctx.runQuery(internal.stripe.checkAIFeatureAccessByProject, {
+      projectId: args.projectId,
+    });
+
+    if (!aiAccess.allowed) {
+      return {
+        success: false,
+        error: aiAccess.message || "AI features are unavailable for this project.",
+      };
+    }
+
     try {
       const ai = new GoogleGenAI({ apiKey });
       const startTime = Date.now();

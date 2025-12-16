@@ -1,9 +1,122 @@
 import { R2 } from "@convex-dev/r2";
 import { api, components, internal } from "./_generated/api";
-import { mutation, query, internalMutation } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
+import { SUBSCRIPTION_PLANS } from "./stripe";
+import { Id } from "./_generated/dataModel";
 
 export const r2 = new R2(components.r2);
+
+// Get team storage usage in bytes
+export const getTeamStorageUsage = query({
+  args: { teamId: v.id("teams") },
+  returns: v.object({
+    usedBytes: v.number(),
+    usedGB: v.number(),
+    limitGB: v.number(),
+    percentUsed: v.number(),
+    canUpload: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const team = await ctx.db.get(args.teamId);
+    if (!team) {
+      throw new Error("Team not found");
+    }
+
+    // Get all projects for this team
+    const projects = await ctx.db
+      .query("projects")
+      .withIndex("by_team", q => q.eq("teamId", args.teamId))
+      .collect();
+
+    // Sum up all file sizes across projects
+    let totalBytes = 0;
+    for (const project of projects) {
+      const files = await ctx.db
+        .query("files")
+        .withIndex("by_project", q => q.eq("projectId", project._id))
+        .filter(q => q.eq(q.field("isLatest"), true))
+        .collect();
+
+      totalBytes += files.reduce((sum, file) => sum + (file.size || 0), 0);
+    }
+
+    const plan = (team.subscriptionPlan || "free") as keyof typeof SUBSCRIPTION_PLANS;
+    const limits = team.subscriptionLimits || SUBSCRIPTION_PLANS[plan];
+    const limitGB = limits.maxStorageGB;
+    const limitBytes = limitGB * 1024 * 1024 * 1024;
+
+    const usedGB = totalBytes / (1024 * 1024 * 1024);
+    const percentUsed = limitBytes > 0 ? (totalBytes / limitBytes) * 100 : 0;
+
+    return {
+      usedBytes: totalBytes,
+      usedGB: Math.round(usedGB * 100) / 100,
+      limitGB,
+      percentUsed: Math.round(percentUsed * 10) / 10,
+      canUpload: totalBytes < limitBytes,
+    };
+  },
+});
+
+// Internal query to check storage limit
+export const checkStorageLimit = internalQuery({
+  args: {
+    teamId: v.id("teams"),
+    additionalBytes: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const team = await ctx.db.get(args.teamId);
+    if (!team) {
+      return { allowed: false, message: "Team not found" };
+    }
+
+    // Get all projects for this team
+    const projects = await ctx.db
+      .query("projects")
+      .withIndex("by_team", q => q.eq("teamId", args.teamId))
+      .collect();
+
+    // Sum up all file sizes
+    let totalBytes = 0;
+    for (const project of projects) {
+      const files = await ctx.db
+        .query("files")
+        .withIndex("by_project", q => q.eq("projectId", project._id))
+        .filter(q => q.eq(q.field("isLatest"), true))
+        .collect();
+
+      totalBytes += files.reduce((sum, file) => sum + (file.size || 0), 0);
+    }
+
+    const plan = (team.subscriptionPlan || "free") as keyof typeof SUBSCRIPTION_PLANS;
+    const limits = team.subscriptionLimits || SUBSCRIPTION_PLANS[plan];
+    const limitBytes = limits.maxStorageGB * 1024 * 1024 * 1024;
+
+    const newTotal = totalBytes + (args.additionalBytes || 0);
+
+    if (newTotal >= limitBytes) {
+      return {
+        allowed: false,
+        message: `Storage limit reached (${limits.maxStorageGB} GB). Please upgrade your plan.`,
+        usedBytes: totalBytes,
+        limitBytes,
+      };
+    }
+
+    return {
+      allowed: true,
+      message: "OK",
+      usedBytes: totalBytes,
+      limitBytes,
+    };
+  },
+});
 
 // Konfiguracja klienta R2 z walidacją dla interior design
 export const { generateUploadUrl, syncMetadata } = r2.clientApi({
@@ -31,6 +144,7 @@ export const generateUploadUrlWithCustomKey = mutation({
     taskId: v.optional(v.id("tasks")),
     fileName: v.string(),
     origin: v.optional(v.union(v.literal("ai"), v.literal("general"))),
+    fileSize: v.optional(v.number()), // Size in bytes for storage limit check
   },
   returns: v.object({
     url: v.string(),
@@ -50,13 +164,23 @@ export const generateUploadUrlWithCustomKey = mutation({
     // Check access
     const hasAccess = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
       )
       .unique();
 
     if (!hasAccess || !hasAccess.isActive) {
       throw new Error("No access to this project");
+    }
+
+    // Check storage limit
+    const storageCheck = await ctx.runQuery(internal.files.checkStorageLimit, {
+      teamId: project.teamId,
+      additionalBytes: args.fileSize,
+    });
+
+    if (!storageCheck.allowed) {
+      throw new Error(storageCheck.message);
     }
 
     const contextFolder = args.origin === "ai"
@@ -67,8 +191,8 @@ export const generateUploadUrlWithCustomKey = mutation({
     const path = `${team.slug}/${project.slug}/${contextFolder}`;
 
     // Generate folder structure: team/project/context/uuid-filename
-    const fileExtension = args.fileName.includes('.') 
-      ? args.fileName.split('.').pop() 
+    const fileExtension = args.fileName.includes('.')
+      ? args.fileName.split('.').pop()
       : '';
     const baseName = args.fileName.replace(/\.[^/.]+$/, ""); // Remove extension
     const uuid = crypto.randomUUID();

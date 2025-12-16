@@ -1,6 +1,8 @@
 import { v } from "convex/values";
 import { internalMutation, query } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
+import { SUBSCRIPTION_PLANS } from "../stripe";
+import { getBillingWindow } from "../stripe";
 
 // ====== TOKEN USAGE TRACKING ======
 
@@ -30,9 +32,50 @@ export const saveTokenUsage = internalMutation({
     errorMessage: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await ctx.db.insert("aiTokenUsage", {
+    // Insert usage record
+    const usageId = await ctx.db.insert("aiTokenUsage", {
       ...args
     });
+
+    // Update extra credits wallet (persistent across periods)
+    try {
+      const team = await ctx.db.get(args.teamId);
+      if (team) {
+        const subscriptionLimits = team.subscriptionLimits || SUBSCRIPTION_PLANS.free;
+        const baseBudget = (subscriptionLimits as any).aiMonthlySpendLimitCents || 0;
+
+        if (baseBudget > 0 || (team.aiExtraCreditsCents || 0) > 0) {
+          const { start } = getBillingWindow(team);
+
+          // Spend in current period including this record
+          const periodUsage = await ctx.db
+            .query("aiTokenUsage")
+            .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+            .filter((q) => q.gte(q.field("_creationTime"), start))
+            .collect();
+
+          const spendCents = periodUsage.reduce(
+            (sum, record) => sum + (record.estimatedCostCents || 0),
+            0
+          );
+
+          const overage = Math.max(0, spendCents - baseBudget);
+          const currentWallet = team.aiExtraCreditsCents || 0;
+          const walletNeeded = Math.max(0, overage);
+          const walletToDeduct = Math.max(0, Math.min(walletNeeded, currentWallet));
+
+          if (walletToDeduct > 0) {
+            await ctx.db.patch(args.teamId, {
+              aiExtraCreditsCents: currentWallet - walletToDeduct,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to update AI extra credits wallet:", err);
+    }
+
+    return usageId;
   },
 });
 
@@ -185,5 +228,3 @@ export const getTeamTokenUsage = query({
     };
   },
 });
-
-

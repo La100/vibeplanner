@@ -62,6 +62,8 @@ export default defineSchema({
     subscriptionPlan: v.optional(v.union(
       v.literal("free"),
       v.literal("basic"),
+      v.literal("ai"),
+      v.literal("ai_scale"),
       v.literal("pro"),
       v.literal("enterprise")
     )),
@@ -77,8 +79,13 @@ export default defineSchema({
       maxTeamMembers: v.number(),
       maxStorageGB: v.number(),
       hasAdvancedFeatures: v.boolean(),
+      hasAIFeatures: v.optional(v.boolean()),
       price: v.number(),
-    }))
+      aiMonthlySpendLimitCents: v.optional(v.number()),
+      aiImageGenerationsLimit: v.optional(v.number()),
+    })),
+    aiExtraCreditsCents: v.optional(v.number()), // dodatkowe kredyty AI (top-up) dla bieżącego okresu
+    aiExtraCreditsPeriodStart: v.optional(v.number()), // start okresu rozliczeniowego, dla którego obowiązują kredyty
   })
     .index("by_clerk_org", ["clerkOrgId"])
     .index("by_slug", ["slug"])

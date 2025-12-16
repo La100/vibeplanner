@@ -51,6 +51,7 @@ export const bulkEditConfirmedTasks = action({
         throw new Error("Unauthorized");
       }
 
+      // @ts-ignore - Convex deep type instantiation issue
       const projectTasks = await ctx.runQuery(internal.tasks.listProjectTasksInternal, {
         projectId: args.projectId,
       });
@@ -60,8 +61,10 @@ export const bulkEditConfirmedTasks = action({
         if (args.updates.assignedTo === null) {
           assignedToValue = null;
         } else {
-          const userDoc = await ctx.runQuery(api.users.getByClerkId, {
-            clerkUserId: args.updates.assignedTo,
+          const clerkUserId = args.updates.assignedTo;
+          // @ts-expect-error - Convex type depth issue when inferring runQuery args
+          const userDoc: Doc<"users"> | null = await ctx.runQuery(api.users.getByClerkId, {
+            clerkUserId,
           });
           if (!userDoc) {
             throw new Error(`User with Clerk ID ${args.updates.assignedTo} not found`);
@@ -92,7 +95,11 @@ export const bulkEditConfirmedTasks = action({
         };
       }
 
-      const updatesToApply: Record<string, unknown> = {};
+      type UpdateFields = Pick<
+        Doc<"tasks">,
+        "title" | "description" | "status" | "priority" | "assignedTo" | "tags"
+      >;
+      const updatesToApply: Partial<UpdateFields> = {};
       if (args.updates.title !== undefined) updatesToApply.title = args.updates.title;
       if (args.updates.description !== undefined) updatesToApply.description = args.updates.description;
       if (args.updates.status !== undefined) updatesToApply.status = args.updates.status;
