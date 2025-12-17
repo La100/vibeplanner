@@ -88,7 +88,6 @@ const AIAssistantSmart = () => {
     showEmptyState,
     chatIsLoading,
     previousThreadsCount,
-    mobileSelectValue,
     messagesEndRef,
     inputRef,
     handleSendMessage: sendMessageWithFile,
@@ -301,8 +300,8 @@ const AIAssistantSmart = () => {
     !aiAccess.hasAccess &&
     (
       aiAccess.remainingBudgetCents === 0 ||
-      (typeof (aiAccess.subscriptionLimits as any)?.aiImageGenerationsLimit === "number" &&
-        (aiAccess.aiImageCount || 0) >= (aiAccess.subscriptionLimits as any).aiImageGenerationsLimit) ||
+      (typeof (aiAccess.subscriptionLimits as { aiImageGenerationsLimit?: number })?.aiImageGenerationsLimit === "number" &&
+        (aiAccess.aiImageCount || 0) >= (aiAccess.subscriptionLimits as { aiImageGenerationsLimit?: number }).aiImageGenerationsLimit!) ||
       (aiAccess.message || "").toLowerCase().includes("wyczerpano")
     )
   );
@@ -365,19 +364,20 @@ const AIAssistantSmart = () => {
                 <span className="uppercase tracking-wide text-[10px] text-muted-foreground">tokens</span>
               </div>
               {/* Optional: Show spend progress if limit exists */}
-              {typeof (aiAccess.subscriptionLimits as any)?.aiMonthlySpendLimitCents === "number" && (
-                <div className="h-1 rounded-full bg-muted overflow-hidden w-24">
-                  <div
-                    className="h-full bg-gradient-to-r from-blue-500/70 to-purple-500/70 rounded-full"
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        ((aiAccess.aiSpendCents || 0) / (aiAccess.subscriptionLimits as any).aiMonthlySpendLimitCents) * 100
-                      )}%`,
-                    }}
-                  />
-                </div>
-              )}
+              {(() => {
+                const limits = aiAccess.subscriptionLimits as { aiMonthlySpendLimitCents?: number } | undefined;
+                const spendLimit = limits?.aiMonthlySpendLimitCents;
+                return typeof spendLimit === "number" ? (
+                  <div className="h-1 rounded-full bg-muted overflow-hidden w-24">
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-500/70 to-purple-500/70 rounded-full"
+                      style={{
+                        width: `${Math.min(100, ((aiAccess.aiSpendCents || 0) / spendLimit) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                ) : null;
+              })()}
             </div>
           </div>
         </div>

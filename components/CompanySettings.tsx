@@ -7,8 +7,8 @@ import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 
-import { Save, CreditCard, Sparkles, Zap, BarChart3, TrendingUp, AlertCircle, Building2, Users2 } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Sparkles, Zap, BarChart3, TrendingUp, AlertCircle } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SubscriptionCard } from "@/components/ui/billing/SubscriptionCard";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { TOKEN_PRICE_USD, tokensFromCents, tokensForGeminiImage, GEMINI_IMAGE_2K_PRICE_USD } from "@/lib/aiPricing";
+import { tokensFromCents, tokensForGeminiImage, GEMINI_IMAGE_2K_PRICE_USD } from "@/lib/aiPricing";
 
 const formatTokens = (tokens?: number) => {
   if (!tokens) return "0";
@@ -155,8 +155,8 @@ export default function CompanySettings() {
                     <div className="space-y-3">
                       <Label htmlFor="currency" className="text-sm font-normal text-muted-foreground">Default Currency</Label>
                       <Select 
-                        value={teamSettings.currency} 
-                        onValueChange={(value) => setTeamSettings({ ...teamSettings, currency: value as any })}
+                        value={teamSettings.currency}
+                        onValueChange={(value) => setTeamSettings({ ...teamSettings, currency: value as typeof teamSettings.currency })}
                       >
                         <SelectTrigger className="w-full bg-transparent border-border/20 h-10">
                           <SelectValue placeholder="Select currency" />
@@ -359,7 +359,7 @@ export default function CompanySettings() {
                                 } else {
                                   toast.error("Failed to start upgrade");
                                 }
-                              } catch (error) {
+                              } catch {
                                 toast.error("Failed to start upgrade");
                               } finally {
                                 setUpgradingPlan(false);

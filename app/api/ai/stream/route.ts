@@ -40,8 +40,19 @@ export async function POST(request: NextRequest) {
       : `thread-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
     // Call simple chat action - waits for full response
-    // @ts-expect-error - Convex type instantiation depth issue
-    const result = await convex.action(api.ai.chat.sendMessage, {
+    // Using type assertion to avoid "Type instantiation is excessively deep" error from Convex types
+    type SendMessageResult = {
+      success: boolean;
+      threadId?: string;
+      response?: string;
+      error?: string;
+      tokenUsage?: { totalTokens: number; estimatedCostUSD: number };
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const convexAny = convex as any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const apiAny = api as any;
+    const result: SendMessageResult = await convexAny.action(apiAny.ai.chat.sendMessage, {
       message,
       projectId: projectId as Id<"projects">,
       userClerkId,

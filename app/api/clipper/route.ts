@@ -58,27 +58,32 @@ export async function GET(req: Request) {
 
     console.log("🔍 Query params - teamId:", teamId, "projectId:", projectId);
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const convexAny = convex as any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const apiAny = api as any;
+
     if (teamId && projectId) {
       // Pobierz sekcje dla projektu
       console.log("📞 Calling getShoppingListSections");
-      const sections = await convex.query(api.clipper.getShoppingListSections, { 
-        projectId: projectId as Id<"projects">, 
-        teamId: teamId as Id<"teams"> 
+      const sections = await convexAny.query(apiAny.clipper.getShoppingListSections, {
+        projectId: projectId as Id<"projects">,
+        teamId: teamId as Id<"teams">
       });
       console.log("✅ Sections query successful");
       return NextResponse.json({ sections });
     } else if (teamId) {
       // Pobierz projekty dla zespołu
       console.log("📞 Calling getProjectsForTeam");
-      const projects = await convex.query(api.clipper.getProjectsForTeam, { 
-        teamId: teamId as Id<"teams"> 
+      const projects = await convexAny.query(apiAny.clipper.getProjectsForTeam, {
+        teamId: teamId as Id<"teams">
       });
       console.log("✅ Projects query successful");
       return NextResponse.json({ projects });
     } else {
       // Domyślne zachowanie: pobierz zespoły i projekty dla użytkownika
       console.log("📞 Calling convex.query(api.clipper.getTeamsAndProjects)");
-      const data = await convex.query(api.clipper.getTeamsAndProjects, {});
+      const data = await convexAny.query(apiAny.clipper.getTeamsAndProjects, {});
       console.log("🎉 Convex query successful, data:", JSON.stringify(data, null, 2));
       // Zakładamy, że getTeamsAndProjects zwraca { user, teams }
       return NextResponse.json(data);
@@ -112,9 +117,13 @@ export async function POST(req: Request) {
     convex.setAuth(token);
 
     const body = await req.json();
-    
+
     // Używamy nowej, bardziej szczegółowej mutacji
-    const newItem = await convex.mutation(api.clipper.addShoppingListItem, body);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const convexAny = convex as any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const apiAny = api as any;
+    const newItem = await convexAny.mutation(apiAny.clipper.addShoppingListItem, body);
 
     return NextResponse.json(newItem);
 

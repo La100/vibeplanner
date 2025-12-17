@@ -22,11 +22,6 @@ import {
 import { AISubscriptionWall } from "@/components/AISubscriptionWall";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  TOKEN_PRICE_USD,
-  GEMINI_IMAGE_2K_PRICE_USD,
-  tokensForGeminiImage,
-} from "@/lib/aiPricing";
 
 const formatTokens = (tokens?: number) => {
   if (!tokens) return "0";
@@ -387,8 +382,8 @@ export default function VisualizationsPage() {
     !aiAccess.hasAccess &&
     (
       aiAccess.remainingBudgetCents === 0 ||
-      (typeof (aiAccess.subscriptionLimits as any)?.aiImageGenerationsLimit === "number" &&
-        (aiAccess.aiImageCount || 0) >= (aiAccess.subscriptionLimits as any).aiImageGenerationsLimit) ||
+      (typeof (aiAccess.subscriptionLimits as { aiImageGenerationsLimit?: number })?.aiImageGenerationsLimit === "number" &&
+        (aiAccess.aiImageCount || 0) >= (aiAccess.subscriptionLimits as { aiImageGenerationsLimit?: number }).aiImageGenerationsLimit!) ||
       (aiAccess.message || "").toLowerCase().includes("wyczerpano")
     )
   );
@@ -418,30 +413,29 @@ export default function VisualizationsPage() {
                     </div>
                   )}
                 </div>
-                <div className="rounded-2xl border border-border/50 bg-muted/30 p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Image generations</span>
-                    <span className="text-xs font-medium text-foreground">
-                      {aiAccess.aiImageCount ?? 0}
-                      {typeof (aiAccess.subscriptionLimits as any)?.aiImageGenerationsLimit === "number"
-                        ? ` / ${(aiAccess.subscriptionLimits as any).aiImageGenerationsLimit}`
-                        : ""}
-                    </span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-violet-500 to-purple-500 rounded-full"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          typeof (aiAccess.subscriptionLimits as any)?.aiImageGenerationsLimit === "number"
-                            ? ((aiAccess.aiImageCount || 0) / (aiAccess.subscriptionLimits as any).aiImageGenerationsLimit) * 100
-                            : 100
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                </div>
+                {(() => {
+                  const limits = aiAccess.subscriptionLimits as { aiImageGenerationsLimit?: number } | undefined;
+                  const imageLimit = limits?.aiImageGenerationsLimit;
+                  return (
+                    <div className="rounded-2xl border border-border/50 bg-muted/30 p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Image generations</span>
+                        <span className="text-xs font-medium text-foreground">
+                          {aiAccess.aiImageCount ?? 0}
+                          {typeof imageLimit === "number" ? ` / ${imageLimit}` : ""}
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-violet-500 to-purple-500 rounded-full"
+                          style={{
+                            width: `${Math.min(100, typeof imageLimit === "number" ? ((aiAccess.aiImageCount || 0) / imageLimit) * 100 : 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </CardContent>
           </Card>
@@ -476,29 +470,30 @@ export default function VisualizationsPage() {
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
             <div className="inline-flex items-center gap-3 rounded-full border border-border/50 bg-muted/25 px-4 py-2 shadow-sm">
               <ImagePlus className="h-4 w-4 text-primary" />
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-1 text-foreground">
-                  <span className="text-sm font-semibold font-display leading-none">{aiAccess.aiImageCount ?? 0}</span>
-                  {typeof (aiAccess.subscriptionLimits as any)?.aiImageGenerationsLimit === "number" && (
-                    <span className="text-[11px] text-muted-foreground">
-                      / {(aiAccess.subscriptionLimits as any).aiImageGenerationsLimit}
-                    </span>
-                  )}
-                </div>
-                <div className="h-1 rounded-full bg-muted overflow-hidden w-24">
-                  <div
-                    className="h-full bg-gradient-to-r from-blue-500/70 to-purple-500/70 rounded-full"
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        typeof (aiAccess.subscriptionLimits as any)?.aiImageGenerationsLimit === "number"
-                          ? ((aiAccess.aiImageCount || 0) / (aiAccess.subscriptionLimits as any).aiImageGenerationsLimit) * 100
-                          : 100
-                      )}%`,
-                    }}
-                  />
-                </div>
-              </div>
+              {(() => {
+                const limits = aiAccess.subscriptionLimits as { aiImageGenerationsLimit?: number } | undefined;
+                const imageLimit = limits?.aiImageGenerationsLimit;
+                return (
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-1 text-foreground">
+                      <span className="text-sm font-semibold font-display leading-none">{aiAccess.aiImageCount ?? 0}</span>
+                      {typeof imageLimit === "number" && (
+                        <span className="text-[11px] text-muted-foreground">
+                          / {imageLimit}
+                        </span>
+                      )}
+                    </div>
+                    <div className="h-1 rounded-full bg-muted overflow-hidden w-24">
+                      <div
+                        className="h-full bg-gradient-to-r from-blue-500/70 to-purple-500/70 rounded-full"
+                        style={{
+                          width: `${Math.min(100, typeof imageLimit === "number" ? ((aiAccess.aiImageCount || 0) / imageLimit) * 100 : 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

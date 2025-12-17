@@ -3,7 +3,7 @@ import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 
-import { Crown, Zap, Users, FolderOpen, HardDrive, Check, Sparkles, Brain, ExternalLink, Settings } from "lucide-react";
+import { Users, FolderOpen, HardDrive, Check, Sparkles, Brain, ExternalLink, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,7 +30,7 @@ export function SubscriptionCard({ teamId }: SubscriptionCardProps) {
     if (subscription && subscription.stripeCustomerId && subscription.subscriptionPlan === "free") {
       ensureSubscriptionSynced({ teamId }).catch(console.error);
     }
-  }, [subscription?.stripeCustomerId, subscription?.subscriptionPlan, teamId, ensureSubscriptionSynced]);
+  }, [subscription, teamId, ensureSubscriptionSynced]);
 
   if (!subscription) {
     return <div className="h-24 w-full animate-pulse rounded-xl bg-muted/20" />;

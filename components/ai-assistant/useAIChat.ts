@@ -209,7 +209,7 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
 
   // Scroll to bottom on new messages
   useEffect(() => {
-    scrollToBottom();
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory, isLoading]);
 
   // Handle escape key to stop response
@@ -217,7 +217,8 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && abortControllerRef.current) {
         event.preventDefault();
-        handleStopResponse();
+        abortControllerRef.current.abort();
+        setIsLoading(false);
       }
     };
 
