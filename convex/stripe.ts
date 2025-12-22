@@ -6,6 +6,10 @@ import { AI_MODEL, calculateCost } from "./ai/config";
 
 const DEFAULT_BILLING_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
+// Credit system: 1 credit = 5 cents ($0.05)
+// Credits are used for both chat and image generation
+const CENTS_PER_CREDIT = 5;
+
 // Stripe subscription plans configuration
 export const SUBSCRIPTION_PLANS = {
   free: {
@@ -17,6 +21,7 @@ export const SUBSCRIPTION_PLANS = {
     hasAdvancedFeatures: false,
     hasAIFeatures: false,
     price: 0,
+    aiMonthlyCredits: 0,
   },
   basic: {
     id: "basic",
@@ -27,6 +32,7 @@ export const SUBSCRIPTION_PLANS = {
     hasAdvancedFeatures: false,
     hasAIFeatures: false,
     price: 19,
+    aiMonthlyCredits: 0,
   },
   ai: {
     id: "ai",
@@ -37,8 +43,7 @@ export const SUBSCRIPTION_PLANS = {
     hasAdvancedFeatures: true,
     hasAIFeatures: true,
     price: 39,
-    aiMonthlySpendLimitCents: 1000, // $10 cap across chat + image generation
-    aiImageGenerationsLimit: 50,
+    aiMonthlyCredits: 200, // 200 credits = $10 value (1 credit = 5¢)
   },
   ai_scale: {
     id: "ai_scale",
@@ -49,19 +54,18 @@ export const SUBSCRIPTION_PLANS = {
     hasAdvancedFeatures: true,
     hasAIFeatures: true,
     price: 99,
-    aiMonthlySpendLimitCents: 5000, // 5x the AI Pro generation budget
-    aiImageGenerationsLimit: 250,
+    aiMonthlyCredits: 1000, // 1000 credits = $50 value
   },
   pro: {
     id: "pro",
-    name: "Pro", 
+    name: "Pro",
     maxProjects: 50,
     maxTeamMembers: 50,
     maxStorageGB: 100,
     hasAdvancedFeatures: true,
     hasAIFeatures: true,
     price: 49,
-    aiImageGenerationsLimit: 50,
+    aiMonthlyCredits: 200, // Same as AI Pro
   },
   enterprise: {
     id: "enterprise",
@@ -72,7 +76,7 @@ export const SUBSCRIPTION_PLANS = {
     hasAdvancedFeatures: true,
     hasAIFeatures: true,
     price: 199,
-    aiImageGenerationsLimit: 50,
+    aiMonthlyCredits: 500,
   },
 } as const;
 
@@ -108,6 +112,14 @@ export function getBillingWindow(team: any) {
   return { start, end };
 }
 
+// Convert cents to credits (rounded up)
+function centsToCredits(cents: number): number {
+  return Math.ceil(cents / CENTS_PER_CREDIT);
+}
+
+// Gemini 4K image cost: ~6 cents API cost × 5 margin = 30 cents = 6 credits
+const GEMINI_4K_IMAGE_CREDITS = 6;
+
 async function getTeamAIUsageSummary(ctx: any, teamId: Id<"teams">, windowStart: number) {
   const tokenUsage = await ctx.db
     .query("aiTokenUsage")
@@ -115,7 +127,8 @@ async function getTeamAIUsageSummary(ctx: any, teamId: Id<"teams">, windowStart:
     .filter((q: any) => q.gte(q.field("_creationTime"), windowStart))
     .collect();
 
-  const aiSpendCentsFromChat = tokenUsage.reduce(
+  // Chat costs in cents (from stored estimatedCostCents which is API cost)
+  const chatApiCostCents = tokenUsage.reduce(
     (sum: number, record: any) => sum + (record.estimatedCostCents || 0),
     0
   );
@@ -131,20 +144,25 @@ async function getTeamAIUsageSummary(ctx: any, teamId: Id<"teams">, windowStart:
     .filter((q: any) => q.gte(q.field("_creationTime"), windowStart))
     .collect();
 
-  const imageSpendCents = imageUsage.reduce((sum: number, record: any) => {
-    const promptTokens = record.promptTokens || 0;
-    const responseTokens = record.responseTokens || Math.max(0, (record.totalTokens || 0) - promptTokens);
-    const estimatedUSD = calculateCost(AI_MODEL, promptTokens, responseTokens);
-    return sum + Math.round(estimatedUSD * 100);
-  }, 0);
+  // Image costs: each 4K image = 6 credits
+  const imageCreditsUsed = imageUsage.length * GEMINI_4K_IMAGE_CREDITS;
+
+  // Convert chat API cost to credits (with 5x margin, rounded up)
+  // API cost × 5 margin / 5 cents per credit = API cost in cents
+  const chatCreditsUsed = centsToCredits(chatApiCostCents * 5); // 5x margin
+
+  const totalCreditsUsed = chatCreditsUsed + imageCreditsUsed;
 
   return {
     tokenUsageCount: tokenUsage.length,
     totalTokensUsed,
-    aiSpendCents: aiSpendCentsFromChat + imageSpendCents,
+    totalCreditsUsed,
+    chatCreditsUsed,
+    imageCreditsUsed,
     imageCount: imageUsage.length,
-    imageSpendCents,
     windowStart,
+    // Legacy fields for backward compatibility
+    aiSpendCents: totalCreditsUsed * CENTS_PER_CREDIT,
   };
 }
 
@@ -171,43 +189,38 @@ async function evaluateAIAccess(ctx: any, team: any) {
     };
   }
 
-  const spendLimitCents = (limits as any).aiMonthlySpendLimitCents || 0;
-  const imageLimit = (limits as any).aiImageGenerationsLimit;
+  // Support both new aiMonthlyCredits and legacy aiMonthlySpendLimitCents
+  let monthlyCredits = (limits as any).aiMonthlyCredits || 0;
+
+  // Fallback: convert legacy cents to credits if new field not set
+  if (monthlyCredits === 0 && (limits as any).aiMonthlySpendLimitCents) {
+    // Old system: cents. Convert to credits (1 credit = 5 cents)
+    monthlyCredits = Math.ceil((limits as any).aiMonthlySpendLimitCents / CENTS_PER_CREDIT);
+  }
+
   const { start } = getBillingWindow(team);
+
+  // Extra credits (top-ups) - convert from cents to credits if stored in cents
   const extraCreditsActive = team.aiExtraCreditsPeriodStart === start;
-  const extraCreditsCents = extraCreditsActive ? team.aiExtraCreditsCents || 0 : 0;
+  const extraCreditsCentsStored = extraCreditsActive ? team.aiExtraCreditsCents || 0 : 0;
+  const extraCredits = centsToCredits(extraCreditsCentsStored);
 
-  if (spendLimitCents || imageLimit) {
+  if (monthlyCredits > 0 || extraCredits > 0) {
     const usage = await getTeamAIUsageSummary(ctx, team._id as Id<"teams">, start);
-    const totalBudgetCents = spendLimitCents + extraCreditsCents;
-    const remainingBudgetCents = totalBudgetCents ? Math.max(totalBudgetCents - usage.aiSpendCents, 0) : undefined;
-    const remainingImages =
-      typeof imageLimit === "number" ? Math.max(imageLimit - usage.imageCount, 0) : undefined;
+    const totalCredits = monthlyCredits + extraCredits;
+    const remainingCredits = Math.max(totalCredits - usage.totalCreditsUsed, 0);
 
-    if (totalBudgetCents > 0 && usage.aiSpendCents >= totalBudgetCents) {
+    if (usage.totalCreditsUsed >= totalCredits) {
       return {
         allowed: false,
-        message: "🔒 AI credits for this billing period are exhausted. Add a top-up to continue.",
+        message: "🔒 Kredyty AI na ten okres zostały wyczerpane. Dokup kredyty, aby kontynuować.",
         currentPlan: plan,
         subscriptionStatus: team.subscriptionStatus || null,
-        remainingBudgetCents,
+        totalCredits,
+        usedCredits: usage.totalCreditsUsed,
+        remainingCredits: 0,
         usage,
-        extraCreditsCents,
-      };
-    }
-
-    const enforceImageLimit = typeof imageLimit === "number" && imageLimit >= 0 && spendLimitCents === 0;
-
-    if (enforceImageLimit && usage.imageCount >= imageLimit) {
-      return {
-        allowed: false,
-        message: "🔒 Image generation limit for this plan is exhausted.",
-        currentPlan: plan,
-        subscriptionStatus: team.subscriptionStatus || null,
-        remainingBudgetCents,
-        remainingImages,
-        usage,
-        extraCreditsCents,
+        extraCredits,
       };
     }
 
@@ -216,10 +229,11 @@ async function evaluateAIAccess(ctx: any, team: any) {
       message: "AI features available",
       currentPlan: plan,
       subscriptionStatus: team.subscriptionStatus || null,
-      remainingBudgetCents,
-      remainingImages,
+      totalCredits,
+      usedCredits: usage.totalCreditsUsed,
+      remainingCredits,
       usage,
-      extraCreditsCents,
+      extraCredits,
     };
   }
 
@@ -228,7 +242,7 @@ async function evaluateAIAccess(ctx: any, team: any) {
     message: "AI features available",
     currentPlan: team.subscriptionPlan || "free",
     subscriptionStatus: team.subscriptionStatus || null,
-    extraCreditsCents,
+    extraCredits: 0,
   };
 }
 
@@ -696,11 +710,20 @@ export const checkTeamAIAccess = query({
       v.null()
     )),
     subscriptionLimits: v.optional(v.any()),
-    remainingBudgetCents: v.optional(v.number()),
-    aiSpendCents: v.optional(v.number()),
+    // New credit-based fields
+    totalCredits: v.optional(v.number()),
+    usedCredits: v.optional(v.number()),
+    remainingCredits: v.optional(v.number()),
+    extraCredits: v.optional(v.number()),
+    // Usage breakdown
+    chatCreditsUsed: v.optional(v.number()),
+    imageCreditsUsed: v.optional(v.number()),
     aiImageCount: v.optional(v.number()),
     billingWindowStart: v.optional(v.number()),
     totalTokensUsed: v.optional(v.number()),
+    // Legacy fields for backward compatibility
+    remainingBudgetCents: v.optional(v.number()),
+    aiSpendCents: v.optional(v.number()),
     aiExtraCreditsCents: v.optional(v.number()),
   }),
   async handler(ctx, args) {
@@ -760,12 +783,21 @@ export const checkTeamAIAccess = query({
       currentPlan: team.subscriptionPlan || "free",
       subscriptionStatus: team.subscriptionStatus || null,
       subscriptionLimits: getEffectiveLimits(team),
-      remainingBudgetCents: (access as any).remainingBudgetCents,
-      aiSpendCents: (access as any).usage?.aiSpendCents,
+      // New credit fields
+      totalCredits: (access as any).totalCredits,
+      usedCredits: (access as any).usedCredits,
+      remainingCredits: (access as any).remainingCredits,
+      extraCredits: (access as any).extraCredits,
+      // Usage breakdown
+      chatCreditsUsed: (access as any).usage?.chatCreditsUsed,
+      imageCreditsUsed: (access as any).usage?.imageCreditsUsed,
       aiImageCount: (access as any).usage?.imageCount,
       billingWindowStart: (access as any).usage?.windowStart,
       totalTokensUsed: (access as any).usage?.totalTokensUsed,
-      aiExtraCreditsCents: (access as any).extraCreditsCents,
+      // Legacy fields
+      remainingBudgetCents: (access as any).remainingCredits ? (access as any).remainingCredits * CENTS_PER_CREDIT : undefined,
+      aiSpendCents: (access as any).usedCredits ? (access as any).usedCredits * CENTS_PER_CREDIT : undefined,
+      aiExtraCreditsCents: (access as any).extraCredits ? (access as any).extraCredits * CENTS_PER_CREDIT : undefined,
     };
   },
 });

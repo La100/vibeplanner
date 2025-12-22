@@ -18,6 +18,7 @@ import {
   Check,
   RotateCcw,
   Sparkles,
+  FileText,
 } from "lucide-react";
 import { AISubscriptionWall } from "@/components/AISubscriptionWall";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -118,11 +119,7 @@ export default function VisualizationsPage() {
 
     try {
       for (const file of Array.from(files)) {
-        if (!file.type.startsWith("image/")) {
-          toast.error(`${file.name} is not an image file`);
-          continue;
-        }
-
+        // Validation - max 20MB
         if (file.size > 20 * 1024 * 1024) {
           toast.error(`${file.name} is too large (max 20MB)`);
           continue;
@@ -144,18 +141,22 @@ export default function VisualizationsPage() {
           
           storageKey = key;
         } catch (err) {
-          console.error("Failed to upload image:", err);
+          console.error("Failed to upload file:", err);
           toast.error(`Failed to upload ${file.name}, using local preview only (may be limited)`);
         }
 
         const base64 = await readFileAsBase64(file);
-        const preview = await readFileAsDataUrl(file);
+        
+        let preview = "";
+        if (file.type.startsWith("image/")) {
+           preview = await readFileAsDataUrl(file);
+        }
 
         newImages.push({
           base64,
-          mimeType: file.type,
+          mimeType: file.type || "application/octet-stream",
           name: file.name,
-          preview,
+          preview, // Empty string for non-images initially
           storageKey,
         });
       }
@@ -183,9 +184,7 @@ export default function VisualizationsPage() {
   const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const pastedFiles = e.clipboardData?.files;
     if (!pastedFiles || pastedFiles.length === 0) return;
-    const imageFiles = Array.from(pastedFiles).filter(file => file.type.startsWith("image/"));
-    if (imageFiles.length === 0) return;
-    await processReferenceFiles(imageFiles);
+    await processReferenceFiles(pastedFiles);
   };
 
   const handleRemoveReference = (index?: number) => {
@@ -295,9 +294,16 @@ export default function VisualizationsPage() {
     if (!message.imageUrl) return;
 
     try {
-      // Fetch image as blob to handle cross-origin URLs
-      const response = await fetch(message.imageUrl);
-      const blob = await response.blob();
+      let blob;
+      // Handle remote URLs via proxy to avoid CORS, data URLs directly
+      if (message.imageUrl.startsWith("http")) {
+        const response = await fetch(`/api/image-proxy?url=${encodeURIComponent(message.imageUrl)}`);
+        if (!response.ok) throw new Error("Network response was not ok");
+        blob = await response.blob();
+      } else {
+        const response = await fetch(message.imageUrl);
+        blob = await response.blob();
+      }
       
       // Create object URL from blob
       const blobUrl = URL.createObjectURL(blob);
@@ -360,7 +366,7 @@ export default function VisualizationsPage() {
   const suggestions = [
     {
       text: "Minimalist Scandinavian living room with natural oak floors",
-      image: "https://images.unsplash.com/photo-1598928506311-c55ded91a20c?q=80&w=800&auto=format&fit=crop"
+      image: "/samplevisuals/sample1.jpeg"
     },
     {
       text: "Japanese zen garden with stone pathway and bamboo",
@@ -381,61 +387,52 @@ export default function VisualizationsPage() {
     aiAccess &&
     !aiAccess.hasAccess &&
     (
-      aiAccess.remainingBudgetCents === 0 ||
-      (typeof (aiAccess.subscriptionLimits as { aiImageGenerationsLimit?: number })?.aiImageGenerationsLimit === "number" &&
-        (aiAccess.aiImageCount || 0) >= (aiAccess.subscriptionLimits as { aiImageGenerationsLimit?: number }).aiImageGenerationsLimit!) ||
+      aiAccess.remainingCredits === 0 ||
       (aiAccess.message || "").toLowerCase().includes("wyczerpano")
     )
   );
 
   if (aiAccess !== undefined && !aiAccess.hasAccess && team?._id) {
     if (isQuotaBlocked) {
+      const usedCredits = aiAccess.usedCredits ?? 0;
+      const totalCredits = aiAccess.totalCredits ?? 0;
+      const usagePercent = totalCredits > 0 ? Math.min(100, (usedCredits / totalCredits) * 100) : 100;
+
       return (
         <div className="flex min-h-screen items-center justify-center px-4 bg-background/50">
           <Card className="max-w-lg w-full border-border/50 shadow-2xl rounded-3xl overflow-hidden bg-card/80 backdrop-blur-xl">
             <CardHeader className="space-y-4 pb-2">
               <Badge variant="secondary" className="w-fit bg-red-100 text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 border-0 px-3 py-1 rounded-full">
-                AI limit reached
+                Kredyty wyczerpane
               </Badge>
               <div className="space-y-2">
-                <CardTitle className="text-2xl font-display tracking-tight">AI allocation used</CardTitle>
+                <CardTitle className="text-2xl font-display tracking-tight">Wykorzystano kredyty AI</CardTitle>
                 <CardDescription className="text-base">{aiAccess.message}</CardDescription>
               </div>
             </CardHeader>
             <CardContent className="space-y-4 pt-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-border/50 bg-muted/30 p-4 space-y-2">
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Tokens</div>
-                  <div className="text-2xl font-semibold font-display tracking-tight">{formatTokens(aiAccess.totalTokensUsed)}</div>
-                  {aiAccess.billingWindowStart && (
-                    <div className="text-xs text-muted-foreground">
-                      Since {new Date(aiAccess.billingWindowStart).toLocaleDateString()}
-                    </div>
-                  )}
+              <div className="rounded-2xl border border-border/50 bg-muted/30 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Kredyty AI</span>
+                  <span className="text-sm font-semibold text-foreground">
+                    {usedCredits} / {totalCredits}
+                  </span>
                 </div>
-                {(() => {
-                  const limits = aiAccess.subscriptionLimits as { aiImageGenerationsLimit?: number } | undefined;
-                  const imageLimit = limits?.aiImageGenerationsLimit;
-                  return (
-                    <div className="rounded-2xl border border-border/50 bg-muted/30 p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Image generations</span>
-                        <span className="text-xs font-medium text-foreground">
-                          {aiAccess.aiImageCount ?? 0}
-                          {typeof imageLimit === "number" ? ` / ${imageLimit}` : ""}
-                        </span>
-                      </div>
-                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-violet-500 to-purple-500 rounded-full"
-                          style={{
-                            width: `${Math.min(100, typeof imageLimit === "number" ? ((aiAccess.aiImageCount || 0) / imageLimit) * 100 : 100)}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })()}
+                <div className="h-2 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-red-500 to-orange-500 rounded-full"
+                    style={{ width: `${usagePercent}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Chat: {aiAccess.chatCreditsUsed ?? 0} kr</span>
+                  <span>Obrazy: {aiAccess.imageCreditsUsed ?? 0} kr ({aiAccess.aiImageCount ?? 0} szt.)</span>
+                </div>
+                {aiAccess.billingWindowStart && (
+                  <div className="text-xs text-muted-foreground pt-1 border-t border-border/30">
+                    Okres od {new Date(aiAccess.billingWindowStart).toLocaleDateString()}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -459,36 +456,32 @@ export default function VisualizationsPage() {
   }
 
   return (
-    <div className="relative flex flex-col h-[calc(100vh-4rem)] bg-background overflow-hidden">
+    <div className="relative flex flex-col min-h-[calc(100dvh-4rem)] md:h-[calc(100dvh-4rem)] bg-background md:overflow-hidden overflow-x-hidden">
       {/* Background Elements from Landing Page */}
       <div className="absolute inset-0 -z-10 h-full w-full bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] [mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-50 dark:bg-[radial-gradient(#1f2937_1px,transparent_1px)] pointer-events-none"></div>
       <div className="absolute top-[-10%] left-[-10%] h-[500px] w-[500px] rounded-full bg-purple-100 blur-[100px] opacity-20 dark:bg-purple-900/20 pointer-events-none"></div>
       <div className="absolute bottom-[-10%] right-[-10%] h-[500px] w-[500px] rounded-full bg-blue-100 blur-[100px] opacity-20 dark:bg-blue-900/20 pointer-events-none"></div>
 
       {aiAccess?.hasAccess && (
-        <div className="w-full px-4 sm:px-6 lg:px-8 mt-3 flex justify-end">
+        <div className="sticky top-0 z-20 w-full px-4 sm:px-6 lg:px-8 py-3 flex justify-end bg-background/80 backdrop-blur-sm">
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-            <div className="inline-flex items-center gap-3 rounded-full border border-border/50 bg-muted/25 px-4 py-2 shadow-sm">
-              <ImagePlus className="h-4 w-4 text-primary" />
+            <div className="inline-flex items-center gap-3 rounded-full border border-border/50 bg-muted/50 px-4 py-2 shadow-sm">
+              <Sparkles className="h-4 w-4 text-primary" />
               {(() => {
-                const limits = aiAccess.subscriptionLimits as { aiImageGenerationsLimit?: number } | undefined;
-                const imageLimit = limits?.aiImageGenerationsLimit;
+                const usedCredits = aiAccess.usedCredits ?? 0;
+                const totalCredits = aiAccess.totalCredits ?? 0;
+                const remainingCredits = aiAccess.remainingCredits ?? 0;
+                const usagePercent = totalCredits > 0 ? Math.min(100, (usedCredits / totalCredits) * 100) : 0;
                 return (
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center gap-1 text-foreground">
-                      <span className="text-sm font-semibold font-display leading-none">{aiAccess.aiImageCount ?? 0}</span>
-                      {typeof imageLimit === "number" && (
-                        <span className="text-[11px] text-muted-foreground">
-                          / {imageLimit}
-                        </span>
-                      )}
+                      <span className="text-sm font-semibold font-display leading-none">{remainingCredits}</span>
+                      <span className="text-[11px] text-muted-foreground">/ {totalCredits} kredytów</span>
                     </div>
                     <div className="h-1 rounded-full bg-muted overflow-hidden w-24">
                       <div
                         className="h-full bg-gradient-to-r from-blue-500/70 to-purple-500/70 rounded-full"
-                        style={{
-                          width: `${Math.min(100, typeof imageLimit === "number" ? ((aiAccess.aiImageCount || 0) / imageLimit) * 100 : 100)}%`,
-                        }}
+                        style={{ width: `${100 - usagePercent}%` }}
                       />
                     </div>
                   </div>
@@ -510,7 +503,7 @@ export default function VisualizationsPage() {
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden relative z-10">
+      <div className="w-full md:flex-1 md:overflow-y-auto overflow-x-hidden relative z-10">
         {messages.length === 0 && !isGenerating ? (
           <div className="min-h-full flex flex-col items-center justify-center px-6 pt-20 pb-10">
             <div className="max-w-4xl w-full text-center space-y-12">
@@ -521,7 +514,7 @@ export default function VisualizationsPage() {
                 transition={{ duration: 0.5 }}
                 className="space-y-6"
               >
-                <h1 className="text-6xl md:text-7xl font-bold tracking-tight text-foreground font-display">
+                <h1 className="text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight text-foreground font-display">
                   Visualizations
                 </h1>
                 <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
@@ -535,14 +528,15 @@ export default function VisualizationsPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.2 }}
-                className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl mx-auto"
+                className="flex overflow-x-auto snap-x snap-mandatory gap-4 pb-4 -mx-6 px-6 sm:grid sm:grid-cols-2 sm:overflow-visible sm:pb-0 sm:mx-auto sm:px-0 max-w-3xl no-scrollbar"
               >
                 {suggestions.map((suggestion) => (
                   <button
                     key={suggestion.text}
                     onClick={() => setPrompt(suggestion.text)}
                     className={cn(
-                      "group relative overflow-hidden rounded-3xl text-left transition-all duration-300 h-48",
+                      "group relative overflow-hidden rounded-3xl text-left transition-all duration-300 aspect-square",
+                      "min-w-[60vw] sm:min-w-0 snap-center",
                       "hover:shadow-xl hover:-translate-y-1"
                     )}
                   >
@@ -600,15 +594,29 @@ export default function VisualizationsPage() {
                     {message.referenceImages && message.referenceImages.length > 0 && (
                       <div className="flex justify-end gap-2 mt-3 flex-wrap">
                         {message.referenceImages.map((img, idx) => (
-                          <motion.img 
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            key={idx}
-                            src={img.preview} 
-                            alt=""
-                            className="w-24 h-24 object-cover rounded-2xl cursor-pointer hover:opacity-90 shadow-sm border border-border/20"
-                            onClick={() => setSelectedImage(img.preview)}
-                          />
+                          img.preview ? (
+                            <motion.img 
+                              initial={{ opacity: 0, scale: 0.9 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              key={idx}
+                              src={img.preview} 
+                              alt=""
+                              className="w-24 h-24 object-cover rounded-2xl cursor-pointer hover:opacity-90 shadow-sm border border-border/20"
+                              onClick={() => setSelectedImage(img.preview)}
+                            />
+                          ) : (
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.9 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              key={idx}
+                              className="w-24 h-24 bg-card rounded-2xl border border-border/20 flex flex-col items-center justify-center p-2 gap-2 shadow-sm"
+                            >
+                              <FileText className="h-8 w-8 text-muted-foreground" />
+                              <span className="text-xs text-muted-foreground text-center truncate w-full px-1" title={img.name}>
+                                {img.name}
+                              </span>
+                            </motion.div>
+                          )
                         ))}
                       </div>
                     )}
@@ -639,7 +647,7 @@ export default function VisualizationsPage() {
                               />
                               
                               {/* Overlay Actions */}
-                              <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0">
+                              <div className="absolute top-4 right-4 flex gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all duration-300 transform translate-y-0 sm:translate-y-2 sm:group-hover:translate-y-0">
                                 <Button
                                   size="sm"
                                   variant="secondary"
@@ -678,7 +686,7 @@ export default function VisualizationsPage() {
                               </div>
 
                               {/* Fullscreen hint */}
-                              <div className="absolute bottom-4 left-4 opacity-0 group-hover:opacity-100 transition-all duration-300">
+                              <div className="absolute bottom-4 left-4 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all duration-300">
                                 <div className="bg-black/50 text-white text-xs px-3 py-1.5 rounded-full backdrop-blur-md">
                                   Click to expand
                                 </div>
@@ -725,7 +733,7 @@ export default function VisualizationsPage() {
       </div>
 
       {/* Input Area */}
-      <div className="w-full px-2 sm:px-6 py-4 sm:py-6 z-50 mt-auto">
+      <div className="w-full px-2 sm:px-6 py-4 sm:py-6 z-50 md:mt-auto">
         <div className="max-w-3xl mx-auto">
           <motion.form 
             initial={{ y: 20, opacity: 0 }}
@@ -749,13 +757,20 @@ export default function VisualizationsPage() {
                   exit={{ opacity: 0, y: 10, height: 0 }}
                   className="absolute bottom-full left-4 mb-2 flex flex-wrap items-center gap-2"
                 >
-                  {referenceImages.map((img, index) => (
+              {referenceImages.map((img, index) => (
                     <div key={index} className="relative group">
-                      <img
-                        src={img.preview}
-                        alt={img.name}
-                        className="w-16 h-16 object-cover rounded-xl border-2 border-white shadow-lg"
-                      />
+                      {img.preview ? (
+                        <img
+                          src={img.preview}
+                          alt={img.name}
+                          className="w-16 h-16 object-cover rounded-xl border-2 border-white shadow-lg"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 bg-muted border-2 border-white shadow-lg rounded-xl flex items-center justify-center flex-col gap-1 p-1">
+                          <FileText className="h-6 w-6 text-muted-foreground" />
+                          <span className="text-[8px] leading-none text-muted-foreground truncate w-full text-center">{img.name}</span>
+                        </div>
+                      )}
                       <Button
                         type="button"
                         variant="destructive"
@@ -775,7 +790,7 @@ export default function VisualizationsPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,application/pdf,text/*"
                 multiple
                 onChange={handleImageSelect}
                 className="hidden"

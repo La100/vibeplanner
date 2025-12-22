@@ -81,11 +81,13 @@ export default defineSchema({
       hasAdvancedFeatures: v.boolean(),
       hasAIFeatures: v.optional(v.boolean()),
       price: v.number(),
+      aiMonthlyCredits: v.optional(v.number()), // Monthly AI credits (1 credit = 5 cents)
+      // Legacy fields for backward compatibility
       aiMonthlySpendLimitCents: v.optional(v.number()),
       aiImageGenerationsLimit: v.optional(v.number()),
     })),
-    aiExtraCreditsCents: v.optional(v.number()), // dodatkowe kredyty AI (top-up) dla bieżącego okresu
-    aiExtraCreditsPeriodStart: v.optional(v.number()), // start okresu rozliczeniowego, dla którego obowiązują kredyty
+    aiExtraCreditsCents: v.optional(v.number()), // Extra credits stored in cents (for top-ups)
+    aiExtraCreditsPeriodStart: v.optional(v.number()), // Start of billing period for extra credits
   })
     .index("by_clerk_org", ["clerkOrgId"])
     .index("by_slug", ["slug"])

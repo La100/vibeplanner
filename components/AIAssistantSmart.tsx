@@ -299,9 +299,7 @@ const AIAssistantSmart = () => {
     aiAccess &&
     !aiAccess.hasAccess &&
     (
-      aiAccess.remainingBudgetCents === 0 ||
-      (typeof (aiAccess.subscriptionLimits as { aiImageGenerationsLimit?: number })?.aiImageGenerationsLimit === "number" &&
-        (aiAccess.aiImageCount || 0) >= (aiAccess.subscriptionLimits as { aiImageGenerationsLimit?: number }).aiImageGenerationsLimit!) ||
+      aiAccess.remainingCredits === 0 ||
       (aiAccess.message || "").toLowerCase().includes("wyczerpano")
     )
   );
@@ -309,25 +307,43 @@ const AIAssistantSmart = () => {
   // Show limit block if quota exhausted, otherwise paywall if no access
   if (aiAccess !== undefined && !aiAccess.hasAccess && team?._id) {
     if (isQuotaBlocked) {
+      const usedCredits = aiAccess.usedCredits ?? 0;
+      const totalCredits = aiAccess.totalCredits ?? 0;
+      const usagePercent = totalCredits > 0 ? Math.min(100, (usedCredits / totalCredits) * 100) : 100;
+
       return (
         <div className="flex min-h-screen items-center justify-center px-4 bg-background/50">
           <Card className="max-w-lg w-full border-border/50 shadow-2xl rounded-3xl overflow-hidden bg-card/80 backdrop-blur-xl">
             <CardHeader className="space-y-4 pb-2">
               <Badge variant="secondary" className="w-fit bg-red-100 text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 border-0 px-3 py-1 rounded-full">
-                AI limit reached
+                Kredyty wyczerpane
               </Badge>
               <div className="space-y-2">
-                <CardTitle className="text-2xl font-display tracking-tight">AI allocation used</CardTitle>
+                <CardTitle className="text-2xl font-display tracking-tight">Wykorzystano kredyty AI</CardTitle>
                 <CardDescription className="text-base">{aiAccess.message}</CardDescription>
               </div>
             </CardHeader>
             <CardContent className="space-y-4 pt-4">
-              <div className="rounded-2xl border border-border/50 bg-muted/30 p-4 space-y-2">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Tokens</div>
-                <div className="text-2xl font-semibold font-display tracking-tight">{formatTokens(aiAccess.totalTokensUsed)}</div>
+              <div className="rounded-2xl border border-border/50 bg-muted/30 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Kredyty AI</span>
+                  <span className="text-sm font-semibold text-foreground">
+                    {usedCredits} / {totalCredits}
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-red-500 to-orange-500 rounded-full"
+                    style={{ width: `${usagePercent}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Chat: {aiAccess.chatCreditsUsed ?? 0} kr</span>
+                  <span>Obrazy: {aiAccess.imageCreditsUsed ?? 0} kr</span>
+                </div>
                 {aiAccess.billingWindowStart && (
-                  <div className="text-xs text-muted-foreground">
-                    Since {new Date(aiAccess.billingWindowStart).toLocaleDateString()}
+                  <div className="text-xs text-muted-foreground pt-1 border-t border-border/30">
+                    Okres od {new Date(aiAccess.billingWindowStart).toLocaleDateString()}
                   </div>
                 )}
               </div>
@@ -358,27 +374,28 @@ const AIAssistantSmart = () => {
         <div className="w-full px-4 sm:px-6 lg:px-8 mt-3 flex justify-end">
           <div className="inline-flex items-center gap-3 rounded-full border border-border/50 bg-muted/25 px-4 py-2 shadow-sm">
             <Sparkles className="h-4 w-4 text-primary" />
-            <div className="flex flex-col gap-1">
-              <div className="flex items-baseline gap-1 text-foreground">
-                <span className="text-sm font-semibold font-display leading-none">{formatTokens(aiAccess.totalTokensUsed)}</span>
-                <span className="uppercase tracking-wide text-[10px] text-muted-foreground">tokens</span>
-              </div>
-              {/* Optional: Show spend progress if limit exists */}
-              {(() => {
-                const limits = aiAccess.subscriptionLimits as { aiMonthlySpendLimitCents?: number } | undefined;
-                const spendLimit = limits?.aiMonthlySpendLimitCents;
-                return typeof spendLimit === "number" ? (
-                  <div className="h-1 rounded-full bg-muted overflow-hidden w-24">
-                    <div
-                      className="h-full bg-gradient-to-r from-blue-500/70 to-purple-500/70 rounded-full"
-                      style={{
-                        width: `${Math.min(100, ((aiAccess.aiSpendCents || 0) / spendLimit) * 100)}%`,
-                      }}
-                    />
+            {(() => {
+              const usedCredits = aiAccess.usedCredits ?? 0;
+              const totalCredits = aiAccess.totalCredits ?? 0;
+              const remainingCredits = aiAccess.remainingCredits ?? 0;
+              const usagePercent = totalCredits > 0 ? Math.min(100, (usedCredits / totalCredits) * 100) : 0;
+              return (
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-1 text-foreground">
+                    <span className="text-sm font-semibold font-display leading-none">{remainingCredits}</span>
+                    <span className="text-[11px] text-muted-foreground">/ {totalCredits} kredytów</span>
                   </div>
-                ) : null;
-              })()}
-            </div>
+                  {totalCredits > 0 && (
+                    <div className="h-1 rounded-full bg-muted overflow-hidden w-24">
+                      <div
+                        className="h-full bg-gradient-to-r from-blue-500/70 to-purple-500/70 rounded-full"
+                        style={{ width: `${100 - usagePercent}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

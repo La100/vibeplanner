@@ -17,14 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SubscriptionCard } from "@/components/ui/billing/SubscriptionCard";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { tokensFromCents, tokensForGeminiImage, GEMINI_IMAGE_2K_PRICE_USD } from "@/lib/aiPricing";
-
-const formatTokens = (tokens?: number) => {
-  if (!tokens) return "0";
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
-  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`;
-  return tokens.toString();
-};
+import { GEMINI_4K_IMAGE_CREDITS } from "@/lib/aiPricing";
 
 export default function CompanySettings() {
   const params = useParams<{ slug: string }>();
@@ -239,35 +232,35 @@ export default function CompanySettings() {
                     {/* Left: Usage */}
                     <div className="p-8 lg:p-10 space-y-10 lg:border-r border-border/10">
                       {(() => {
-                        const baseBudget = aiAccess.subscriptionLimits?.aiMonthlySpendLimitCents || 0;
-                        const extra = aiAccess.aiExtraCreditsCents || 0;
-                        const totalBudget = baseBudget + extra;
-                        const spend = aiAccess.aiSpendCents || 0;
-                        const percent = totalBudget ? Math.min(100, (spend / totalBudget) * 100) : 0;
-                        const remaining = totalBudget ? Math.max(totalBudget - spend, 0) : 0;
+                        const totalCredits = aiAccess.totalCredits || 0;
+                        const usedCredits = aiAccess.usedCredits || 0;
+                        const remainingCredits = aiAccess.remainingCredits || 0;
+                        const extraCredits = aiAccess.extraCredits || 0;
+                        const baseCredits = totalCredits - extraCredits;
+                        const percent = totalCredits ? Math.min(100, (usedCredits / totalCredits) * 100) : 0;
 
                         return (
                           <>
                             <div>
                               <div className="flex items-center justify-between mb-6">
-                                <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/70">Total Usage</span>
-                                {aiAccess.hasAccess && <Badge variant="secondary" className="bg-foreground text-background font-normal rounded-full px-3">Active</Badge>}
+                                <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/70">Wykorzystanie kredytów</span>
+                                {aiAccess.hasAccess && <Badge variant="secondary" className="bg-foreground text-background font-normal rounded-full px-3">Aktywne</Badge>}
                               </div>
-                              
+
                               <div className="flex items-baseline gap-2 mb-2">
                                 <span className="text-6xl font-extralight tracking-tight">
-                                  {formatTokens(tokensFromCents(spend))}
+                                  {usedCredits}
                                 </span>
                                 <span className="text-lg text-muted-foreground/50 font-light">
-                                  / {formatTokens(tokensFromCents(totalBudget))} tokens
+                                  / {totalCredits} kredytów
                                 </span>
                               </div>
 
                               <div className="space-y-2 pt-4">
                                 <Progress value={percent} className="h-1 bg-muted/20" indicatorClassName="bg-foreground" />
                                 <div className="flex justify-between text-xs text-muted-foreground/60 font-light">
-                                  <span>Renews {aiAccess.billingWindowStart ? new Date(aiAccess.billingWindowStart).toLocaleDateString() : "N/A"}</span>
-                                  <span>{formatTokens(tokensFromCents(remaining))} left</span>
+                                  <span>Odnawia się {aiAccess.billingWindowStart ? new Date(aiAccess.billingWindowStart).toLocaleDateString() : "N/A"}</span>
+                                  <span>{remainingCredits} pozostało</span>
                                 </div>
                               </div>
                             </div>
@@ -276,30 +269,30 @@ export default function CompanySettings() {
                               <div className="space-y-1">
                                 <div className="flex items-center gap-2 mb-2">
                                   <BarChart3 className="h-3 w-3 text-muted-foreground" />
-                                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">Plan Limit</span>
+                                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">Limit planu</span>
                                 </div>
-                                <div className="text-2xl font-light">{formatTokens(tokensFromCents(baseBudget))}</div>
-                                <div className="text-xs text-muted-foreground/50">Monthly</div>
+                                <div className="text-2xl font-light">{baseCredits}</div>
+                                <div className="text-xs text-muted-foreground/50">Miesięcznie</div>
                               </div>
                               <div className="space-y-1">
                                 <div className="flex items-center gap-2 mb-2">
                                   <TrendingUp className="h-3 w-3 text-muted-foreground" />
-                                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">Extra Credits</span>
+                                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">Dodatkowe kredyty</span>
                                 </div>
                                 <div className="text-2xl font-light text-violet-600 dark:text-violet-400">
-                                  +{formatTokens(tokensFromCents(extra))}
+                                  +{extraCredits}
                                 </div>
-                                <div className="text-xs text-muted-foreground/50">Non-expiring</div>
+                                <div className="text-xs text-muted-foreground/50">Doładowanie</div>
                               </div>
                             </div>
 
                             <div className="bg-muted/10 rounded-lg p-4 flex items-start gap-3">
                                <AlertCircle className="h-4 w-4 text-muted-foreground/50 mt-0.5" />
                                <div className="space-y-1">
-                                  <p className="text-sm font-medium">Usage Cost Reference</p>
+                                  <p className="text-sm font-medium">Koszt generacji</p>
                                   <p className="text-xs text-muted-foreground/70 font-light leading-relaxed">
-                                    ~{formatTokens(tokensForGeminiImage)} tokens per image (${GEMINI_IMAGE_2K_PRICE_USD.toFixed(3)}). 
-                                    Text generation varies.
+                                    ~{GEMINI_4K_IMAGE_CREDITS} kredytów za obraz 4K.
+                                    Chat zależy od długości konwersacji.
                                   </p>
                                </div>
                             </div>
