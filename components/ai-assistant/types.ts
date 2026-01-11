@@ -50,8 +50,8 @@ export type AnyPendingItemType = PendingItemType | LegacyPendingItemType;
 export type PendingOperation = 'create' | 'edit' | 'delete' | 'bulk_edit' | 'bulk_create';
 
 export type PendingItem = {
-  /** Canonical type - always normalized (task, note, shopping, etc.) */
-  type: PendingItemType;
+  /** Canonical or legacy type before normalization */
+  type: AnyPendingItemType;
   /** Operation to perform */
   operation: PendingOperation;
   /** Client-side id for UI transitions */
@@ -76,7 +76,7 @@ export type PendingItem = {
   /** Display info for UI */
   display?: {
     title: string;
-    description: string;
+    description?: string;
   };
   /** Original function call info from AI */
   functionCall?: {
@@ -176,7 +176,7 @@ export type ChatHistoryEntry = {
   tokenUsage?: { totalTokens: number; estimatedCostUSD: number };
   fileInfo?: { name: string; size: number; type: string; id: string };
   filesInfo?: Array<{ name: string; size: number; type: string; id: string }>;
-  status?: "streaming" | "finished" | "aborted";
+  status?: "streaming" | "pending" | "success" | "failed";
 };
 
 export type SessionTokens = {
@@ -278,9 +278,6 @@ export type QuickPrompt = {
   label: string;
   prompt: string;
 };
-
-
-
 
 
 

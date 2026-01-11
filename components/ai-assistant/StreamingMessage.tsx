@@ -18,7 +18,7 @@ import { FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MessageStepList, type MessagePart } from "./MessageSteps";
 import { InlineConfirmationList } from "./InlineConfirmation";
-import type { PendingContentItem } from "@/components/AIConfirmationGrid";
+import type { PendingContentItem, PendingContentType } from "@/components/AIConfirmationGrid";
 
 // ==================== ZOD SCHEMAS FOR TOOL RESULT VALIDATION ====================
 
@@ -68,6 +68,10 @@ function safeParseToolResult(result: string): z.infer<typeof pendingActionSchema
   } catch {
     return null;
   }
+}
+
+function toPendingContentType(type: string): PendingContentType {
+  return type as PendingContentType;
 }
 
 interface StreamingMessageProps {
@@ -232,7 +236,7 @@ function extractPendingItemsFromMessage(message: UIMessage): PendingContentItem[
           if (bulkShopping.success) {
             for (const item of bulkShopping.data.data.items) {
               items.push({
-                type: parsed.type,
+                type: toPendingContentType(parsed.type),
                 operation: "create",
                 data: item as Record<string, unknown>,
               });
@@ -243,7 +247,7 @@ function extractPendingItemsFromMessage(message: UIMessage): PendingContentItem[
 
         // Single item operation
         items.push({
-          type: parsed.type,
+          type: toPendingContentType(parsed.type),
           operation: parsed.operation,
           data: parsed.data as Record<string, unknown>,
         });
@@ -488,10 +492,10 @@ export const StreamingMessage = memo(function StreamingMessage({
         )}
 
         {/* Streaming status indicator */}
-        {message.status === "aborted" && (
+        {message.status === "failed" && (
           <div className="mt-2 ml-4">
             <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-destructive/10 text-destructive border border-destructive/20">
-              Response stopped
+              Response failed
             </span>
           </div>
         )}

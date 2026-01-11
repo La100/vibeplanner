@@ -139,7 +139,7 @@ export default function CompanySettings() {
 
   const containerVariants = {
     hidden: { opacity: 0, y: 10 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } }
+    visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" as const } }
   };
 
   const remainingCredits = aiAccess?.remainingTokens ?? 0;

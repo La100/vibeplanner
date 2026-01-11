@@ -6,7 +6,7 @@
 
 import type {
   PendingItem,
-  PendingItemType,
+  AnyPendingItemType,
   TaskInput,
   NoteInput,
   ShoppingItemInput,
@@ -25,8 +25,8 @@ import {
 
 // ==================== TYPE GUARDS ====================
 
-export const isPendingItemType = (value: unknown): value is PendingItemType =>
-  typeof value === "string" && PENDING_ITEM_TYPES.includes(value as PendingItemType);
+export const isPendingItemType = (value: unknown): value is AnyPendingItemType =>
+  typeof value === "string" && PENDING_ITEM_TYPES.includes(value as AnyPendingItemType);
 
 // ==================== MESSAGE HELPERS ====================
 
@@ -715,7 +715,6 @@ export const resolveSectionName = (rawSectionName?: unknown, rawCategory?: unkno
   const normalizedCategory = typeof rawCategory === "string" ? rawCategory.trim() : "";
   return normalizedCategory.length > 0 ? normalizedCategory : undefined;
 };
-
 
 
 

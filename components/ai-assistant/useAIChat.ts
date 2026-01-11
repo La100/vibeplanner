@@ -97,7 +97,7 @@ function uiMessageToChatEntry(msg: UIMessage): ChatHistoryEntry {
   return {
     role: msg.role as "user" | "assistant",
     content: msg.text || "",
-    status: msg.status as "streaming" | "finished" | "aborted" | undefined,
+    status: msg.status as "streaming" | "pending" | "success" | "failed" | undefined,
     messageIndex: msg.order,
   };
 }

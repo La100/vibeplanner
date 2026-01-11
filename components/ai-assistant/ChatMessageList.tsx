@@ -30,11 +30,11 @@ interface ChatMessageListProps {
   }>>;
   pendingItems?: PendingContentItem[];
   isBulkProcessing?: boolean;
-  onConfirmItem?: (index: number) => void;
-  onRejectItem?: (index: number) => void;
+  onConfirmItem?: (index: number) => Promise<void>;
+  onRejectItem?: (index: number) => void | Promise<void>;
   onEditItem?: (index: number) => void;
-  onConfirmAll?: () => void;
-  onRejectAll?: () => void;
+  onConfirmAll?: () => Promise<void>;
+  onRejectAll?: () => void | Promise<void>;
   onUpdateItem?: (index: number, updates: Partial<PendingContentItem>) => void;
 }
 
@@ -93,4 +93,3 @@ export function ChatMessageList({
 }
 
 export default ChatMessageList;
-

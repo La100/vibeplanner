@@ -36,8 +36,6 @@ interface ConfirmationCardProps {
   index: number;
   onConfirm: (index: number) => Promise<void>;
   onReject: (index: number) => void | Promise<void>;
-  onConfirm: (index: number) => Promise<void>;
-  onReject: (index: number) => void | Promise<void>;
   onEdit?: (index: number) => void;
   onUpdate?: (index: number, updates: Partial<PendingContentItem>) => void;
   isProcessing?: boolean;
@@ -310,8 +308,6 @@ interface InlineConfirmationListProps {
   onConfirmItem: (index: number) => Promise<void>;
   onRejectItem: (index: number) => void | Promise<void>;
   onEditItem?: (index: number) => void;
-  onConfirmAll?: () => Promise<void>;
-  onRejectAll?: () => void | Promise<void>;
   onConfirmAll?: () => Promise<void>;
   onRejectAll?: () => void | Promise<void>;
   onUpdateItem?: (index: number, updates: Partial<PendingContentItem>) => void;

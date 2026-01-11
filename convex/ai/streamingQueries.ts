@@ -275,7 +275,7 @@ export const listMessagesForUI = query({
 export const listThreadMessages = query({
   args: {
     threadId: v.string(),
-    paginationOpts: v.optional(paginationOptsValidator),
+    paginationOpts: paginationOptsValidator,
     streamArgs: v.optional(vStreamArgs), // Required for streaming support!
   },
   returns: v.any(),

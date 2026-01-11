@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import ConvexClientProvider from "@/components/ConvexClientProvider";
 import { ClerkProvider } from "@clerk/nextjs";
+import type { ClerkProviderProps } from "@clerk/clerk-react";
 import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
@@ -30,7 +31,7 @@ export const metadata: Metadata = {
   },
 };
 
-const clerkAppearance = {
+const clerkAppearance: ClerkProviderProps["appearance"] = {
   layout: {
     socialButtonsVariant: "blockButton",
     socialButtonsPlacement: "top",

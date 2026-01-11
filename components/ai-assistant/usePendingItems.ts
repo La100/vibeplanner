@@ -54,13 +54,11 @@ interface UsePendingItemsReturn {
   setEditingItemIndex: (index: number | null) => void;
   handleContentConfirm: () => Promise<void>;
   handleContentCancel: () => void;
-  handleContentEdit: (data: Record<string, unknown>) => void;
+  handleContentEdit: (updatedItem: { data: Record<string, unknown> }) => void;
   handleContentDialogClose: () => void;
   handleConfirmAll: () => Promise<void>;
   handleConfirmItem: (index: number) => Promise<void>;
   handleRejectItem: (index: number) => Promise<void>;
-  handleRejectAll: () => Promise<void>;
-  handleEditItem: (index: number) => void;
   handleRejectAll: () => Promise<void>;
   handleEditItem: (index: number) => void;
   handleUpdatePendingItem: (index: number, updates: Partial<PendingItem>) => void;
@@ -989,13 +987,13 @@ export const usePendingItems = ({
     toast.info(`${currentItem?.type || 'Item'} creation cancelled`);
   }, [pendingItems, currentItemIndex]);
 
-  const handleContentEdit = useCallback((data: Record<string, unknown>) => {
+  const handleContentEdit = useCallback((updatedItem: { data: Record<string, unknown> }) => {
     setPendingItems(prev => {
       const updated = [...prev];
       if (updated[currentItemIndex]) {
         updated[currentItemIndex] = {
           ...updated[currentItemIndex],
-          data: { ...updated[currentItemIndex].data, ...data },
+          data: { ...updated[currentItemIndex].data, ...updatedItem.data },
         };
       }
       return updated;
@@ -1313,7 +1311,6 @@ export const usePendingItems = ({
 };
 
 export default usePendingItems;
-
 
 
 
