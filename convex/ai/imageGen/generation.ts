@@ -12,6 +12,8 @@ import { IMAGE_GENERATION_CONFIG } from "./config";
  * Uses Gemini 3 Pro Image model with official SDK and chat history
  */
 
+const FALLBACK_IMAGE_TOKENS = 10000;
+
 // History message type - includes image data for model responses
 const historyMessageValidator = v.object({
   role: v.union(v.literal("user"), v.literal("model")),
@@ -36,7 +38,9 @@ export const generateVisualization = action({
   args: {
     prompt: v.string(),
     referenceImages: v.optional(v.array(referenceImageValidator)),
-    projectId: v.id("projects"),
+    projectId: v.optional(v.id("projects")),
+    teamId: v.optional(v.id("teams")),
+    sessionId: v.optional(v.id("aiVisualizationSessions")),
     history: v.optional(v.array(historyMessageValidator)),
   },
   returns: v.object({
@@ -47,6 +51,7 @@ export const generateVisualization = action({
     mimeType: v.optional(v.string()),
     textResponse: v.optional(v.string()),
     error: v.optional(v.string()),
+    generationId: v.optional(v.id("aiGeneratedImages")),
   }),
   handler: async (ctx, args): Promise<{
     success: boolean;
@@ -56,6 +61,7 @@ export const generateVisualization = action({
     mimeType?: string;
     textResponse?: string;
     error?: string;
+    generationId?: Id<"aiGeneratedImages">;
   }> => {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -65,14 +71,31 @@ export const generateVisualization = action({
       };
     }
 
-    const aiAccess = await ctx.runQuery(internal.stripe.checkAIFeatureAccessByProject, {
-      projectId: args.projectId,
-    });
+    // Determine access scope and ID
+    let aiAccess;
+    let targetTeamId: Id<"teams"> | undefined;
+
+    if (args.projectId) {
+      aiAccess = await ctx.runQuery(internal.stripe.checkAIFeatureAccessByProject, {
+        projectId: args.projectId,
+      });
+      // We still need teamId for later if not returned by checkAIFeatureAccessByProject (it isn't directly, but accessible via getContextInfo)
+    } else if (args.teamId) {
+      aiAccess = await ctx.runQuery(internal.stripe.checkAIFeatureAccess, {
+        teamId: args.teamId,
+      });
+      targetTeamId = args.teamId;
+    } else {
+      return {
+        success: false,
+        error: "Either projectId or teamId must be provided.",
+      };
+    }
 
     if (!aiAccess.allowed) {
       return {
         success: false,
-        error: aiAccess.message || "AI features are unavailable for this project.",
+        error: aiAccess.message || "AI features are unavailable.",
       };
     }
 
@@ -206,6 +229,48 @@ export const generateVisualization = action({
         };
       }
 
+      const inputTokens = usageMetadata?.promptTokenCount || 0;
+      const outputTokens = usageMetadata?.candidatesTokenCount || 0;
+      const computedTotal = usageMetadata?.totalTokenCount ?? (inputTokens + outputTokens);
+      const totalTokens = computedTotal > 0 ? computedTotal : FALLBACK_IMAGE_TOKENS;
+
+      let contextInfo: {
+        teamId: Id<"teams">;
+        teamSlug: string;
+        projectSlug?: string;
+        projectId?: Id<"projects">;
+      } | null = null;
+
+      try {
+        contextInfo = await ctx.runQuery(internal.ai.imageGen.helpers.getContextInfo, {
+          projectId: args.projectId,
+          teamId: args.teamId,
+        });
+
+        if (contextInfo) {
+          const identity = await ctx.auth.getUserIdentity();
+          const userClerkId = identity?.subject || "anonymous";
+
+          await ctx.runMutation(internal.ai.usage.saveTokenUsage, {
+            projectId: contextInfo.projectId,
+            teamId: contextInfo.teamId,
+            userClerkId,
+            model: IMAGE_GENERATION_CONFIG.MODEL_ID,
+            feature: "visualizations",
+            requestType: "other",
+            inputTokens,
+            outputTokens,
+            totalTokens,
+            contextSize: args.history?.length || 0,
+            mode: "visualization",
+            responseTimeMs: duration,
+            success: true,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to log visualization token usage:", error);
+      }
+
       // Extract image and text from response
       let imageBase64: string | undefined;
       let mimeType: string | undefined;
@@ -237,23 +302,17 @@ export const generateVisualization = action({
       // --- AUTO-UPLOAD TO STORAGE ---
       let imageStorageKey: string | undefined;
       let fileUrl: string | undefined;
+      let generationId: Id<"aiGeneratedImages"> | undefined;
 
       try {
-         // Get project and team info
-        const projectInfo: {
-          teamId: Id<"teams">;
-          teamSlug: string;
-          projectSlug: string;
-        } | null = await ctx.runQuery(internal.ai.imageGen.helpers.getProjectInfo, {
-          projectId: args.projectId,
-        });
-
-        if (projectInfo) {
+        if (contextInfo) {
           const binaryData = Buffer.from(imageBase64, "base64");
           const extension = (mimeType || "image/png").split("/")[1] || "png";
           const uuid = crypto.randomUUID();
           const fileName = `generated-${Date.now()}`;
-          const fileKey = `${projectInfo.teamSlug}/${projectInfo.projectSlug}/ai-visualizations/${uuid}-${fileName}.${extension}`;
+          // Use "global" folder if no project slug
+          const locationSlug = contextInfo.projectSlug || "global";
+          const fileKey = `${contextInfo.teamSlug}/${locationSlug}/ai-visualizations/${uuid}-${fileName}.${extension}`;
 
           // Generate upload URL
           const uploadData: { url: string } = await ctx.runMutation(internal.ai.imageGen.helpers.generateR2UploadUrl, {
@@ -283,11 +342,12 @@ export const generateVisualization = action({
             // Log successful generation to database
             const identity = await ctx.auth.getUserIdentity();
             const userClerkId = identity?.subject || "anonymous";
-            
-            await ctx.runMutation(internal.ai.imageGen.helpers.logImageGeneration, {
-              projectId: args.projectId,
-              teamId: projectInfo.teamId,
+
+            const loggedGenerationId = await ctx.runMutation(internal.ai.imageGen.helpers.logImageGeneration, {
+              projectId: contextInfo.projectId,
+              teamId: contextInfo.teamId,
               userClerkId,
+              sessionId: args.sessionId,
               prompt: args.prompt,
               model: IMAGE_GENERATION_CONFIG.MODEL_ID,
               storageKey: fileKey,
@@ -302,6 +362,21 @@ export const generateVisualization = action({
               textResponse,
               success: true,
             });
+
+            // Add model message to session if sessionId provided
+            if (args.sessionId) {
+              await ctx.runMutation(internal.ai.visualizationSessions.addModelMessage, {
+                sessionId: args.sessionId,
+                text: textResponse?.trim() || "Generated image.",
+                imageStorageKey: fileKey,
+                imageMimeType: mimeType || "image/png",
+                imageUrl: url || undefined,
+                generationId: loggedGenerationId,
+              });
+            }
+
+            // Store for return
+            generationId = loggedGenerationId;
           } else {
             console.error("Failed to auto-upload generated image:", uploadResponse.status);
           }
@@ -319,22 +394,24 @@ export const generateVisualization = action({
         fileUrl, // Return URL if available
         mimeType: mimeType || "image/png",
         textResponse,
+        generationId,
       };
     } catch (error) {
       console.error("Error calling Gemini API:", error);
       
       // Log failed generation
       try {
-        const projectInfo = await ctx.runQuery(internal.ai.imageGen.helpers.getProjectInfo, {
+        const contextInfo = await ctx.runQuery(internal.ai.imageGen.helpers.getContextInfo, {
           projectId: args.projectId,
+          teamId: args.teamId,
         });
-        if (projectInfo) {
+        if (contextInfo) {
           const identity = await ctx.auth.getUserIdentity();
           const userClerkId = identity?.subject || "anonymous";
           
           await ctx.runMutation(internal.ai.imageGen.helpers.logImageGeneration, {
-            projectId: args.projectId,
-            teamId: projectInfo.teamId,
+            projectId: contextInfo.projectId,
+            teamId: contextInfo.teamId,
             userClerkId,
             prompt: args.prompt,
             model: IMAGE_GENERATION_CONFIG.MODEL_ID,
@@ -358,127 +435,12 @@ export const generateVisualization = action({
 });
 
 /**
- * Save generated image to R2 storage and files table
- */
-export const saveGeneratedImage = action({
-  args: {
-    imageBase64: v.optional(v.string()),
-    imageStorageKey: v.optional(v.string()),
-    mimeType: v.string(),
-    fileName: v.string(),
-    projectId: v.id("projects"),
-    prompt: v.string(),
-  },
-  returns: v.object({
-    success: v.boolean(),
-    fileId: v.optional(v.id("files")),
-    fileUrl: v.optional(v.string()),
-    error: v.optional(v.string()),
-  }),
-  handler: async (ctx, args): Promise<{
-    success: boolean;
-    fileId?: Id<"files">;
-    fileUrl?: string;
-    error?: string;
-  }> => {
-    try {
-      // Get project and team info
-      const project: { teamId: Id<"teams">; teamSlug: string; projectSlug: string } | null = 
-        await ctx.runQuery(internal.ai.imageGen.helpers.getProjectInfo, {
-          projectId: args.projectId,
-        });
-
-      if (!project) {
-        return { success: false, error: "Project not found" };
-      }
-
-      let fileKey = args.imageStorageKey;
-      let size = 0;
-
-      // If we don't have a storage key, we need to upload
-      if (!fileKey) {
-        if (!args.imageBase64) {
-          return { success: false, error: "No image data provided" };
-        }
-
-        // Convert base64 to binary
-        const binaryData = Buffer.from(args.imageBase64, "base64");
-        size = binaryData.length;
-
-        // Determine file extension from mime type
-        const extension = args.mimeType.split("/")[1] || "png";
-        const uuid = crypto.randomUUID();
-        fileKey = `${project.teamSlug}/${project.projectSlug}/ai-visualizations/${uuid}-${args.fileName}.${extension}`;
-
-        // Get upload URL from R2
-        const uploadData: { url: string } = await ctx.runMutation(internal.ai.imageGen.helpers.generateR2UploadUrl, {
-          key: fileKey,
-        });
-
-        // Upload to R2
-        const uploadResponse = await fetch(uploadData.url, {
-          method: "PUT",
-          body: binaryData,
-          headers: {
-            "Content-Type": args.mimeType,
-          },
-        });
-
-        if (!uploadResponse.ok) {
-          return {
-            success: false,
-            error: `Failed to upload image: ${uploadResponse.status}`,
-          };
-        }
-      } else {
-        // If using existing key, we assume it's already uploaded.
-        // For size, we'll just use 0 or approximate if not available
-        size = 0;
-      }
-
-      // Determine extension from fileName or mimeType for the record
-      const extension = args.fileName.includes('.') 
-        ? args.fileName.split('.').pop() 
-        : args.mimeType.split("/")[1] || "png";
-
-      // Save file record to database
-      const fileId: Id<"files"> = await ctx.runMutation(internal.ai.imageGen.helpers.createFileRecord, {
-        projectId: args.projectId,
-        teamId: project.teamId,
-        fileName: args.fileName.endsWith(extension!) ? args.fileName : `${args.fileName}.${extension}`,
-        fileKey: fileKey!,
-        mimeType: args.mimeType,
-        size: size,
-        description: `AI Generated: ${args.prompt.substring(0, 200)}`,
-        aiPrompt: args.prompt,
-      });
-
-      // Get the file URL
-      const fileUrl: string | null = await ctx.runQuery(internal.ai.imageGen.helpers.getFileUrl, {
-        fileKey: fileKey!,
-      });
-
-      return {
-        success: true,
-        fileId,
-        fileUrl: fileUrl ?? undefined,
-      };
-    } catch (error) {
-      console.error("Error saving generated image:", error);
-      return {
-        success: false,
-        error: `Failed to save image: ${(error as Error).message}`,
-      };
-    }
-  },
-});
-
-/**
  * Generate upload URL for reference images (public action)
  */
 export const getUploadUrl = action({
   args: {
-    projectId: v.id("projects"),
+    projectId: v.optional(v.id("projects")),
+    teamId: v.optional(v.id("teams")),
     fileName: v.string(),
     fileType: v.string(),
   },
@@ -487,24 +449,26 @@ export const getUploadUrl = action({
     key: v.string(),
   }),
   handler: async (ctx, args): Promise<{ url: string; key: string }> => {
-    // Get project and team info to construct key
-    const project: {
+    // Get context info to construct key
+    const context: {
       teamId: Id<"teams">;
       teamSlug: string;
-      projectSlug: string;
-    } | null = await ctx.runQuery(internal.ai.imageGen.helpers.getProjectInfo, {
+      projectSlug?: string;
+    } | null = await ctx.runQuery(internal.ai.imageGen.helpers.getContextInfo, {
       projectId: args.projectId,
+      teamId: args.teamId,
     });
 
-    if (!project) throw new Error("Project not found");
+    if (!context) throw new Error("Context (project or team) not found");
 
-    const extension = args.fileName.includes('.') 
-      ? args.fileName.split('.').pop() 
+    const extension = args.fileName.includes('.')
+      ? args.fileName.split('.').pop()
       : args.fileType.split('/')[1] || '';
-    
+
     const uuid = crypto.randomUUID();
     const baseName = args.fileName.replace(/\.[^/.]+$/, "");
-    const fileKey = `${project.teamSlug}/${project.projectSlug}/ai-visualizations/references/${uuid}-${baseName}.${extension}`;
+    const locationSlug = context.projectSlug || "global";
+    const fileKey = `${context.teamSlug}/${locationSlug}/ai-visualizations/references/${uuid}-${baseName}.${extension}`;
 
     const uploadData: { url: string } = await ctx.runMutation(internal.ai.imageGen.helpers.generateR2UploadUrl, {
       key: fileKey,
@@ -514,5 +478,86 @@ export const getUploadUrl = action({
       url: uploadData.url,
       key: fileKey,
     };
+  },
+});
+
+/**
+ * Get generated images gallery
+ */
+export const getGallery = action({
+  args: {
+    projectId: v.optional(v.id("projects")),
+    teamId: v.optional(v.id("teams")),
+  },
+  returns: v.array(
+    v.object({
+      _id: v.id("aiGeneratedImages"),
+      _creationTime: v.number(),
+      url: v.union(v.string(), v.null()),
+      prompt: v.string(),
+      storageKey: v.optional(v.string()),
+      mimeType: v.optional(v.string()),
+    })
+  ),
+  handler: async (ctx, args): Promise<Array<{
+    _id: Id<"aiGeneratedImages">;
+    _creationTime: number;
+    url: string | null;
+    prompt: string;
+    storageKey?: string;
+    mimeType?: string;
+  }>> => {
+    const images = await ctx.runQuery(internal.ai.imageGen.helpers.getGeneratedImagesGallery, {
+      projectId: args.projectId,
+      teamId: args.teamId,
+    });
+
+    // Generate fresh URLs for all images
+    const imagesWithUrls = await Promise.all(
+      images.map(async (img) => {
+        let url: string | null = null;
+        if (img.storageKey) {
+          url = await ctx.runQuery(internal.ai.imageGen.helpers.getFileUrl, {
+            fileKey: img.storageKey,
+          });
+        }
+        return {
+          _id: img._id,
+          _creationTime: img._creationTime,
+          url,
+          prompt: img.prompt,
+          storageKey: img.storageKey,
+          mimeType: img.mimeType,
+        };
+      })
+    );
+
+    return imagesWithUrls;
+  },
+});
+
+/**
+ * Delete generated image
+ */
+export const deleteGeneration = action({
+  args: {
+    generationId: v.id("aiGeneratedImages"),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    error: v.optional(v.string()),
+  }),
+  handler: async (ctx, args) => {
+    try {
+      await ctx.runMutation(internal.ai.imageGen.helpers.deleteGeneratedImage, {
+        generationId: args.generationId,
+      });
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: (error as Error).message,
+      };
+    }
   },
 });

@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useState, Suspense } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-import { Users, Settings, Shield, AlertTriangle, Eye } from "lucide-react";
+import { Users, Settings, Shield, AlertTriangle, Eye, Sparkles } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -29,6 +29,7 @@ import {
 import TaskStatusSettings from "./TaskStatusSettings";
 import ProjectMembers from "./ProjectMembers";
 import SidebarPermissions from "./SidebarPermissions";
+import AISettings from "./AISettings";
 import { Skeleton } from "@/components/ui/skeleton";
 
 
@@ -63,8 +64,8 @@ function ProjectSettingsSkeleton() {
         <Skeleton className="h-5 w-3/4 mt-2" />
       </div>
 
-      <div className="grid w-full grid-cols-5 h-auto p-1 mb-6 border rounded-md">
-        {[...Array(5)].map((_, i) => (
+      <div className="grid w-full grid-cols-6 h-auto p-1 mb-6 border rounded-md">
+        {[...Array(6)].map((_, i) => (
           <div key={i} className="flex flex-col items-center gap-1 p-2">
             <Skeleton className="h-5 w-5 rounded-full" />
             <Skeleton className="h-4 w-12" />
@@ -97,7 +98,7 @@ function ProjectSettingsContent() {
   const params = useParams<{ slug: string, projectSlug: string }>();
   const router = useRouter();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"general" | "members" | "permissions" | "taskstatus" | "advanced">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "members" | "permissions" | "taskstatus" | "ai" | "advanced">("general");
   
   const project = useQuery(api.projects.getProjectBySlug, {
     teamSlug: params.slug,
@@ -209,7 +210,7 @@ function ProjectSettingsContent() {
       </div>
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)} className="w-full">
-        <TabsList className="grid w-full grid-cols-5 h-auto p-1 mb-6">
+        <TabsList className="grid w-full grid-cols-6 h-auto p-1 mb-6">
           <TabsTrigger value="general" className="flex flex-col items-center gap-1 p-2 text-xs data-[state=active]:bg-background">
             <Settings className="h-4 w-4" />
             <span className="text-xs">General</span>
@@ -225,6 +226,10 @@ function ProjectSettingsContent() {
           <TabsTrigger value="taskstatus" className="flex flex-col items-center gap-1 p-2 text-xs data-[state=active]:bg-background">
             <Shield className="h-4 w-4" />
             <span className="text-xs">Status</span>
+          </TabsTrigger>
+          <TabsTrigger value="ai" className="flex flex-col items-center gap-1 p-2 text-xs data-[state=active]:bg-background">
+            <Sparkles className="h-4 w-4" />
+            <span className="text-xs">AI</span>
           </TabsTrigger>
           <TabsTrigger value="advanced" className="flex flex-col items-center gap-1 p-2 text-xs data-[state=active]:bg-background">
             <AlertTriangle className="h-4 w-4" />
@@ -254,6 +259,12 @@ function ProjectSettingsContent() {
         <TabsContent value="taskstatus" className="mt-0">
            <Suspense fallback={<Card><CardContent className="p-4"><Skeleton className="h-20 w-full" /></CardContent></Card>}>
             <TaskStatusTab project={project} />
+          </Suspense>
+        </TabsContent>
+
+        <TabsContent value="ai" className="mt-0">
+          <Suspense fallback={<Card><CardContent className="p-4"><Skeleton className="h-20 w-full" /></CardContent></Card>}>
+            <AISettings projectId={project._id} />
           </Suspense>
         </TabsContent>
 

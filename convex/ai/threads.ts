@@ -551,6 +551,7 @@ export const clearThreadForUser = mutation({
     await ctx.db.patch(thread._id, {
       lastResponseId: undefined,
       agentThreadId: undefined,
+      abortedAt: undefined,
       lastMessageAt: Date.now(),
     });
 
@@ -788,6 +789,60 @@ export const markFunctionCallsAsConfirmed = mutation({
       }
     }
     return null;
+  },
+});
+
+// Clear ALL threads for a user in a project (for settings page)
+export const clearAllThreadsForUser = mutation({
+  args: {
+    projectId: v.id("projects"),
+    userClerkId: v.string(),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    removedThreads: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized");
+    }
+    if (identity.subject !== args.userClerkId) {
+      throw new Error("Forbidden");
+    }
+
+    const threads = await ctx.db
+      .query("aiThreads")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+
+    const threadsToRemove = threads.filter(
+      (thread) => thread.userClerkId === args.userClerkId
+    );
+
+    for (const thread of threadsToRemove) {
+      const messages = await ctx.db
+        .query("aiMessages")
+        .withIndex("by_thread", (q) => q.eq("threadId", thread.threadId))
+        .collect();
+
+      const functionCalls = await ctx.db
+        .query("aiFunctionCalls")
+        .withIndex("by_thread", (q) => q.eq("threadId", thread.threadId))
+        .collect();
+
+      for (const msg of messages) {
+        await ctx.db.delete(msg._id);
+      }
+
+      for (const call of functionCalls) {
+        await ctx.db.delete(call._id);
+      }
+
+      await ctx.db.delete(thread._id);
+    }
+
+    return { success: true, removedThreads: threadsToRemove.length };
   },
 });
 

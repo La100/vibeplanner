@@ -14,6 +14,32 @@ import { AI_MODEL, AI_CONFIG } from "./config";
 import type { ProjectContextSnapshot } from "./types";
 import { createAgentTools } from "./tools";
 
+// Types for agent configuration
+interface UsageData {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+interface AgentContextArgs {
+  threadId?: string;
+  inputMessages: Array<{ role: "user" | "assistant"; content: string }>;
+  inputPrompt: Array<{ role: "user" | "assistant"; content: string }>;
+  existingResponses: Array<{ role: "user" | "assistant"; content: string }>;
+}
+
+// RunAction type matches ctx.runAction signature
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type RunActionFn = (action: any, args: any) => Promise<any>;
+
+interface AgentOptions {
+  usageHandler?: (ctx: unknown, usageData: UsageData) => Promise<void>;
+  projectId?: string;
+  runAction?: RunActionFn;
+  loadSnapshot?: () => Promise<ProjectContextSnapshot>;
+  loadThreadMessages?: (threadId: string) => Promise<Array<{ role: "user" | "assistant"; content: string }>>;
+}
+
 /**
  * Create the VibePlanner AI Agent with all tools and advanced features
  *
@@ -34,15 +60,11 @@ import { createAgentTools } from "./tools";
  */
 export const createVibePlannerAgent = (
   instructions: string,
-  options?: {
-    usageHandler?: (ctx: any, usageData: any) => Promise<void>;
-    projectId?: string;
-    runAction?: (action: any, args: any) => Promise<any>;
-    loadSnapshot?: () => Promise<ProjectContextSnapshot>;
-    loadThreadMessages?: (threadId: string) => Promise<Array<{ role: "user" | "assistant"; content: string }>>;
-  }
+  options?: AgentOptions
 ) => {
-  const agentConfig: any = {
+  // Agent configuration with proper typing
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const agentConfig: Record<string, any> = {
     name: "VibePlanner Assistant",
     languageModel: openai(AI_MODEL),
     instructions,
@@ -67,7 +89,7 @@ export const createVibePlannerAgent = (
 
     // Custom context handler - loads conversation history from our aiMessages table
     // This makes our custom tables the single source of truth for messages
-    contextHandler: async (_ctx: any, args: any) => {
+    contextHandler: async (_ctx: unknown, args: AgentContextArgs) => {
       const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
       
       // Load previous messages from our custom storage if available
@@ -104,5 +126,7 @@ export const createVibePlannerAgent = (
     agentConfig.usageHandler = options.usageHandler;
   }
 
-  return new Agent(components.agent, agentConfig);
+  // Cast to satisfy Agent constructor while preserving flexibility
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return new Agent(components.agent, agentConfig as any);
 };

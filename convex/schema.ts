@@ -36,10 +36,6 @@ export default defineSchema({
       v.literal("SGD"), // Singapore Dollar
       v.literal("HKD"), // Hong Kong Dollar
     )),
-    settings: v.optional(v.object({
-      isPublic: v.boolean(),
-      allowGuestAccess: v.boolean(),
-    })),
     taskStatusSettings: v.optional(v.object({
       todo: v.object({ name: v.string(), color: v.string() }),
       in_progress: v.object({ name: v.string(), color: v.string() }),
@@ -81,13 +77,12 @@ export default defineSchema({
       hasAdvancedFeatures: v.boolean(),
       hasAIFeatures: v.optional(v.boolean()),
       price: v.number(),
-      aiMonthlyCredits: v.optional(v.number()), // Monthly AI credits (1 credit = 5 cents)
-      // Legacy fields for backward compatibility
-      aiMonthlySpendLimitCents: v.optional(v.number()),
-      aiImageGenerationsLimit: v.optional(v.number()),
+      aiMonthlyTokens: v.optional(v.number()), // Monthly AI tokens
+      aiMonthlySpendLimitCents: v.optional(v.number()), // Legacy cost-based limit
+      aiImageGenerationsLimit: v.optional(v.number()), // Legacy image generation limit
     })),
-    aiExtraCreditsCents: v.optional(v.number()), // Extra credits stored in cents (for top-ups)
-    aiExtraCreditsPeriodStart: v.optional(v.number()), // Start of billing period for extra credits
+    // Simple AI tokens field - manually editable in dashboard
+    aiTokens: v.optional(v.number()), // Total tokens available for this team
   })
     .index("by_clerk_org", ["clerkOrgId"])
     .index("by_slug", ["slug"])
@@ -152,6 +147,8 @@ export default defineSchema({
       gantt: v.optional(v.object({ visible: v.boolean() })),
       files: v.optional(v.object({ visible: v.boolean() })),
       shopping_list: v.optional(v.object({ visible: v.boolean() })),
+      labor: v.optional(v.object({ visible: v.boolean() })),
+      estimations: v.optional(v.object({ visible: v.boolean() })),
       settings: v.optional(v.object({ visible: v.boolean() })),
     })),
   })
@@ -277,67 +274,6 @@ export default defineSchema({
     .index("by_author", ["authorId"])
     .index("by_parent", ["parentCommentId"]),
 
-  // Chat channels (for organizations and projects)
-  chatChannels: defineTable({
-    name: v.string(),
-    description: v.optional(v.string()),
-    type: v.union(
-      v.literal("team"),      // Organization channel  
-      v.literal("project")    // Project channel
-    ),
-    teamId: v.id("teams"),
-    projectId: v.optional(v.id("projects")), // null for organization channels
-    createdBy: v.string(),    // Clerk user ID
-    isPrivate: v.boolean(),   // whether the channel is private
-    allowedUsers: v.optional(v.array(v.string())), // only for private channels
-    isDefault: v.boolean(),   // whether this is the default channel (e.g. "General")
-  })
-    .index("by_team", ["teamId"])
-    .index("by_project", ["projectId"])
-    .index("by_type_and_team", ["type", "teamId"])
-    .index("by_type_and_project", ["type", "projectId"])
-    .index("by_created_by", ["createdBy"]),
-
-  // Messages in channels
-  chatMessages: defineTable({
-    content: v.string(),
-    channelId: v.id("chatChannels"),
-    authorId: v.string(),    // Clerk user ID
-    teamId: v.id("teams"),   // for faster access and permissions
-    projectId: v.optional(v.id("projects")), // for project channels
-    replyToId: v.optional(v.id("chatMessages")), // replies to messages
-    isEdited: v.boolean(),
-    editedAt: v.optional(v.number()),
-    messageType: v.union(
-      v.literal("text"),
-      v.literal("file"),
-      v.literal("system")    // system messages e.g. "User joined"
-    ),
-    fileUrl: v.optional(v.string()),
-    fileName: v.optional(v.string()),
-    fileId: v.optional(v.id("files")),
-  })
-    .index("by_channel", ["channelId"])
-    .index("by_author", ["authorId"])
-    .index("by_team", ["teamId"])
-    .index("by_project", ["projectId"])
-    .index("by_reply_to", ["replyToId"]),
-
-  // Channel membership
-  chatChannelMembers: defineTable({
-    channelId: v.id("chatChannels"),
-    userId: v.string(),      // Clerk user ID
-    joinedAt: v.number(),
-    role: v.union(
-      v.literal("admin"),
-      v.literal("member")
-    ),
-    lastReadAt: v.optional(v.number()), // for marking unread messages
-  })
-    .index("by_channel", ["channelId"])
-    .index("by_user", ["userId"])
-    .index("by_channel_and_user", ["channelId", "userId"]),
-
   // Team members (only admin/member - internal team)
   teamMembers: defineTable({
     teamId: v.id("teams"),
@@ -458,6 +394,7 @@ export default defineSchema({
     category: v.optional(v.string()),
     dimensions: v.optional(v.string()),
     quantity: v.number(),
+    unit: v.optional(v.string()), // Unit type (pcs, m², m, kg, etc.)
     unitPrice: v.optional(v.number()),
     totalPrice: v.optional(v.number()),
     realizationStatus: v.union(
@@ -478,6 +415,78 @@ export default defineSchema({
   .index("by_project", ["projectId"])
   .index("by_section", ["sectionId"])
   .index("by_status", ["realizationStatus"]),
+
+  // Labor sections for grouping labor items
+  laborSections: defineTable({
+    name: v.string(),
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    order: v.number(),
+    createdBy: v.string(), // Clerk user ID
+  })
+    .index("by_project", ["projectId"]),
+
+  // Labor items for work/services
+  laborItems: defineTable({
+    name: v.string(), // Work description (e.g., "Tile installation")
+    notes: v.optional(v.string()),
+    quantity: v.number(),
+    unit: v.string(), // Unit type (m², hours, pcs, lm, etc.)
+    unitPrice: v.optional(v.number()),
+    totalPrice: v.optional(v.number()),
+    sectionId: v.optional(v.union(v.id("laborSections"), v.null())),
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    createdBy: v.string(), // Clerk user ID
+    assignedTo: v.optional(v.string()), // Clerk user ID (contractor)
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_section", ["sectionId"]),
+
+  // Cost Estimations / Quotations
+  costEstimations: defineTable({
+    title: v.string(), // Estimation title
+    estimationNumber: v.optional(v.string()), // Optional estimation number (e.g., "EST-2026-001")
+    location: v.optional(v.string()), // Work location/address
+    estimationDate: v.number(), // Date created (Unix timestamp)
+    plannedStartDate: v.optional(v.number()), // Planned start of work (Unix timestamp)
+    validUntil: v.optional(v.number()), // Quote valid until (Unix timestamp)
+    vatPercent: v.number(), // VAT percentage (default 23%)
+    discountPercent: v.optional(v.number()), // Discount percentage
+    status: v.union(
+      v.literal("draft"),
+      v.literal("sent"),
+      v.literal("accepted"),
+      v.literal("rejected"),
+      v.literal("expired")
+    ),
+    // Selected items from shopping list (materials)
+    materialItemIds: v.array(v.id("shoppingListItems")),
+    // Selected items from labor list
+    laborItemIds: v.array(v.id("laborItems")),
+    // Calculated totals (stored for quick access)
+    laborTotal: v.optional(v.number()),
+    materialsTotal: v.optional(v.number()),
+    netTotal: v.optional(v.number()),
+    discountAmount: v.optional(v.number()),
+    vatAmount: v.optional(v.number()),
+    grossTotal: v.optional(v.number()),
+    // Customer info (optional, can be linked to contacts)
+    customerName: v.optional(v.string()),
+    customerEmail: v.optional(v.string()),
+    customerPhone: v.optional(v.string()),
+    customerAddress: v.optional(v.string()),
+    contactId: v.optional(v.id("contacts")), // Link to contacts table
+    notes: v.optional(v.string()),
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    createdBy: v.string(), // Clerk user ID
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_team", ["teamId"])
+    .index("by_status", ["status"]),
 
   // Activity log (Changelog)
   activityLog: defineTable({
@@ -662,11 +671,18 @@ export default defineSchema({
 
   // AI Token Usage Tracking
   aiTokenUsage: defineTable({
-    projectId: v.id("projects"),
+    projectId: v.optional(v.id("projects")),
     teamId: v.id("teams"),
     userClerkId: v.string(),
     threadId: v.optional(v.string()),
     model: v.string(),
+    feature: v.optional(
+      v.union(
+        v.literal("assistant"),
+        v.literal("visualizations"),
+        v.literal("other")
+      )
+    ),
     requestType: v.union(
       v.literal("chat"), 
       v.literal("embedding"), 
@@ -726,6 +742,7 @@ export default defineSchema({
     lastMessageAt: v.number(), // Timestamp of last message
     lastResponseId: v.optional(v.string()), // OpenAI Response ID (not currently used)
     agentThreadId: v.optional(v.string()), // Convex Agent Thread ID
+    abortedAt: v.optional(v.number()), // Timestamp when user requested abort
   })
     .index("by_thread_id", ["threadId"])
     .index("by_project", ["projectId"])
@@ -758,11 +775,51 @@ export default defineSchema({
     .index("by_thread", ["threadId"])
     .index("by_thread_and_index", ["threadId", "messageIndex"]),
 
+  // AI Visualization Sessions - conversation sessions for image generation
+  aiVisualizationSessions: defineTable({
+    teamId: v.id("teams"),
+    projectId: v.optional(v.id("projects")),
+    userClerkId: v.string(),
+    title: v.optional(v.string()), // Auto-generated from first prompt
+    lastMessageAt: v.number(), // Timestamp for sorting
+    messageCount: v.number(), // Number of messages in session
+    imageCount: v.number(), // Number of generated images
+    previewImageUrl: v.optional(v.string()), // URL of last generated image for preview
+    previewStorageKey: v.optional(v.string()), // Storage key for preview
+  })
+    .index("by_team", ["teamId"])
+    .index("by_team_and_user", ["teamId", "userClerkId"])
+    .index("by_user", ["userClerkId"])
+    .index("by_last_message", ["teamId", "lastMessageAt"]),
+
+  // AI Visualization Messages - messages within a visualization session
+  aiVisualizationMessages: defineTable({
+    sessionId: v.id("aiVisualizationSessions"),
+    teamId: v.id("teams"),
+    role: v.union(v.literal("user"), v.literal("model")),
+    text: v.string(),
+    messageIndex: v.number(), // Order in conversation
+    // For model messages with images
+    imageStorageKey: v.optional(v.string()),
+    imageMimeType: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+    generationId: v.optional(v.id("aiGeneratedImages")), // Reference to generation record
+    // For user messages with reference images
+    referenceImages: v.optional(v.array(v.object({
+      storageKey: v.string(),
+      mimeType: v.string(),
+      name: v.string(),
+    }))),
+  })
+    .index("by_session", ["sessionId"])
+    .index("by_session_and_index", ["sessionId", "messageIndex"]),
+
   // AI Generated Images - tracks all image generations from Gemini
   aiGeneratedImages: defineTable({
-    projectId: v.id("projects"),
+    projectId: v.optional(v.id("projects")),
     teamId: v.id("teams"),
     userClerkId: v.string(),
+    sessionId: v.optional(v.id("aiVisualizationSessions")), // Link to conversation session
     prompt: v.string(),
     model: v.string(), // e.g. "gemini-3-pro-image-preview"
     storageKey: v.optional(v.string()), // R2 storage key
@@ -783,7 +840,8 @@ export default defineSchema({
     .index("by_project", ["projectId"])
     .index("by_team", ["teamId"])
     .index("by_user", ["userClerkId"])
-    .index("by_success", ["success"]),
+    .index("by_success", ["success"])
+    .index("by_session", ["sessionId"]),
 
   // AI Function Calls - tracks function calls for threading continuity
   aiFunctionCalls: defineTable({
@@ -806,4 +864,47 @@ export default defineSchema({
     .index("by_thread", ["threadId"])
     .index("by_thread_and_status", ["threadId", "status"])
     .index("by_response_id", ["responseId"]),
+
+  // Google Calendar OAuth Tokens - stores user's Google Calendar access
+  googleCalendarTokens: defineTable({
+    clerkUserId: v.string(),
+    teamId: v.id("teams"),
+    accessToken: v.string(),
+    refreshToken: v.string(),
+    expiresAt: v.number(), // Unix timestamp when access token expires
+    email: v.optional(v.string()), // Google account email
+    calendarId: v.optional(v.string()), // Primary calendar ID
+    isConnected: v.boolean(),
+    lastSyncAt: v.optional(v.number()),
+  })
+    .index("by_user", ["clerkUserId"])
+    .index("by_team", ["teamId"])
+    .index("by_user_and_team", ["clerkUserId", "teamId"]),
+
+  // Google Calendar Events Cache - synced events from Google Calendar
+  googleCalendarEvents: defineTable({
+    googleEventId: v.string(), // Google Calendar event ID
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    createdByClerkUserId: v.string(),
+    title: v.string(),
+    description: v.optional(v.string()),
+    startTime: v.number(), // Unix timestamp
+    endTime: v.number(), // Unix timestamp
+    allDay: v.boolean(),
+    location: v.optional(v.string()),
+    attendees: v.optional(v.array(v.object({
+      email: v.string(),
+      name: v.optional(v.string()),
+      responseStatus: v.optional(v.string()),
+    }))),
+    htmlLink: v.optional(v.string()), // Link to Google Calendar event
+    status: v.optional(v.string()), // confirmed, tentative, cancelled
+    colorId: v.optional(v.string()),
+    lastSyncAt: v.number(),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_team", ["teamId"])
+    .index("by_google_event_id", ["googleEventId"])
+    .index("by_project_and_time", ["projectId", "startTime"]),
 });

@@ -22,7 +22,7 @@ import {
   buildSystemInstructions,
   getCurrentDateTime,
 } from "./helpers/contextBuilder";
-import { prepareMessageWithFile, type FileMetadataForHistory } from "./files";
+import { prepareMessageWithFile, prepareMessageWithFiles, type FileMetadataForHistory } from "./files";
 import type { ProjectContextSnapshot } from "./types";
 import { AI_MODEL, calculateCost } from "./config";
 import { defaultPrompt } from "./prompt";
@@ -46,6 +46,7 @@ export const internalDoStreaming = internalAction({
     userClerkId: v.string(),
     threadId: v.string(),
     fileId: v.optional(v.union(v.id("files"), v.string())),
+    fileIds: v.optional(v.array(v.union(v.id("files"), v.string()))),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -118,8 +119,19 @@ export const internalDoStreaming = internalAction({
             | { type: "file"; data: string; mediaType: string }
           > = userPrompt;
       let fileMetadata: FileMetadataForHistory | undefined;
+      let filesMetadata: FileMetadataForHistory[] | undefined;
 
-      if (args.fileId) {
+      if (args.fileIds && args.fileIds.length > 0) {
+        const result = await prepareMessageWithFiles({
+          ctx,
+          fileIds: args.fileIds as string[],
+          baseMessage: args.message,
+        });
+        userPrompt = result.message;
+        userMessageContent = result.content;
+        fileMetadata = result.fileMetadata;
+        filesMetadata = result.filesMetadata;
+      } else if (args.fileId) {
         const result = await prepareMessageWithFile({
           ctx,
           fileId: args.fileId as string,
@@ -514,8 +526,13 @@ export const internalDoStreaming = internalAction({
 
       // Save to our custom storage
       const responseTime = Date.now() - startTime;
-      const trimmedUserMessage = args.message.trim() ||
-        (fileMetadata ? `📎 Attached: ${fileMetadata.fileName ?? "file"}` : "");
+      const trimmedUserMessage =
+        args.message.trim() ||
+        (filesMetadata && filesMetadata.length > 0
+          ? `📎 Attached: ${filesMetadata.map((file) => file.fileName ?? "file").join(", ")}`
+          : fileMetadata
+            ? `📎 Attached: ${fileMetadata.fileName ?? "file"}`
+            : "");
 
       await ctx.runMutation(internal.ai.threads.saveMessagesToThread, {
         threadId: providedThreadId,
@@ -539,6 +556,7 @@ export const internalDoStreaming = internalAction({
         userClerkId: args.userClerkId,
         threadId: providedThreadId,
         model: AI_MODEL,
+        feature: "assistant",
         requestType: "chat",
         inputTokens: tokenUsage.inputTokens,
         outputTokens: tokenUsage.outputTokens,
@@ -571,6 +589,7 @@ export const startStreamingChat = action({
     userClerkId: v.string(),
     threadId: v.optional(v.string()),
     fileId: v.optional(v.union(v.id("files"), v.string())),
+    fileIds: v.optional(v.array(v.union(v.id("files"), v.string()))),
   },
   returns: v.object({
     threadId: v.string(),
@@ -620,6 +639,7 @@ export const startStreamingChat = action({
         userClerkId: args.userClerkId,
         threadId: providedThreadId,
         fileId: args.fileId,
+        fileIds: args.fileIds,
       });
 
       return {

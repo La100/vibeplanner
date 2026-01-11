@@ -123,7 +123,7 @@ export default function AdvancedEditor({
       await onSave(html);
       setHasChanges(false);
       setLastSaved(new Date());
-      // Usunięto toast popup - ciche auto-save
+      // Removed toast popup - silent auto-save
     } catch (error) {
       toast.error("❌ Error while saving");
       console.error(error);
@@ -376,7 +376,7 @@ export default function AdvancedEditor({
             disabled={!hasChanges || isSaving}
           >
             <Save className="h-4 w-4 mr-1" />
-            Zapisz
+            Save
           </Button>
         </div>
       </div>

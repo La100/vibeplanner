@@ -130,3 +130,15 @@ export const deleteConfirmedNote = action({
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+

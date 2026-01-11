@@ -27,7 +27,7 @@ export default function TaskEditor({
       });
     } catch (error) {
       console.error('Error saving task:', error);
-      throw error; // Re-throw żeby AdvancedEditor mógł obsłużyć błąd
+      throw error; // Re-throw so AdvancedEditor can handle the error
     }
   }, [taskId, updateTask]);
 

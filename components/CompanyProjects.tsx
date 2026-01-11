@@ -6,13 +6,14 @@ import { useOrganization } from "@clerk/nextjs";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 
-import { Plus, FolderOpen, MapPin, DollarSign, Building2, Search, AlertTriangle, Sparkles } from "lucide-react";
+import { Plus, FolderOpen, MapPin, DollarSign, Building2, Search, AlertTriangle, Sparkles, Play, Clock, Pause, CheckCircle2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 
 
 export default function CompanyProjects() {
@@ -109,7 +110,7 @@ export default function CompanyProjects() {
   });
 
   if (!isLoaded || !organization) {
-    return <div className="flex items-center justify-center min-h-screen">Ładowanie...</div>;
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
   }
 
   return (
@@ -260,6 +261,7 @@ export default function CompanyProjects() {
                 client: project.client,
                 location: project.location,
                 budget: project.budget,
+                status: project.status,
                 taskCount: teamTasks?.filter(t => t.projectId === project._id).length || 0,
                 completedTasks: teamTasks?.filter(t => t.projectId === project._id && t.status === 'done').length || 0,
               }}
@@ -362,6 +364,7 @@ function ProjectCard({ project, onClick }: {
     client?: string;
     location?: string;
     budget?: number;
+    status?: string;
     taskCount: number;
     completedTasks: number;
   }; 
@@ -369,13 +372,54 @@ function ProjectCard({ project, onClick }: {
 }) {
   const progress = project.taskCount > 0 ? (project.completedTasks / project.taskCount) * 100 : 0;
 
+  const getStatusVariant = (status: string): "default" | "secondary" | "destructive" | "outline" => {
+    switch (status) {
+      case "active": return "default";
+      case "planning": return "secondary";
+      case "on_hold": return "outline";
+      case "completed": return "default";
+      case "cancelled": return "destructive";
+      default: return "secondary";
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "active": return <Play className="h-3 w-3" />;
+      case "planning": return <Clock className="h-3 w-3" />;
+      case "on_hold": return <Pause className="h-3 w-3" />;
+      case "completed": return <CheckCircle2 className="h-3 w-3" />;
+      case "cancelled": return <AlertCircle className="h-3 w-3" />;
+      default: return null;
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "active": return "Aktywny";
+      case "planning": return "Planowanie";
+      case "on_hold": return "Wstrzymany";
+      case "completed": return "Completed";
+      case "cancelled": return "Anulowany";
+      default: return status?.replace('_', ' ').toUpperCase() || "—";
+    }
+  };
+
   return (
     <Card onClick={onClick} className="cursor-pointer hover:shadow-md transition-shadow">
       <CardHeader>
         <div className="flex justify-between items-start">
           <CardTitle className="text-lg">{project.name}</CardTitle>
         </div>
-        {project.description && <CardDescription>{project.description}</CardDescription>}
+        {project.status && (
+          <div className="flex items-center gap-2 mt-1">
+            <Badge variant={getStatusVariant(project.status)} className="flex items-center gap-1">
+              {getStatusIcon(project.status)}
+              <span>{getStatusLabel(project.status)}</span>
+            </Badge>
+          </div>
+        )}
+        {project.description && <CardDescription className="mt-2">{project.description}</CardDescription>}
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2 text-sm text-muted-foreground">

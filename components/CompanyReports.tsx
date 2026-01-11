@@ -39,7 +39,7 @@ export default function CompanyReports() {
   );
 
   if (!isLoaded || !organization) {
-    return <div className="flex items-center justify-center min-h-screen">Ładowanie...</div>;
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
   }
 
   // Calculate metrics

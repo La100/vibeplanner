@@ -2,15 +2,20 @@
  * useAIChat Hook
  * 
  * Manages chat state, message sending, and thread operations for the AI Assistant.
+ * Uses Convex Agent's streaming hooks for real-time message updates.
  */
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { ChatHistoryEntry, SessionTokens } from "./types";
-import { computeNextMessageIndex } from "./utils";
+import {
+  optimisticallySendMessage,
+  useUIMessages,
+  type UIMessage,
+} from "@convex-dev/agent/react";
 
 interface UseAIChatProps {
   projectId: Id<"projects"> | undefined;
@@ -31,6 +36,7 @@ interface UseAIChatReturn {
   setThreadId: (id: string | undefined) => void;
   showHistory: boolean;
   setShowHistory: (show: boolean) => void;
+  isStreaming: boolean;
   
   // Computed
   threadList: Array<{
@@ -48,6 +54,18 @@ interface UseAIChatReturn {
   previousThreadsCount: number;
   mobileSelectValue: string;
   
+  // UIMessages from streaming
+  uiMessages: UIMessage[];
+  streamingStatus: "LoadingFirstPage" | "CanLoadMore" | "Exhausted";
+  loadMoreMessages: (numItems: number) => void;
+  messageMetadataByIndex: Map<number, {
+    fileId?: string;
+    fileName?: string;
+    fileType?: string;
+    fileSize?: number;
+    mode?: string;
+  }>;
+  
   // Refs
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -55,10 +73,10 @@ interface UseAIChatReturn {
   
   // Actions
   handleSendMessage: (
-    selectedFile: File | null,
-    uploadedFileId: string | null,
+    selectedFiles: File[],
+    uploadedFileIds: string[],
     onUploadStart: () => void,
-    onUploadComplete: (fileId: string) => void,
+    onUploadComplete: (fileIds: string[]) => void,
     generateUploadUrl: (args: { projectId: Id<"projects">; fileName: string; origin: string }) => Promise<{ url: string; key: string }>,
     addFile: (args: { projectId: Id<"projects">; fileKey: string; fileName: string; fileType: string; fileSize: number; origin: string }) => Promise<string>
   ) => Promise<void>;
@@ -69,6 +87,19 @@ interface UseAIChatReturn {
   handleThreadSelect: (selectedThreadId: string) => void;
   handleQuickPromptClick: (prompt: string) => void;
   scrollToBottom: () => void;
+}
+
+/**
+ * Convert UIMessage to ChatHistoryEntry format for backward compatibility
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function uiMessageToChatEntry(msg: UIMessage): ChatHistoryEntry {
+  return {
+    role: msg.role as "user" | "assistant",
+    content: msg.text || "",
+    status: msg.status as "streaming" | "finished" | "aborted" | undefined,
+    messageIndex: msg.order,
+  };
 }
 
 export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChatReturn => {
@@ -86,8 +117,36 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isSendingRef = useRef(false);
 
-  // Queries
+  // ===========================================
+  // STREAMING: Use useUIMessages from @convex-dev/agent/react
+  // Only call when we have a threadId to avoid issues
+  // ===========================================
+  const streamingHookResult = useUIMessages(
+    api.ai.streamingQueries.listThreadMessages,
+    threadId ? { threadId } : "skip",
+    { initialNumItems: 50, stream: true }
+  );
+  
+  // Extract results safely - only when threadId exists
+  const uiMessages = threadId ? streamingHookResult.results : undefined;
+  const streamingStatus = threadId ? streamingHookResult.status : "Exhausted";
+  const loadMoreMessages = streamingHookResult.loadMore;
+
+  // Streaming mutation with optimistic updates
+  const initiateStreamingMutation = useMutation(
+    api.ai.streamingQueries.initiateStreaming
+  ).withOptimisticUpdate(
+    optimisticallySendMessage(api.ai.streamingQueries.listThreadMessages)
+  );
+
+  // Abort streaming mutation
+  const abortStreamMutation = useMutation(api.ai.streamingQueries.abortStream);
+
+  // ===========================================
+  // Legacy queries for thread list and persisted messages
+  // ===========================================
   const userThreads = useQuery(
     api.ai.threads.listThreadsForUser,
     projectId && userClerkId
@@ -102,32 +161,78 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
       : "skip"
   );
 
-  const savedMessages = useQuery(
-    api.ai.threads.listThreadMessages,
-    threadId && projectId && userClerkId 
-      ? { threadId, projectId, userClerkId } 
-      : "skip"
-  );
-
   // Mutations
   const clearThread = useMutation(api.ai.threads.clearThreadForUser);
   const clearPreviousThreads = useMutation(api.ai.threads.clearPreviousThreadsForUser);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const createThread = useMutation(api.ai.threads.getOrCreateThreadPublic);
 
   // Computed values
   const threadList = userThreads ?? [];
   const isThreadListLoading = userThreads === undefined;
   const hasThreads = threadList.length > 0;
-  const showEmptyState = chatHistory.length === 0 && !isLoading;
-  const chatIsLoading = Boolean(threadId) && persistedMessages === undefined;
   const previousThreadsCount = threadList.filter(t => t.threadId !== threadId).length;
   const mobileSelectValue = threadId ?? "";
 
-  // Load saved messages into chat history
-  useEffect(() => {
-    if (!savedMessages || savedMessages.length === 0) return;
+  // Check if any message is currently streaming
+  const isStreaming = useMemo(() => {
+    return (uiMessages ?? []).some((m) => m.status === "streaming");
+  }, [uiMessages]);
 
-    const historyFromSaved: ChatHistoryEntry[] = savedMessages.map((msg) => ({
+  // Determine if we should show empty state - only use uiMessages, not chatHistory to avoid loops
+  const showEmptyState = useMemo(() => {
+    const hasUIMessages = (uiMessages ?? []).length > 0;
+    return !hasUIMessages && !isLoading && !isStreaming;
+  }, [uiMessages, isLoading, isStreaming]);
+
+  const chatIsLoading = Boolean(threadId) && persistedMessages === undefined;
+  const messageMetadataByIndex = useMemo(() => {
+    const map = new Map<number, {
+      fileId?: string;
+      fileName?: string;
+      fileType?: string;
+      fileSize?: number;
+      mode?: string;
+    }>();
+    (persistedMessages ?? []).forEach((msg) => {
+      if (msg.metadata) {
+        map.set(msg.messageIndex, msg.metadata);
+      }
+    });
+    return map;
+  }, [persistedMessages]);
+
+  // ===========================================
+  // Sync persisted messages to chatHistory (only when no UIMessages)
+  // This is for backward compatibility with threads that existed before streaming
+  // ===========================================
+  
+  // Use ref to track previous state for comparison without causing infinite loops
+  const prevPersistedLengthRef = useRef<number>(0);
+  const prevChatHistoryLengthRef = useRef<number>(0);
+  
+  useEffect(() => {
+    // Skip if we have UIMessages (streaming is active/has data)
+    if (uiMessages && uiMessages.length > 0) return;
+    
+    const persistedLength = persistedMessages?.length ?? 0;
+    
+    if (persistedLength === 0) {
+      // Clear chat history if no messages and we had some before
+      if (prevChatHistoryLengthRef.current > 0) {
+        setChatHistory([]);
+        prevChatHistoryLengthRef.current = 0;
+      }
+      prevPersistedLengthRef.current = 0;
+      return;
+    }
+
+    // Only update if persisted messages actually changed
+    if (persistedLength === prevPersistedLengthRef.current) {
+      return;
+    }
+    
+    const historyFromSaved: ChatHistoryEntry[] = persistedMessages!.map((msg) => ({
       role: msg.role,
       content: msg.content,
       mode: msg.metadata?.mode as 'full' | 'recent' | undefined,
@@ -135,21 +240,10 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
       tokenUsage: msg.tokenUsage,
     }));
 
-    setChatHistory((prev) => {
-      const hasMoreMessages = historyFromSaved.length > prev.length;
-      if (hasMoreMessages) {
-        return historyFromSaved;
-      }
-
-      const lastSaved = historyFromSaved[historyFromSaved.length - 1];
-      const lastLocal = prev[prev.length - 1];
-      if (lastSaved && lastLocal && lastSaved.content !== lastLocal.content) {
-        return historyFromSaved;
-      }
-
-      return prev;
-    });
-  }, [savedMessages]);
+    setChatHistory(historyFromSaved);
+    prevPersistedLengthRef.current = persistedLength;
+    prevChatHistoryLengthRef.current = historyFromSaved.length;
+  }, [persistedMessages, uiMessages, setChatHistory]);
 
   // Initial thread selection
   useEffect(() => {
@@ -176,25 +270,21 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
     setSessionTokens(totals);
   }, [persistedMessages]);
 
-  // Update current mode from chat history
+  // Update current mode from chat history (only when chatHistory changes)
   useEffect(() => {
     if (chatHistory.length === 0) {
-      if (currentMode !== null) {
-        setCurrentMode(null);
-      }
+      setCurrentMode(null);
       return;
     }
 
     for (let i = chatHistory.length - 1; i >= 0; i--) {
       const entry = chatHistory[i];
       if (entry.role === "assistant" && entry.mode) {
-        if (entry.mode !== currentMode) {
-          setCurrentMode(entry.mode);
-        }
+        setCurrentMode(entry.mode);
         return;
       }
     }
-  }, [chatHistory, currentMode]);
+  }, [chatHistory]); // Only depend on chatHistory
 
   // Auto-resize textarea
   useEffect(() => {
@@ -208,57 +298,83 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
   }, [message]);
 
   // Scroll to bottom on new messages
+  // Use a ref to track last scroll to avoid excessive scrolling
+  const lastScrollRef = useRef(0);
+  const uiMessagesLength = uiMessages?.length ?? 0;
+  
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatHistory, isLoading]);
+    // Only scroll when messages count changes, not during streaming updates
+    if (uiMessagesLength > lastScrollRef.current) {
+      lastScrollRef.current = uiMessagesLength;
+      // Use setTimeout to defer scroll and avoid render loop
+      const timeout = setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 50);
+      return () => clearTimeout(timeout);
+    }
+  }, [uiMessagesLength]);
+
+  // Track whether streaming ever started or any UI message arrived for current send
+  const hasStreamedRef = useRef(false);
+  useEffect(() => {
+    if (isStreaming || uiMessagesLength > 0) {
+      hasStreamedRef.current = true;
+    }
+  }, [isStreaming, uiMessagesLength]);
 
   // Handle escape key to stop response
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && abortControllerRef.current) {
+      if (event.key === "Escape" && isStreaming) {
         event.preventDefault();
-        abortControllerRef.current.abort();
-        setIsLoading(false);
+        handleStopResponse();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStreaming]);
 
   // Actions
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
-  const handleStopResponse = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      setIsLoading(false);
+  const handleStopResponse = useCallback(async () => {
+    if (threadId) {
+      try {
+        const result = await abortStreamMutation({ threadId });
+        if (result.success) {
+          toast.info("Response stopped");
+        }
+      } catch (error) {
+        console.error("Failed to abort stream:", error);
+        toast.error("Failed to stop response");
+      }
     }
-  }, []);
+    setIsLoading(false);
+  }, [threadId, abortStreamMutation]);
 
   const handleThreadSelect = useCallback((selectedThreadId: string) => {
     if (selectedThreadId === threadId) {
       return;
     }
-    handleStopResponse();
     setInitialThreadSelectionDone(true);
     setThreadId(selectedThreadId);
     setChatHistory([]);
     setMessage("");
     setSessionTokens({ total: 0, cost: 0 });
     setCurrentMode(null);
-  }, [threadId, handleStopResponse]);
+  }, [threadId]);
 
   const handleNewChat = useCallback(() => {
-    handleStopResponse();
     setThreadId(undefined);
     setChatHistory([]);
     setMessage("");
     setSessionTokens({ total: 0, cost: 0 });
     setCurrentMode(null);
-  }, [handleStopResponse]);
+  }, []);
 
   const handleClearChat = useCallback(async () => {
     if (!threadId || !projectId || !userClerkId) return;
@@ -267,6 +383,10 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
       await clearThread({ threadId, projectId, userClerkId });
       setChatHistory([]);
       setSessionTokens({ total: 0, cost: 0 });
+      setCurrentMode(null);
+      // Reset threadId to start fresh - this forces useUIMessages to skip
+      // and clears any cached/stale streaming data from the agent SDK
+      setThreadId(undefined);
       toast.success("Chat cleared");
     } catch (error) {
       console.error("Failed to clear chat:", error);
@@ -295,174 +415,129 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
 
+  // ===========================================
+  // MAIN SEND MESSAGE HANDLER - Uses streaming mutation
+  // ===========================================
   const handleSendMessage = useCallback(async (
-    selectedFile: File | null,
-    uploadedFileId: string | null,
+    selectedFiles: File[],
+    uploadedFileIds: string[],
     onUploadStart: () => void,
-    onUploadComplete: (fileId: string) => void,
+    onUploadComplete: (fileIds: string[]) => void,
     generateUploadUrl: (args: { projectId: Id<"projects">; fileName: string; origin: string }) => Promise<{ url: string; key: string }>,
     addFile: (args: { projectId: Id<"projects">; fileKey: string; fileName: string; fileType: string; fileSize: number; origin: string }) => Promise<string>
   ) => {
-    if (!projectId || (!message.trim() && !selectedFile) || !userClerkId) return;
+    if (
+      !projectId ||
+      (!message.trim() && selectedFiles.length === 0) ||
+      !userClerkId ||
+      isLoading ||
+      isStreaming ||
+      isSendingRef.current
+    ) {
+      return;
+    }
+
+    isSendingRef.current = true;
 
     const userMessage = message.trim();
     let currentThreadId = threadId;
-    const hadFile = Boolean(selectedFile);
+    const hasFiles = selectedFiles.length > 0;
 
     setIsLoading(true);
 
     try {
-      // Create thread if needed
+      // Generate threadId if needed
       if (!currentThreadId) {
-        currentThreadId = await createThread({
-          projectId,
-          userClerkId,
-        });
+        currentThreadId = `thread-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
         setThreadId(currentThreadId);
       }
 
-      let currentFileId = uploadedFileId;
+      const currentFileIds: string[] = [...uploadedFileIds];
+      const uploadedFilesInfo: Array<{ name: string; size: number; type: string; id: string }> = [];
 
-      // Handle file upload
-      if (selectedFile) {
+      // Handle file uploads
+      if (selectedFiles.length > 0) {
         onUploadStart();
-        const uploadData = await generateUploadUrl({
-          projectId,
-          fileName: selectedFile.name,
-          origin: "ai",
-        });
+        
+        for (const file of selectedFiles) {
+          const uploadData = await generateUploadUrl({
+            projectId,
+            fileName: file.name,
+            origin: "ai",
+          });
 
-        const uploadResult = await fetch(uploadData.url, {
-          method: "PUT",
-          headers: { "Content-Type": selectedFile.type },
-          body: selectedFile,
-        });
+          const uploadResult = await fetch(uploadData.url, {
+            method: "PUT",
+            headers: { "Content-Type": file.type },
+            body: file,
+          });
 
-        if (!uploadResult.ok) {
-          throw new Error("Upload failed");
+          if (!uploadResult.ok) {
+            throw new Error(`Upload failed for ${file.name}`);
+          }
+
+          const fileId = await addFile({
+            projectId,
+            fileKey: uploadData.key,
+            fileName: file.name,
+            fileType: file.type,
+            fileSize: file.size,
+            origin: "ai",
+          });
+
+          currentFileIds.push(fileId);
+          uploadedFilesInfo.push({
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            id: fileId,
+          });
         }
 
-        const fileId = await addFile({
-          projectId,
-          fileKey: uploadData.key,
-          fileName: selectedFile.name,
-          fileType: selectedFile.type,
-          fileSize: selectedFile.size,
-          origin: "ai",
-        });
-
-        currentFileId = fileId;
-        onUploadComplete(fileId);
-
-        const userContent = userMessage || `📎 Attached: ${selectedFile.name}`;
-        setChatHistory((prev) => {
-          const nextIndex = computeNextMessageIndex(prev);
-          return [
-            ...prev,
-            {
-              role: "user",
-              content: userContent,
-              messageIndex: nextIndex,
-              fileInfo: {
-                name: selectedFile.name,
-                size: selectedFile.size,
-                type: selectedFile.type,
-                id: fileId,
-              },
-            },
-          ];
-        });
-        setMessage("");
-      } else {
-        setChatHistory((prev) => {
-          const nextIndex = computeNextMessageIndex(prev);
-          return [...prev, { role: "user", content: userMessage, messageIndex: nextIndex }];
-        });
-        setMessage("");
+        onUploadComplete(currentFileIds);
       }
 
-      // Add placeholder for assistant response
-      setChatHistory((prev) => {
-        const nextIndex = computeNextMessageIndex(prev);
-        return [...prev, { role: "assistant", content: "Thinking...", mode: currentMode ?? undefined, messageIndex: nextIndex }];
+      // Clear message immediately for better UX
+      setMessage("");
+
+      // Build the prompt
+      const prompt = hasFiles && !userMessage
+        ? `📎 Attached: ${selectedFiles.map(f => f.name).join(", ")}`
+        : userMessage;
+
+      // Use the streaming mutation - this will trigger optimistic update
+      // and the useUIMessages hook will receive real-time updates
+      await initiateStreamingMutation({
+        threadId: currentThreadId,
+        projectId,
+        prompt,
+        fileIds: hasFiles ? (currentFileIds as Id<"files">[]) : undefined,
       });
 
-      abortControllerRef.current = new AbortController();
-
-      // Send request
-      const response = await fetch("/api/ai/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: userMessage,
-          projectId,
-          userClerkId,
-          threadId: currentThreadId,
-          fileId: hadFile ? currentFileId ?? undefined : undefined,
-        }),
-        signal: abortControllerRef.current!.signal,
-      });
-
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || "Failed to get response");
-      }
-
-      // Update thread ID if needed
-      if (result.threadId && result.threadId !== currentThreadId) {
-        setThreadId(result.threadId);
-      }
-
-      // Update chat history with the response
-      setChatHistory((prev) => {
-        const updated = [...prev];
-        const lastIndex = updated.length - 1;
-        if (updated[lastIndex]?.role === "assistant") {
-          updated[lastIndex] = {
-            ...updated[lastIndex],
-            content: result.response || "Done.",
-            tokenUsage: result.tokenUsage,
-          };
-        }
-        return updated;
-      });
+      // isLoading will be turned off when streaming completes
+      // The streaming status is tracked via isStreaming computed value
 
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        setChatHistory((prev) => {
-          if (prev.length === 0) return prev;
-          const updated = [...prev];
-          const lastIndex = updated.length - 1;
-          if (updated[lastIndex]?.role === "assistant") {
-            updated[lastIndex] = {
-              ...updated[lastIndex],
-              content: "Response stopped.",
-            };
-          }
-          return updated;
-        });
-      } else {
-        console.error("Error sending message:", error);
-        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
-        setChatHistory((prev) => {
-          const updated = [...prev];
-          const lastIndex = updated.length - 1;
-          if (updated[lastIndex]?.role === "assistant") {
-            updated[lastIndex] = {
-              ...updated[lastIndex],
-              content: `Sorry, I encountered an error: ${errorMessage}`,
-            };
-          }
-          return updated;
-        });
-        toast.error("Failed to send message");
-      }
-    } finally {
+      console.error("Error sending message:", error);
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+      toast.error(`Failed to send message: ${errorMessage}`);
       setIsLoading(false);
-      abortControllerRef.current = null;
+    } finally {
+      isSendingRef.current = false;
     }
-  }, [projectId, userClerkId, message, threadId, currentMode, createThread]);
+  }, [projectId, userClerkId, message, threadId, initiateStreamingMutation, isLoading, isStreaming]);
+
+  // Turn off isLoading when streaming finishes
+  useEffect(() => {
+    if (!isStreaming && isLoading && hasStreamedRef.current) {
+      // Small delay to ensure final content is rendered
+      const timeout = setTimeout(() => {
+        setIsLoading(false);
+        hasStreamedRef.current = false;
+      }, 100);
+      return () => clearTimeout(timeout);
+    }
+  }, [isStreaming, isLoading]);
 
   return {
     // State
@@ -470,7 +545,7 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
     setMessage,
     chatHistory,
     setChatHistory,
-    isLoading,
+    isLoading: isLoading || isStreaming,
     setIsLoading,
     currentMode,
     sessionTokens,
@@ -478,6 +553,7 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
     setThreadId,
     showHistory,
     setShowHistory,
+    isStreaming,
     
     // Computed
     threadList,
@@ -487,6 +563,12 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
     chatIsLoading,
     previousThreadsCount,
     mobileSelectValue,
+    
+    // UIMessages from streaming
+    uiMessages: uiMessages ?? [],
+    streamingStatus: streamingStatus as "LoadingFirstPage" | "CanLoadMore" | "Exhausted",
+    loadMoreMessages,
+    messageMetadataByIndex,
     
     // Refs
     messagesEndRef,
@@ -506,11 +588,3 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
 };
 
 export default useAIChat;
-
-
-
-
-
-
-
-

@@ -1,7 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, query } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
-import { SUBSCRIPTION_PLANS } from "../stripe";
 import { getBillingWindow } from "../stripe";
 
 // ====== TOKEN USAGE TRACKING ======
@@ -12,12 +11,17 @@ import { getBillingWindow } from "../stripe";
  */
 export const saveTokenUsage = internalMutation({
   args: {
-    projectId: v.id("projects"),
+    projectId: v.optional(v.id("projects")),
     teamId: v.id("teams"),
     userClerkId: v.string(),
     threadId: v.optional(v.string()),
     
     model: v.string(),
+    feature: v.optional(v.union(
+      v.literal("assistant"),
+      v.literal("visualizations"),
+      v.literal("other")
+    )),
     requestType: v.union(v.literal("chat"), v.literal("embedding"), v.literal("other")),
     
     inputTokens: v.number(),
@@ -32,47 +36,21 @@ export const saveTokenUsage = internalMutation({
     errorMessage: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const resolvedFeature =
+      args.feature ||
+      (args.requestType === "chat" ? "assistant" : "other");
+
     // Insert usage record
     const usageId = await ctx.db.insert("aiTokenUsage", {
-      ...args
+      ...args,
+      feature: resolvedFeature,
     });
 
-    // Update extra credits wallet (persistent across periods)
-    try {
-      const team = await ctx.db.get(args.teamId);
-      if (team) {
-        const subscriptionLimits = team.subscriptionLimits || SUBSCRIPTION_PLANS.free;
-        const baseBudget = (subscriptionLimits as any).aiMonthlySpendLimitCents || 0;
-
-        if (baseBudget > 0 || (team.aiExtraCreditsCents || 0) > 0) {
-          const { start } = getBillingWindow(team);
-
-          // Spend in current period including this record
-          const periodUsage = await ctx.db
-            .query("aiTokenUsage")
-            .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
-            .filter((q) => q.gte(q.field("_creationTime"), start))
-            .collect();
-
-          const spendCents = periodUsage.reduce(
-            (sum, record) => sum + (record.estimatedCostCents || 0),
-            0
-          );
-
-          const overage = Math.max(0, spendCents - baseBudget);
-          const currentWallet = team.aiExtraCreditsCents || 0;
-          const walletNeeded = Math.max(0, overage);
-          const walletToDeduct = Math.max(0, Math.min(walletNeeded, currentWallet));
-
-          if (walletToDeduct > 0) {
-            await ctx.db.patch(args.teamId, {
-              aiExtraCreditsCents: currentWallet - walletToDeduct,
-            });
-          }
-        }
-      }
-    } catch (err) {
-      console.warn("Failed to update AI extra credits wallet:", err);
+    // Decrement aiTokens from team
+    const team = await ctx.db.get(args.teamId);
+    if (team && team.aiTokens !== undefined) {
+      const newBalance = Math.max(0, (team.aiTokens || 0) - args.totalTokens);
+      await ctx.db.patch(args.teamId, { aiTokens: newBalance });
     }
 
     return usageId;
@@ -204,7 +182,7 @@ export const getTeamTokenUsage = query({
 
     // By project breakdown
     const byProject = usage.reduce((acc, record) => {
-      const projectId = record.projectId;
+      const projectId = record.projectId ?? "unknown";
       if (!acc[projectId]) {
         acc[projectId] = {
           projectId,
@@ -225,6 +203,72 @@ export const getTeamTokenUsage = query({
       totalCostCents,
       totalCostUSD: totalCostCents / 100,
       byProject: Object.values(byProject).sort((a: any, b: any) => b.tokens - a.tokens),
+    };
+  },
+});
+
+/**
+ * Get team token usage breakdown by feature for current billing period
+ */
+export const getTeamUsageBreakdown = query({
+  args: {
+    teamId: v.id("teams"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const team = await ctx.db.get(args.teamId);
+    if (!team) throw new Error("Team not found");
+
+    const membership = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", (q) =>
+        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!membership || !membership.isActive) {
+      throw new Error("Not authorized to view this team");
+    }
+
+    const { start, end } = getBillingWindow(team);
+
+    const usage = await ctx.db
+      .query("aiTokenUsage")
+      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+      .filter((q) =>
+        q.and(
+          q.gte(q.field("_creationTime"), start),
+          q.lte(q.field("_creationTime"), end)
+        )
+      )
+      .collect();
+
+    const totals = usage.reduce(
+      (acc, record) => {
+        const feature =
+          record.feature ||
+          (record.requestType === "chat" ? "assistant" : "other");
+        acc.totalTokens += record.totalTokens;
+        acc.byFeature[feature] = (acc.byFeature[feature] || 0) + record.totalTokens;
+        return acc;
+      },
+      {
+        totalTokens: 0,
+        byFeature: {
+          assistant: 0,
+          visualizations: 0,
+          other: 0,
+        } as Record<string, number>,
+      }
+    );
+
+    return {
+      periodStart: start,
+      periodEnd: end,
+      totalTokens: totals.totalTokens,
+      byFeature: totals.byFeature,
     };
   },
 });

@@ -156,7 +156,7 @@ export const getTeamSettings = query({
     // Sprawdź czy użytkownik ma dostęp do zespołu
     const teamMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", team._id).eq("clerkUserId", identity.subject)
       )
       .filter(q => q.eq(q.field("isActive"), true))
@@ -169,10 +169,6 @@ export const getTeamSettings = query({
       name: team.name,
       description: team.description,
       currency: team.currency || "PLN",
-      settings: team.settings || {
-        isPublic: false,
-        allowGuestAccess: false,
-      },
       userRole: teamMember.role,
     };
   }
@@ -1117,10 +1113,6 @@ export const updateTeamSettings = mutation({
       v.literal("HUF"), v.literal("CNY"), v.literal("INR"), v.literal("BRL"),
       v.literal("MXN"), v.literal("KRW"), v.literal("SGD"), v.literal("HKD")
     )),
-    settings: v.optional(v.object({
-      isPublic: v.boolean(),
-      allowGuestAccess: v.boolean(),
-    })),
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -1131,7 +1123,7 @@ export const updateTeamSettings = mutation({
     // Sprawdź uprawnienia - tylko admin może zmieniać ustawienia zespołu
     const teamMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
       )
       .unique();
@@ -1144,9 +1136,6 @@ export const updateTeamSettings = mutation({
     const updateData: any = {};
     if (args.currency !== undefined) {
       updateData.currency = args.currency;
-    }
-    if (args.settings !== undefined) {
-      updateData.settings = args.settings;
     }
 
     // Aktualizuj zespół

@@ -8,6 +8,11 @@ import type { Id } from "@/convex/_generated/dataModel";
 
 // ==================== PENDING ITEM TYPES ====================
 
+/**
+ * Canonical pending item types.
+ * The operation (create/edit/delete/bulk_*) is specified in PendingOperation.
+ * Legacy tool names like 'create_task' are normalized to 'task' + operation='create'
+ */
 export type PendingItemType =
   | 'task'
   | 'note'
@@ -15,6 +20,14 @@ export type PendingItemType =
   | 'survey'
   | 'contact'
   | 'shoppingSection'
+  | 'labor'
+  | 'laborSection';
+
+/**
+ * Legacy type names that map to canonical types.
+ * Used during normalization in utils.ts
+ */
+export type LegacyPendingItemType =
   | 'create_task'
   | 'create_note'
   | 'create_shopping_item'
@@ -23,32 +36,55 @@ export type PendingItemType =
   | 'create_multiple_tasks'
   | 'create_multiple_notes'
   | 'create_multiple_shopping_items'
-  | 'create_multiple_surveys';
+  | 'create_multiple_surveys'
+  | 'create_labor_item'
+  | 'create_labor_section'
+  | 'create_multiple_labor_items';
+
+/**
+ * All possible types including legacy names.
+ * Used for type guards and input validation.
+ */
+export type AnyPendingItemType = PendingItemType | LegacyPendingItemType;
 
 export type PendingOperation = 'create' | 'edit' | 'delete' | 'bulk_edit' | 'bulk_create';
 
 export type PendingItem = {
+  /** Canonical type - always normalized (task, note, shopping, etc.) */
   type: PendingItemType;
-  operation?: PendingOperation;
+  /** Operation to perform */
+  operation: PendingOperation;
+  /** Client-side id for UI transitions */
+  clientId?: string;
+  /** Resolved state for inline confirmations */
+  status?: "confirmed" | "rejected";
+  /** Primary data payload */
   data: Record<string, unknown>;
+  /** For edit operations - the specific updates */
   updates?: Record<string, unknown>;
+  /** Original item data (for edit/delete operations) */
   originalItem?: Record<string, unknown>;
+  /** Selection criteria (for bulk operations) */
   selection?: Record<string, unknown>;
+  /** For bulk title edits */
   titleChanges?: Array<{
     taskId?: string;
     currentTitle?: string;
     originalTitle?: string;
     newTitle: string;
   }>;
+  /** Display info for UI */
   display?: {
     title: string;
     description: string;
   };
+  /** Original function call info from AI */
   functionCall?: {
     callId: string;
     functionName: string;
     arguments: string;
   };
+  /** Response ID for tracking */
   responseId?: string;
 };
 
@@ -97,6 +133,21 @@ export type BulkShoppingData = {
   items?: ShoppingItemInput[];
 };
 
+export type LaborItemInput = {
+  name: string;
+  quantity: number;
+  unit?: string;
+  notes?: string;
+  unitPrice?: number;
+  sectionId?: Id<'laborSections'>;
+  sectionName?: string;
+  assignedTo?: string;
+};
+
+export type BulkLaborData = {
+  items?: LaborItemInput[];
+};
+
 export type BulkSurveyData = {
   surveys?: Array<Record<string, unknown>>;
 };
@@ -124,6 +175,7 @@ export type ChatHistoryEntry = {
   mode?: "full" | "recent";
   tokenUsage?: { totalTokens: number; estimatedCostUSD: number };
   fileInfo?: { name: string; size: number; type: string; id: string };
+  filesInfo?: Array<{ name: string; size: number; type: string; id: string }>;
   status?: "streaming" | "finished" | "aborted";
 };
 
@@ -165,6 +217,7 @@ export type ConfirmationResult = {
   itemId?: string;
   surveyId?: string;
   contactId?: string;
+  laborItemId?: string;
 };
 
 // ==================== HOOK RETURN TYPES ====================
@@ -209,12 +262,12 @@ export type UsePendingItemsReturn = {
 };
 
 export type UseFileUploadReturn = {
-  selectedFile: File | null;
-  setSelectedFile: (file: File | null) => void;
-  uploadedFileId: string | null;
+  selectedFiles: File[];
+  setSelectedFiles: (files: File[]) => void;
+  uploadedFileIds: string[];
   isUploading: boolean;
   handleFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  handleRemoveFile: () => void;
+  handleRemoveFile: (index: number) => void;
   handleAttachmentClick: () => void;
   fileInputRef: React.RefObject<HTMLInputElement>;
 };
@@ -225,6 +278,15 @@ export type QuickPrompt = {
   label: string;
   prompt: string;
 };
+
+
+
+
+
+
+
+
+
 
 
 

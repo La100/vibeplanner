@@ -4,8 +4,55 @@ import { internal, api, components } from "./_generated/api";
 import handleClerkWebhook from "./clerk";
 import { registerRoutes } from "@convex-dev/stripe";
 import type Stripe from "stripe";
+import { Id } from "./_generated/dataModel";
 
 const http = httpRouter();
+
+// Google Calendar OAuth callback
+http.route({
+  path: "/google-calendar/callback",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const code = url.searchParams.get("code");
+    const state = url.searchParams.get("state");
+    const error = url.searchParams.get("error");
+
+    // Get the base URL for redirects
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
+    if (error) {
+      console.error("Google OAuth error:", error);
+      return Response.redirect(`${baseUrl}/google-calendar-error?error=${error}`);
+    }
+
+    if (!code || !state) {
+      return Response.redirect(`${baseUrl}/google-calendar-error?error=missing_params`);
+    }
+
+    try {
+      const stateData = JSON.parse(state);
+      const { clerkUserId, teamId } = stateData;
+
+      if (!clerkUserId || !teamId) {
+        return Response.redirect(`${baseUrl}/google-calendar-error?error=invalid_state`);
+      }
+
+      // Exchange code for tokens
+      await ctx.runAction(internal.googleCalendar.exchangeCodeForTokens, {
+        code,
+        clerkUserId,
+        teamId: teamId as Id<"teams">,
+      });
+
+      // Redirect back to the app with success
+      return Response.redirect(`${baseUrl}/google-calendar-success`);
+    } catch (err) {
+      console.error("Error processing Google OAuth callback:", err);
+      return Response.redirect(`${baseUrl}/google-calendar-error?error=exchange_failed`);
+    }
+  }),
+});
 
 // Simple AI chat endpoint - no streaming
 http.route({

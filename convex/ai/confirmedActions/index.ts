@@ -24,11 +24,32 @@ export {
   deleteConfirmedShoppingSection,
 } from "./shopping";
 
+// Labor actions
+export {
+  createConfirmedLaborItem,
+  createConfirmedLaborSection,
+  editConfirmedLaborItem,
+  editConfirmedLaborSection,
+  deleteConfirmedLaborItem,
+  deleteConfirmedLaborSection,
+} from "./labor";
+
 // Survey actions
 export { createConfirmedSurvey, editConfirmedSurvey, deleteConfirmedSurvey } from "./surveys";
 
 // Contact actions
 export { createConfirmedContact, deleteConfirmedContact } from "./contacts";
+
+
+
+
+
+
+
+
+
+
+
 
 
 

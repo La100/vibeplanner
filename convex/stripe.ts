@@ -6,10 +6,7 @@ import { AI_MODEL, calculateCost } from "./ai/config";
 
 const DEFAULT_BILLING_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
-// Credit system: 1 credit = 5 cents ($0.05)
-// Credits are used for both chat and image generation
-const CENTS_PER_CREDIT = 5;
-
+// Token system - direct token usage tracking
 // Stripe subscription plans configuration
 export const SUBSCRIPTION_PLANS = {
   free: {
@@ -21,7 +18,7 @@ export const SUBSCRIPTION_PLANS = {
     hasAdvancedFeatures: false,
     hasAIFeatures: false,
     price: 0,
-    aiMonthlyCredits: 0,
+    aiMonthlyTokens: 0,
   },
   basic: {
     id: "basic",
@@ -32,7 +29,7 @@ export const SUBSCRIPTION_PLANS = {
     hasAdvancedFeatures: false,
     hasAIFeatures: false,
     price: 19,
-    aiMonthlyCredits: 0,
+    aiMonthlyTokens: 0,
   },
   ai: {
     id: "ai",
@@ -43,7 +40,7 @@ export const SUBSCRIPTION_PLANS = {
     hasAdvancedFeatures: true,
     hasAIFeatures: true,
     price: 39,
-    aiMonthlyCredits: 200, // 200 credits = $10 value (1 credit = 5¢)
+    aiMonthlyTokens: 5000000, // 5M tokens monthly
   },
   ai_scale: {
     id: "ai_scale",
@@ -54,7 +51,7 @@ export const SUBSCRIPTION_PLANS = {
     hasAdvancedFeatures: true,
     hasAIFeatures: true,
     price: 99,
-    aiMonthlyCredits: 1000, // 1000 credits = $50 value
+    aiMonthlyTokens: 25000000, // 25M tokens monthly
   },
   pro: {
     id: "pro",
@@ -65,7 +62,7 @@ export const SUBSCRIPTION_PLANS = {
     hasAdvancedFeatures: true,
     hasAIFeatures: true,
     price: 49,
-    aiMonthlyCredits: 200, // Same as AI Pro
+    aiMonthlyTokens: 5000000, // 5M tokens (same as AI Pro)
   },
   enterprise: {
     id: "enterprise",
@@ -76,7 +73,7 @@ export const SUBSCRIPTION_PLANS = {
     hasAdvancedFeatures: true,
     hasAIFeatures: true,
     price: 199,
-    aiMonthlyCredits: 500,
+    aiMonthlyTokens: 12500000, // 12.5M tokens monthly
   },
 } as const;
 
@@ -112,145 +109,115 @@ export function getBillingWindow(team: any) {
   return { start, end };
 }
 
-// Convert cents to credits (rounded up)
-function centsToCredits(cents: number): number {
-  return Math.ceil(cents / CENTS_PER_CREDIT);
-}
+export const ensureBillingWindow = mutation({
+  args: { teamId: v.id("teams") },
+  returns: v.object({
+    updated: v.boolean(),
+    currentPeriodStart: v.number(),
+    currentPeriodEnd: v.number(),
+  }),
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
 
-// Gemini 4K image cost: ~6 cents API cost × 5 margin = 30 cents = 6 credits
-const GEMINI_4K_IMAGE_CREDITS = 6;
+    const team = await ctx.db.get(args.teamId);
+    if (!team) {
+      throw new Error("Team not found");
+    }
 
-async function getTeamAIUsageSummary(ctx: any, teamId: Id<"teams">, windowStart: number) {
-  const tokenUsage = await ctx.db
-    .query("aiTokenUsage")
-    .withIndex("by_team", (q: any) => q.eq("teamId", teamId))
-    .filter((q: any) => q.gte(q.field("_creationTime"), windowStart))
-    .collect();
+    const membership = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", (q) =>
+        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
 
-  // Chat costs in cents (from stored estimatedCostCents which is API cost)
-  const chatApiCostCents = tokenUsage.reduce(
-    (sum: number, record: any) => sum + (record.estimatedCostCents || 0),
-    0
-  );
+    if (!membership || !membership.isActive) {
+      throw new Error("Not authorized");
+    }
 
-  const totalTokensUsed = tokenUsage.reduce(
-    (sum: number, record: any) => sum + (record.totalTokens || 0),
-    0
-  );
+    const now = Date.now();
+    const hasStart = typeof team.currentPeriodStart === "number";
+    const hasEnd = typeof team.currentPeriodEnd === "number";
+    const start = hasStart ? team.currentPeriodStart! : now;
+    const end = hasEnd ? team.currentPeriodEnd! : now + DEFAULT_BILLING_WINDOW_MS;
 
-  const imageUsage = await ctx.db
-    .query("aiGeneratedImages")
-    .withIndex("by_team", (q: any) => q.eq("teamId", teamId))
-    .filter((q: any) => q.gte(q.field("_creationTime"), windowStart))
-    .collect();
+    const canOverride =
+      !team.stripeCustomerId ||
+      (team.subscriptionStatus !== "active" && team.subscriptionStatus !== "trialing");
+    const needsUpdate =
+      canOverride &&
+      (!hasStart ||
+        !hasEnd ||
+        !Number.isFinite(start) ||
+        !Number.isFinite(end) ||
+        end <= start ||
+        end < now);
 
-  // Image costs: each 4K image = 6 credits
-  const imageCreditsUsed = imageUsage.length * GEMINI_4K_IMAGE_CREDITS;
-
-  // Convert chat API cost to credits (with 5x margin, rounded up)
-  // API cost × 5 margin / 5 cents per credit = API cost in cents
-  const chatCreditsUsed = centsToCredits(chatApiCostCents * 5); // 5x margin
-
-  const totalCreditsUsed = chatCreditsUsed + imageCreditsUsed;
-
-  return {
-    tokenUsageCount: tokenUsage.length,
-    totalTokensUsed,
-    totalCreditsUsed,
-    chatCreditsUsed,
-    imageCreditsUsed,
-    imageCount: imageUsage.length,
-    windowStart,
-    // Legacy fields for backward compatibility
-    aiSpendCents: totalCreditsUsed * CENTS_PER_CREDIT,
-  };
-}
-
-async function evaluateAIAccess(ctx: any, team: any) {
-  const plan = (team.subscriptionPlan || "free") as keyof typeof SUBSCRIPTION_PLANS;
-  const limits = getEffectiveLimits(team);
-  const hasAIFeatures = (limits as any).hasAIFeatures === true;
-
-  if (!hasAIFeatures) {
-    return {
-      allowed: false,
-      message: "🚫 AI features require an AI-enabled subscription.",
-      currentPlan: team.subscriptionPlan || "free",
-      subscriptionStatus: team.subscriptionStatus || null,
-    };
-  }
-
-  if (team.subscriptionStatus && !["active", "trialing"].includes(team.subscriptionStatus)) {
-    return {
-      allowed: false,
-      message: "🚫 Your subscription is not active. Please update billing to continue using AI features.",
-      currentPlan: team.subscriptionPlan || "free",
-      subscriptionStatus: team.subscriptionStatus,
-    };
-  }
-
-  // Support both new aiMonthlyCredits and legacy aiMonthlySpendLimitCents
-  let monthlyCredits = (limits as any).aiMonthlyCredits || 0;
-
-  // Fallback: convert legacy cents to credits if new field not set
-  if (monthlyCredits === 0 && (limits as any).aiMonthlySpendLimitCents) {
-    // Old system: cents. Convert to credits (1 credit = 5 cents)
-    monthlyCredits = Math.ceil((limits as any).aiMonthlySpendLimitCents / CENTS_PER_CREDIT);
-  }
-
-  const { start } = getBillingWindow(team);
-
-  // Extra credits (top-ups) - convert from cents to credits if stored in cents
-  const extraCreditsActive = team.aiExtraCreditsPeriodStart === start;
-  const extraCreditsCentsStored = extraCreditsActive ? team.aiExtraCreditsCents || 0 : 0;
-  const extraCredits = centsToCredits(extraCreditsCentsStored);
-
-  if (monthlyCredits > 0 || extraCredits > 0) {
-    const usage = await getTeamAIUsageSummary(ctx, team._id as Id<"teams">, start);
-    const totalCredits = monthlyCredits + extraCredits;
-    const remainingCredits = Math.max(totalCredits - usage.totalCreditsUsed, 0);
-
-    if (usage.totalCreditsUsed >= totalCredits) {
+    if (!needsUpdate) {
       return {
-        allowed: false,
-        message: "🔒 Kredyty AI na ten okres zostały wyczerpane. Dokup kredyty, aby kontynuować.",
-        currentPlan: plan,
-        subscriptionStatus: team.subscriptionStatus || null,
-        totalCredits,
-        usedCredits: usage.totalCreditsUsed,
-        remainingCredits: 0,
-        usage,
-        extraCredits,
+        updated: false,
+        currentPeriodStart: start,
+        currentPeriodEnd: end,
       };
     }
 
+    const currentPeriodStart = now;
+    const currentPeriodEnd = now + DEFAULT_BILLING_WINDOW_MS;
+
+    await ctx.db.patch(args.teamId, {
+      currentPeriodStart,
+      currentPeriodEnd,
+    });
+
     return {
-      allowed: true,
-      message: "AI features available",
+      updated: true,
+      currentPeriodStart,
+      currentPeriodEnd,
+    };
+  },
+});
+
+async function evaluateAIAccess(ctx: any, team: any) {
+  const plan = (team.subscriptionPlan || "free") as keyof typeof SUBSCRIPTION_PLANS;
+  const planTokens = getEffectiveLimits(team)?.aiMonthlyTokens ?? 0;
+  
+  // Simple token system: aiTokens = remaining balance (gets decremented on use)
+  const remainingTokens = team.aiTokens || 0;
+  const totalTokens = Math.max(remainingTokens, planTokens);
+  const usedTokens = Math.max(0, totalTokens - remainingTokens);
+  
+  // If no tokens, deny access
+  if (remainingTokens <= 0) {
+    return {
+      allowed: false,
+      message: "🔒 Tokeny AI zostały wyczerpane. Skontaktuj się z administratorem.",
       currentPlan: plan,
       subscriptionStatus: team.subscriptionStatus || null,
-      totalCredits,
-      usedCredits: usage.totalCreditsUsed,
-      remainingCredits,
-      usage,
-      extraCredits,
+      totalTokens,
+      usedTokens,
+      remainingTokens: 0,
     };
   }
 
   return {
     allowed: true,
     message: "AI features available",
-    currentPlan: team.subscriptionPlan || "free",
+    currentPlan: plan,
     subscriptionStatus: team.subscriptionStatus || null,
-    extraCredits: 0,
+    totalTokens,
+    usedTokens,
+    remainingTokens,
   };
 }
 
-// Manual top-up credits (can be called after Stripe payment or by admin)
-export const addAIExtraCredits = mutation({
+// Add tokens to team (can be called by admin)
+export const addAITokens = mutation({
   args: {
     teamId: v.id("teams"),
-    amountCents: v.number(), // cents to add for current billing period
+    tokens: v.number(), // tokens to add
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -258,7 +225,7 @@ export const addAIExtraCredits = mutation({
       throw new Error("Not authenticated");
     }
 
-    // Only team admin can add credits
+    // Only team admin can add tokens
     const membership = await ctx.db
       .query("teamMembers")
       .withIndex("by_team_and_user", (q) =>
@@ -267,7 +234,7 @@ export const addAIExtraCredits = mutation({
       .unique();
 
     if (!membership || membership.role !== "admin") {
-      throw new Error("Only admins can add AI credits");
+      throw new Error("Only admins can add AI tokens");
     }
 
     const team = await ctx.db.get(args.teamId);
@@ -275,19 +242,16 @@ export const addAIExtraCredits = mutation({
       throw new Error("Team not found");
     }
 
-    const { start } = getBillingWindow(team);
-    const currentCredits = team.aiExtraCreditsPeriodStart === start ? team.aiExtraCreditsCents || 0 : 0;
-    const newCredits = currentCredits + Math.max(args.amountCents, 0);
+    const currentTokens = team.aiTokens || 0;
+    const newTokens = currentTokens + Math.max(args.tokens, 0);
 
     await ctx.db.patch(args.teamId, {
-      aiExtraCreditsCents: newCredits,
-      aiExtraCreditsPeriodStart: start,
+      aiTokens: newTokens,
     });
 
     return {
       success: true,
-      aiExtraCreditsCents: newCredits,
-      periodStart: start,
+      aiTokens: newTokens,
     };
   },
 });
@@ -710,21 +674,10 @@ export const checkTeamAIAccess = query({
       v.null()
     )),
     subscriptionLimits: v.optional(v.any()),
-    // New credit-based fields
-    totalCredits: v.optional(v.number()),
-    usedCredits: v.optional(v.number()),
-    remainingCredits: v.optional(v.number()),
-    extraCredits: v.optional(v.number()),
-    // Usage breakdown
-    chatCreditsUsed: v.optional(v.number()),
-    imageCreditsUsed: v.optional(v.number()),
-    aiImageCount: v.optional(v.number()),
-    billingWindowStart: v.optional(v.number()),
-    totalTokensUsed: v.optional(v.number()),
-    // Legacy fields for backward compatibility
-    remainingBudgetCents: v.optional(v.number()),
-    aiSpendCents: v.optional(v.number()),
-    aiExtraCreditsCents: v.optional(v.number()),
+    // Simple token balance
+    totalTokens: v.optional(v.number()),
+    usedTokens: v.optional(v.number()),
+    remainingTokens: v.optional(v.number()),
   }),
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -783,21 +736,10 @@ export const checkTeamAIAccess = query({
       currentPlan: team.subscriptionPlan || "free",
       subscriptionStatus: team.subscriptionStatus || null,
       subscriptionLimits: getEffectiveLimits(team),
-      // New credit fields
-      totalCredits: (access as any).totalCredits,
-      usedCredits: (access as any).usedCredits,
-      remainingCredits: (access as any).remainingCredits,
-      extraCredits: (access as any).extraCredits,
-      // Usage breakdown
-      chatCreditsUsed: (access as any).usage?.chatCreditsUsed,
-      imageCreditsUsed: (access as any).usage?.imageCreditsUsed,
-      aiImageCount: (access as any).usage?.imageCount,
-      billingWindowStart: (access as any).usage?.windowStart,
-      totalTokensUsed: (access as any).usage?.totalTokensUsed,
-      // Legacy fields
-      remainingBudgetCents: (access as any).remainingCredits ? (access as any).remainingCredits * CENTS_PER_CREDIT : undefined,
-      aiSpendCents: (access as any).usedCredits ? (access as any).usedCredits * CENTS_PER_CREDIT : undefined,
-      aiExtraCreditsCents: (access as any).extraCredits ? (access as any).extraCredits * CENTS_PER_CREDIT : undefined,
+      // Simple token balance
+      totalTokens: access.totalTokens,
+      usedTokens: access.usedTokens,
+      remainingTokens: access.remainingTokens,
     };
   },
 });
@@ -858,5 +800,33 @@ export const getTeamSubscriptionsFromStripe = query({
       components.stripe.public.listSubscriptions,
       { stripeCustomerId: team.stripeCustomerId }
     );
+  },
+});
+
+// Query to get team's payments from Stripe component (by org ID)
+export const getTeamPayments = query({
+  args: { teamId: v.id("teams") },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const team = await ctx.db.get(args.teamId);
+    if (!team) return [];
+
+    const membership = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", (q) =>
+        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!membership || !membership.isActive) return [];
+
+    const payments = await ctx.runQuery(
+      components.stripe.public.listPaymentsByOrgId,
+      { orgId: team.clerkOrgId }
+    );
+
+    return payments.sort((a, b) => b.created - a.created);
   },
 });

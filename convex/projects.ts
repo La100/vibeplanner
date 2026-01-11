@@ -269,12 +269,6 @@ export const createProjectInOrg = mutation({
       taskStatusSettings: defaultStatusSettings,
     });
 
-    // Automatically create default project channel
-    await ctx.scheduler.runAfter(0, internal.chatChannels.createDefaultProjectChannel, {
-      projectId: projectId,
-      creatorId: identity.subject,
-    });
-
     return { id: projectId, slug: slug };
   },
 });

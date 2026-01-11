@@ -10,6 +10,7 @@ import type {
   TaskInput,
   NoteInput,
   ShoppingItemInput,
+  LaborItemInput,
   ContactInput,
   ChatHistoryEntry,
   SurveyData,
@@ -156,6 +157,18 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
           break;
         case "create_multiple_surveys":
           type = "survey";
+          operation = operation ?? "bulk_create";
+          break;
+        case "create_labor_item":
+          type = "labor";
+          operation = operation ?? "create";
+          break;
+        case "create_labor_section":
+          type = "laborSection";
+          operation = operation ?? "create";
+          break;
+        case "create_multiple_labor_items":
+          type = "labor";
           operation = operation ?? "bulk_create";
           break;
         default:
@@ -411,6 +424,69 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
       };
     }
 
+    if (item.type === "labor") {
+      if (item.operation === "bulk_create") {
+        const items = Array.isArray(item.data?.items)
+          ? (item.data!.items as LaborItemInput[])
+          : [];
+        const preview = items
+          .slice(0, 3)
+          .map((laborItem) => laborItem.name || "Untitled Item")
+          .join(" • ");
+        const remaining = Math.max(items.length - 3, 0);
+
+        return {
+          ...item,
+          display: {
+            title: `Create ${items.length} labor item${items.length === 1 ? "" : "s"}`,
+            description:
+              items.length === 0
+                ? "Review labor items before confirming."
+                : [preview, remaining > 0 ? `+${remaining} more` : null]
+                    .filter(Boolean)
+                    .join(" • "),
+          },
+        };
+      }
+
+      const name = (item.data?.name as string) || (item.originalItem?.name as string) || "Labor item";
+      item = {
+        ...item,
+        display: {
+          title:
+            item.operation === "delete"
+              ? `Delete work: ${name}`
+              : item.operation === "edit"
+              ? `Update work: ${name}`
+              : `Create work: ${name}`,
+          description: `${item.data?.quantity ?? item.originalItem?.quantity ?? 1} ${item.data?.unit ?? item.originalItem?.unit ?? "m²"}`,
+        },
+      };
+    }
+
+    if (item.type === "laborSection") {
+      const name = (item.data?.name as string) || (item.originalItem?.name as string) || "Labor Section";
+      const originalName = item.originalItem?.name as string | undefined;
+
+      return {
+        ...item,
+        display: {
+          title:
+            item.operation === "delete"
+              ? `Delete section: ${name}`
+              : item.operation === "edit"
+              ? `Update section: ${name}`
+              : `Create section: ${name}`,
+          description:
+            item.operation === "edit" && originalName && originalName !== name
+              ? `Rename from "${originalName}" to "${name}"`
+              : item.operation === "delete"
+              ? "The section will be removed; assigned items stay unsectioned."
+              : "New labor list section",
+        },
+      } satisfies PendingItem;
+    }
+
     return formatShoppingSectionDisplay(item);
   });
 
@@ -418,14 +494,15 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
 
 export const expandBulkEditItems = (items: PendingItem[]): PendingItem[] => {
   return items.flatMap<PendingItem>((item) => {
-    if (item.type === 'shoppingSection') {
+    if (item.type === 'shoppingSection' || item.type === 'laborSection') {
       return formatShoppingSectionDisplay(item);
     }
 
     if (item.operation === 'bulk_create') {
       const tasks = Array.isArray(item.data?.tasks) ? (item.data.tasks as TaskInput[]) : [];
       const notes = Array.isArray(item.data?.notes) ? (item.data.notes as NoteInput[]) : [];
-      const shoppingItems = Array.isArray(item.data?.items) ? (item.data.items as ShoppingItemInput[]) : [];
+      const shoppingItems = item.type === 'shopping' && Array.isArray(item.data?.items) ? (item.data.items as ShoppingItemInput[]) : [];
+      const laborItems = item.type === 'labor' && Array.isArray(item.data?.items) ? (item.data.items as LaborItemInput[]) : [];
       const surveys = Array.isArray(item.data?.surveys) ? (item.data.surveys as Array<Record<string, unknown>>) : [];
 
       if (tasks.length > 0) {
@@ -469,6 +546,25 @@ export const expandBulkEditItems = (items: PendingItem[]): PendingItem[] => {
               shoppingItem.category && `Category: ${shoppingItem.category}`,
               shoppingItem.quantity && shoppingItem.quantity > 1 && `Qty: ${shoppingItem.quantity}`,
             ].filter(Boolean).join(' • ') || 'New shopping item',
+          },
+          functionCall: item.functionCall,
+          responseId: item.responseId,
+        } satisfies PendingItem));
+      }
+
+      if (laborItems.length > 0) {
+        return laborItems.map((laborItem) => ({
+          type: 'labor' as const,
+          operation: 'create' as const,
+          data: laborItem,
+          display: {
+            title: laborItem.name || 'Untitled Item',
+            description: [
+              laborItem.notes,
+              laborItem.sectionName && `Section: ${laborItem.sectionName}`,
+              `${laborItem.quantity || 1} ${laborItem.unit || 'm²'}`,
+              laborItem.unitPrice && `${laborItem.unitPrice}/unit`,
+            ].filter(Boolean).join(' • ') || 'New labor item',
           },
           functionCall: item.functionCall,
           responseId: item.responseId,
@@ -619,6 +715,17 @@ export const resolveSectionName = (rawSectionName?: unknown, rawCategory?: unkno
   const normalizedCategory = typeof rawCategory === "string" ? rawCategory.trim() : "";
   return normalizedCategory.length > 0 ? normalizedCategory : undefined;
 };
+
+
+
+
+
+
+
+
+
+
+
 
 
 

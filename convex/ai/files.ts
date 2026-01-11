@@ -26,6 +26,7 @@ export type PreparedFileMessage = {
   message: string;
   content: MessageContentPart[];
   fileMetadata?: FileMetadataForHistory;
+  filesMetadata?: FileMetadataForHistory[];
 };
 
 export async function prepareMessageWithFile({
@@ -117,4 +118,109 @@ export async function prepareMessageWithFile({
     message = `${message}\n\n[User attached file: ${fileId} - processing failed, please ask for specific content.]`;
     return { message, content: [{ type: "text", text: message }] };
   }
+}
+
+export async function prepareMessageWithFiles({
+  ctx,
+  fileIds,
+  baseMessage,
+}: {
+  ctx: ActionCtx;
+  fileIds: string[];
+  baseMessage: string;
+}): Promise<PreparedFileMessage> {
+  let message = baseMessage;
+  let content: MessageContentPart[] = [];
+  const filesMetadata: FileMetadataForHistory[] = [];
+
+  const appendToMessage = (text: string) => {
+    message = message ? `${message}\n\n${text}` : text;
+  };
+
+  for (const fileId of fileIds) {
+    try {
+      const file = await ctx.runQuery(api.files.getFileById, { fileId: fileId as any });
+      if (!file) {
+        continue;
+      }
+
+      const fileMetadata: FileMetadataForHistory = {
+        fileId,
+        fileName: file.name,
+        fileType: file.mimeType ?? undefined,
+        fileSize: typeof file.size === "number" ? file.size : undefined,
+      };
+      filesMetadata.push(fileMetadata);
+
+      const fileUrl = await getFileUrl(file, ctx);
+      if (!fileUrl) {
+        appendToMessage(
+          `[User attached file: ${file.name} (${file.mimeType}) - unable to generate download URL.]`,
+        );
+        continue;
+      }
+
+      if (file.mimeType?.startsWith("image/")) {
+        const sizeKb = typeof file.size === "number" ? `${(file.size / 1024).toFixed(1)} KB` : "unknown size";
+        appendToMessage(`[User attached image: ${file.name} (${file.mimeType}, ${sizeKb})]`);
+        content.push({ type: "image", image: fileUrl, mediaType: file.mimeType });
+        continue;
+      }
+
+      const isPdf = file.mimeType === "application/pdf" || file.name?.toLowerCase()?.endsWith(".pdf");
+      if (isPdf) {
+        appendToMessage(`User attached PDF: ${file.name}`);
+        content.push({
+          type: "file",
+          data: fileUrl,
+          mediaType: file.mimeType || "application/pdf",
+        });
+        continue;
+      }
+
+      const isExcelFile =
+        file.mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+        file.mimeType === "application/vnd.ms-excel" ||
+        file.mimeType === "application/vnd.ms-excel.sheet.macroEnabled.12" ||
+        file.name?.endsWith(".xlsx") ||
+        file.name?.endsWith(".xls") ||
+        file.name?.endsWith(".xlsm");
+
+      const isTextFile =
+        file.mimeType?.includes("text/") ||
+        file.mimeType?.includes("application/json") ||
+        file.name?.endsWith(".md") ||
+        file.name?.endsWith(".txt") ||
+        file.name?.endsWith(".json") ||
+        file.name?.endsWith(".csv");
+
+      if (isExcelFile || isTextFile) {
+        message = await processFileForAI(file, fileUrl, message);
+        continue;
+      }
+
+      const mediaType = file.mimeType || "application/octet-stream";
+      appendToMessage(`User attached file: ${file.name}`);
+      content.push({ type: "file", data: fileUrl, mediaType });
+    } catch (error) {
+      console.error("Failed to prepare AI message with file:", error);
+      appendToMessage(`[User attached file: ${fileId} - processing failed, please ask for specific content.]`);
+    }
+  }
+
+  if (content.length === 0) {
+    return {
+      message,
+      content: [{ type: "text", text: message }],
+      fileMetadata: filesMetadata[0],
+      filesMetadata: filesMetadata.length > 0 ? filesMetadata : undefined,
+    };
+  }
+
+  return {
+    message,
+    content: [...content, { type: "text", text: message }],
+    fileMetadata: filesMetadata[0],
+    filesMetadata: filesMetadata.length > 0 ? filesMetadata : undefined,
+  };
 }

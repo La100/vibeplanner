@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { ArrowRight, PlayCircle } from "lucide-react";
-import { SignUpButton } from "@clerk/nextjs";
+import Link from "next/link";
 
 export function Hero() {
   return (
@@ -52,12 +52,16 @@ export function Hero() {
           transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
           className="flex flex-col sm:flex-row items-center gap-4"
         >
-          <SignUpButton mode="modal">
-            <Button size="lg" className="h-14 px-8 rounded-full text-lg bg-foreground text-background hover:bg-foreground/90 shadow-lg hover:shadow-xl transition-all">
+          <Button
+            asChild
+            size="lg"
+            className="h-14 px-8 rounded-full text-lg bg-foreground text-background hover:bg-foreground/90 shadow-lg hover:shadow-xl transition-all"
+          >
+            <Link href="/sign-up">
               Start Planning Free
               <ArrowRight className="ml-2 h-5 w-5" />
-            </Button>
-          </SignUpButton>
+            </Link>
+          </Button>
           
           <Button variant="outline" size="lg" className="h-14 px-8 rounded-full text-lg border-border hover:bg-muted transition-all group">
             <PlayCircle className="mr-2 h-5 w-5 group-hover:text-blue-600 transition-colors" />
@@ -148,7 +152,6 @@ export function Hero() {
     </section>
   );
 }
-
 
 
 

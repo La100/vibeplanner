@@ -11,6 +11,81 @@
  */
 
 import { z } from "zod";
+import type { Id } from "../_generated/dataModel";
+import type { ProjectContextSnapshot } from "./types";
+
+// RunAction type matches ctx.runAction signature
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type RunActionFn = (action: any, args: any) => Promise<any>;
+
+// Search result types (matches what internal.ai.search returns)
+interface TaskSearchResult {
+  _id: Id<"tasks">;
+  title: string;
+  description?: string;
+  status?: string;
+  priority?: string;
+  assignedToName?: string;
+  startDate?: string;
+  endDate?: string;
+  tags?: string[];
+}
+
+interface ShoppingItemSearchResult {
+  _id: Id<"shoppingListItems">;
+  name: string;
+  quantity?: number;
+  notes?: string;
+  priority?: string;
+  supplier?: string;
+  category?: string;
+  unitPrice?: number;
+  completed?: boolean;
+  sectionId?: string;
+  sectionName?: string;
+}
+
+interface LaborItemSearchResult {
+  _id: Id<"laborItems">;
+  name: string;
+  quantity?: number;
+  unit?: string;
+  notes?: string;
+  unitPrice?: number;
+  totalPrice?: number;
+  sectionId?: string;
+  sectionName?: string;
+}
+
+interface NoteSearchResult {
+  _id: Id<"notes">;
+  title: string;
+  content?: string;
+  isArchived?: boolean;
+  updatedAt?: number;
+  createdAt?: number;
+}
+
+interface SurveySearchResult {
+  _id: Id<"surveys">;
+  title: string;
+  description?: string;
+  status?: string;
+  startDate?: string;
+  endDate?: string;
+  isRequired?: boolean;
+  allowMultipleResponses?: boolean;
+}
+
+interface ContactSearchResult {
+  _id: Id<"contacts">;
+  name: string;
+  companyName?: string;
+  email?: string;
+  phone?: string;
+  type?: string;
+  notes?: string;
+}
 
 // ============================================
 // TOOL SCHEMAS
@@ -136,6 +211,62 @@ export const deleteShoppingItemSchema = z.object({
   reason: z.string().optional().describe("Optional reason for deletion"),
 });
 
+// Labor tool schemas
+export const createLaborSectionSchema = z.object({
+  name: z.string().describe("Section name (e.g., Tiling, Plumbing, Electrical)"),
+});
+
+export const editLaborSectionSchema = z.object({
+  sectionId: z.string().describe("Section ID to edit"),
+  name: z.string().describe("New section name"),
+});
+
+export const deleteLaborSectionSchema = z.object({
+  sectionId: z.string().describe("Section ID to delete"),
+});
+
+export const createLaborItemSchema = z.object({
+  name: z.string().describe("Work description (e.g., Tile installation, Wall painting)"),
+  notes: z.string().optional().describe("Additional notes or description"),
+  quantity: z.number().default(1).describe("Quantity of work"),
+  unit: z.string().default("m²").describe("Unit of measurement (m², m, hours, pcs, m³, kg, set, room, item)"),
+  unitPrice: z.number().optional().describe("Price per unit"),
+  sectionId: z.string().optional().describe("Labor section ID"),
+  sectionName: z.string().optional().describe("Labor section name (e.g., Tiling, Plumbing)"),
+  assignedTo: z.string().optional().describe("Contractor or team member name"),
+});
+
+export const createMultipleLaborItemsSchema = z.object({
+  items: z.array(createLaborItemSchema).describe("Array of labor items to create"),
+});
+
+export const editLaborItemSchema = z.object({
+  itemId: z.string().describe("Labor item ID to edit"),
+  name: z.string().optional().describe("New work description"),
+  notes: z.string().optional().describe("New notes"),
+  quantity: z.number().optional().describe("New quantity"),
+  unit: z.string().optional().describe("New unit"),
+  unitPrice: z.number().optional().describe("New unit price"),
+  sectionId: z.string().optional().describe("New section ID"),
+  assignedTo: z.string().optional().describe("New assignee"),
+});
+
+export const editMultipleLaborItemsSchema = z.object({
+  items: z.array(editLaborItemSchema).describe("Array of labor items to edit"),
+});
+
+export const deleteLaborItemSchema = z.object({
+  itemId: z.string().describe("Labor item ID to delete"),
+  reason: z.string().optional().describe("Optional reason for deletion"),
+});
+
+// Search labor items schema
+export const searchLaborItemsSchema = z.object({
+  query: z.string().optional().describe("Search query - can be work description, notes, or any labor item details"),
+  sectionName: z.string().optional().describe("Filter by section name"),
+  limit: z.number().optional().default(10).describe("Maximum number of results to return"),
+});
+
 // Survey tool schemas
 export const createSurveySchema = z.object({
   title: z.string().describe("Survey title"),
@@ -240,15 +371,18 @@ export const loadFullProjectContextSchema = z.object({
 // AI SDK TOOLS (for streaming)
 // ============================================
 
+// Types for tool options
+interface StreamingToolOptions {
+  projectId?: string;
+  runAction?: RunActionFn;
+  loadSnapshot?: () => Promise<ProjectContextSnapshot>;
+}
+
 /**
  * Create tools in AI SDK format for use with streamText
  * Using inputSchema (AI SDK v5) instead of parameters
  */
-export function createStreamingTools(options?: {
-  projectId?: string;
-  runAction?: (action: any, args: any) => Promise<any>;
-  loadSnapshot?: () => Promise<any>;
-}) {
+export function createStreamingTools(options?: StreamingToolOptions) {
   return {
     // Task tools
     create_task: {
@@ -382,6 +516,64 @@ export function createStreamingTools(options?: {
       },
     },
 
+    // Labor tools
+    create_labor_section: {
+      description: "Create a new labor section for organizing work items (e.g., Tiling, Plumbing, Electrical)",
+      inputSchema: createLaborSectionSchema,
+      execute: async (args: z.infer<typeof createLaborSectionSchema>) => {
+        return JSON.stringify({ type: "laborSection", operation: "create", data: args });
+      },
+    },
+    edit_labor_section: {
+      description: "Rename an existing labor section",
+      inputSchema: editLaborSectionSchema,
+      execute: async (args: z.infer<typeof editLaborSectionSchema>) => {
+        return JSON.stringify({ type: "laborSection", operation: "edit", data: args });
+      },
+    },
+    delete_labor_section: {
+      description: "Delete a labor section",
+      inputSchema: deleteLaborSectionSchema,
+      execute: async (args: z.infer<typeof deleteLaborSectionSchema>) => {
+        return JSON.stringify({ type: "laborSection", operation: "delete", data: args });
+      },
+    },
+    create_labor_item: {
+      description: "Create a new labor/work item for cost estimation (e.g., tile installation, wall painting). Used for tracking work to be done by contractors.",
+      inputSchema: createLaborItemSchema,
+      execute: async (args: z.infer<typeof createLaborItemSchema>) => {
+        return JSON.stringify({ type: "labor", operation: "create", data: args });
+      },
+    },
+    create_multiple_labor_items: {
+      description: "Create multiple labor items at once (use when creating 2+ work items)",
+      inputSchema: createMultipleLaborItemsSchema,
+      execute: async (args: z.infer<typeof createMultipleLaborItemsSchema>) => {
+        return JSON.stringify({ type: "labor", operation: "bulk_create", data: args });
+      },
+    },
+    edit_labor_item: {
+      description: "Edit/update an existing labor item",
+      inputSchema: editLaborItemSchema,
+      execute: async (args: z.infer<typeof editLaborItemSchema>) => {
+        return JSON.stringify({ type: "labor", operation: "edit", data: args });
+      },
+    },
+    edit_multiple_labor_items: {
+      description: "Edit/update multiple labor items at once (use when editing 2+ items)",
+      inputSchema: editMultipleLaborItemsSchema,
+      execute: async (args: z.infer<typeof editMultipleLaborItemsSchema>) => {
+        return JSON.stringify({ type: "labor", operation: "bulk_edit", data: args });
+      },
+    },
+    delete_labor_item: {
+      description: "Delete/remove a labor item",
+      inputSchema: deleteLaborItemSchema,
+      execute: async (args: z.infer<typeof deleteLaborItemSchema>) => {
+        return JSON.stringify({ type: "labor", operation: "delete", data: args });
+      },
+    },
+
     // Survey tools
     create_survey: {
       description: "Create a new survey for the project",
@@ -448,14 +640,14 @@ export function createStreamingTools(options?: {
         try {
           const { internal } = await import("../_generated/api");
           const result = await options.runAction(internal.ai.search.searchTasks, {
-            projectId: options.projectId as any,
+            projectId: options.projectId as Id<"projects">,
             ...args,
           });
           console.log(`✅ Tool 'search_tasks' completed. Found ${result.count} tasks.`);
           return JSON.stringify({
             found: result.count,
             total: result.total,
-            tasks: result.tasks.map((t: any) => ({
+            tasks: result.tasks.map((t: TaskSearchResult) => ({
               id: t._id,
               title: t.title,
               description: t.description,
@@ -483,13 +675,13 @@ export function createStreamingTools(options?: {
         }
         const { internal } = await import("../_generated/api");
         const result = await options.runAction(internal.ai.search.searchShoppingItems, {
-          projectId: options.projectId as any,
+          projectId: options.projectId as Id<"projects">,
           ...args,
         });
         return JSON.stringify({
           found: result.count,
           total: result.total,
-          items: result.items.map((item: any) => ({
+          items: result.items.map((item: ShoppingItemSearchResult) => ({
             id: item._id,
             name: item.name,
             quantity: item.quantity,
@@ -497,6 +689,36 @@ export function createStreamingTools(options?: {
             category: item.category,
             supplier: item.supplier,
             priority: item.priority,
+            sectionId: item.sectionId,
+            sectionName: item.sectionName,
+          })),
+        });
+      },
+    },
+
+    search_labor_items: {
+      description: "Search for labor/work items in the project. Use this when you need to find specific work items for cost estimation.",
+      inputSchema: searchLaborItemsSchema,
+      execute: async (args: z.infer<typeof searchLaborItemsSchema>) => {
+        if (!options?.projectId || !options?.runAction) {
+          return JSON.stringify({ error: "Search not available - missing project context" });
+        }
+        const { internal } = await import("../_generated/api");
+        const result = await options.runAction(internal.ai.search.searchLaborItems, {
+          projectId: options.projectId as Id<"projects">,
+          ...args,
+        });
+        return JSON.stringify({
+          found: result.count,
+          total: result.total,
+          items: result.items.map((item: LaborItemSearchResult) => ({
+            id: item._id,
+            name: item.name,
+            quantity: item.quantity,
+            unit: item.unit,
+            notes: item.notes,
+            unitPrice: item.unitPrice,
+            totalPrice: item.totalPrice,
             sectionId: item.sectionId,
             sectionName: item.sectionName,
           })),
@@ -513,13 +735,13 @@ export function createStreamingTools(options?: {
         }
         const { internal } = await import("../_generated/api");
         const result = await options.runAction(internal.ai.search.searchNotes, {
-          projectId: options.projectId as any,
+          projectId: options.projectId as Id<"projects">,
           ...args,
         });
         return JSON.stringify({
           found: result.count,
           total: result.total,
-          notes: result.notes.map((note: any) => ({
+          notes: result.notes.map((note: NoteSearchResult) => ({
             id: note._id,
             title: note.title,
             content: note.content,
@@ -540,13 +762,13 @@ export function createStreamingTools(options?: {
         }
         const { internal } = await import("../_generated/api");
         const result = await options.runAction(internal.ai.search.searchSurveys, {
-          projectId: options.projectId as any,
+          projectId: options.projectId as Id<"projects">,
           ...args,
         });
         return JSON.stringify({
           found: result.count,
           total: result.total,
-          surveys: result.surveys.map((survey: any) => ({
+          surveys: result.surveys.map((survey: SurveySearchResult) => ({
             id: survey._id,
             title: survey.title,
             description: survey.description,
@@ -569,13 +791,13 @@ export function createStreamingTools(options?: {
         }
         const { internal } = await import("../_generated/api");
         const result = await options.runAction(internal.ai.search.searchContacts, {
-          projectId: options.projectId as any,
+          projectId: options.projectId as Id<"projects">,
           ...args,
         });
         return JSON.stringify({
           found: result.count,
           total: result.total,
-          contacts: result.contacts.map((contact: any) => ({
+          contacts: result.contacts.map((contact: ContactSearchResult) => ({
             id: contact._id,
             name: contact.name,
             companyName: contact.companyName,
@@ -654,11 +876,7 @@ export function createStreamingTools(options?: {
  * Create tools for Convex Agent - identical to streaming tools
  * This ensures both implementations use the same tool definitions
  */
-export function createAgentTools(options?: {
-  projectId?: string;
-  runAction?: (action: any, args: any) => Promise<any>;
-  loadSnapshot?: () => Promise<any>;
-}) {
+export function createAgentTools(options?: StreamingToolOptions) {
   // Return the same tools as createStreamingTools
   // Convex Agent and AI SDK use the same tool format
   return createStreamingTools(options);

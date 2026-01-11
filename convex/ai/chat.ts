@@ -311,6 +311,7 @@ export const sendMessage = action({
         userClerkId: args.userClerkId,
         threadId: args.threadId,
         model: AI_MODEL,
+        feature: "assistant",
         requestType: "chat",
         inputTokens: tokenUsage.inputTokens,
         outputTokens: tokenUsage.outputTokens,

@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Menu } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
-import { SignedIn, SignedOut, UserButton, SignInButton, SignUpButton } from "@clerk/nextjs";
+import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 
 const navLinks = [
   { label: "Features", href: "#features" },
@@ -70,11 +70,9 @@ const Navigation = () => {
               >
                 Contact sales
               </Link>
-              <SignUpButton mode="modal">
-                <Button className="rounded-full border border-[#1A1A1A] bg-[#1A1A1A] px-5 py-2 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(12,12,12,0.16)] transition-transform duration-200 hover:-translate-y-0.5 hover:bg-[#0E0E0E]">
-                  Try VibePlanner
-                </Button>
-              </SignUpButton>
+              <Button asChild className="rounded-full border border-[#1A1A1A] bg-[#1A1A1A] px-5 py-2 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(12,12,12,0.16)] transition-transform duration-200 hover:-translate-y-0.5 hover:bg-[#0E0E0E]">
+                <Link href="/sign-up">Try VibePlanner</Link>
+              </Button>
             </div>
           </SignedOut>
         </nav>
@@ -94,19 +92,19 @@ const Navigation = () => {
           </SignedIn>
           <SignedOut>
             <div className="flex items-center gap-3">
-              <SignInButton mode="modal">
-                <Button
-                  variant="ghost"
-                  className="rounded-full px-5 py-2 text-sm font-medium text-[#5A5752] hover:text-[#1A1A1A]"
-                >
-                  Log in
-                </Button>
-              </SignInButton>
-              <SignUpButton mode="modal">
-                <Button className="rounded-full border border-[#1A1A1A] bg-[#1A1A1A] px-5 py-2 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(12,12,12,0.16)] transition-transform duration-200 hover:-translate-y-0.5 hover:bg-[#0E0E0E]">
-                  Start free
-                </Button>
-              </SignUpButton>
+              <Button
+                asChild
+                variant="ghost"
+                className="rounded-full px-5 py-2 text-sm font-medium text-[#5A5752] hover:text-[#1A1A1A]"
+              >
+                <Link href="/sign-in">Log in</Link>
+              </Button>
+              <Button
+                asChild
+                className="rounded-full border border-[#1A1A1A] bg-[#1A1A1A] px-5 py-2 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(12,12,12,0.16)] transition-transform duration-200 hover:-translate-y-0.5 hover:bg-[#0E0E0E]"
+              >
+                <Link href="/sign-up">Start free</Link>
+              </Button>
             </div>
           </SignedOut>
         </div>
@@ -145,19 +143,19 @@ const Navigation = () => {
                     >
                       Contact sales
                     </Link>
-                    <SignUpButton mode="modal">
-                      <Button className="rounded-full bg-[#0E0E0E] px-6 py-3 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(12,12,12,0.18)]">
-                        Try VibePlanner
-                      </Button>
-                    </SignUpButton>
-                    <SignInButton mode="modal">
-                      <Button
-                        variant="ghost"
-                        className="rounded-full px-6 py-3 text-sm font-medium text-[#5A5752] hover:text-foreground"
-                      >
-                        Log in
-                      </Button>
-                    </SignInButton>
+                    <Button
+                      asChild
+                      className="rounded-full bg-[#0E0E0E] px-6 py-3 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(12,12,12,0.18)]"
+                    >
+                      <Link href="/sign-up">Try VibePlanner</Link>
+                    </Button>
+                    <Button
+                      asChild
+                      variant="ghost"
+                      className="rounded-full px-6 py-3 text-sm font-medium text-[#5A5752] hover:text-foreground"
+                    >
+                      <Link href="/sign-in">Log in</Link>
+                    </Button>
                   </div>
                 </SignedOut>
               </div>

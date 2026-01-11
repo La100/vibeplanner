@@ -31,6 +31,14 @@ export {
   deleteConfirmedShoppingItem,
   deleteConfirmedShoppingSection,
   
+  // Labor
+  createConfirmedLaborItem,
+  createConfirmedLaborSection,
+  editConfirmedLaborItem,
+  editConfirmedLaborSection,
+  deleteConfirmedLaborItem,
+  deleteConfirmedLaborSection,
+  
   // Surveys
   createConfirmedSurvey,
   editConfirmedSurvey,

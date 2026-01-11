@@ -75,6 +75,7 @@
     "date-fns": "^4.1.0",
     "dommatrix": "^1.0.3",
     "framer-motion": "^12.23.6",
+    "googleapis": "^170.0.0",
     "jotai": "^2.12.5",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",

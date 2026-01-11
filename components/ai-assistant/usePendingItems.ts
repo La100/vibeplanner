@@ -13,9 +13,11 @@ import type {
   PendingItem,
   ChatHistoryEntry,
   ShoppingItemInput,
+  LaborItemInput,
   BulkTaskData,
   BulkNoteData,
   BulkShoppingData,
+  BulkLaborData,
   BulkSurveyData,
 } from "./types";
 import {
@@ -59,6 +61,9 @@ interface UsePendingItemsReturn {
   handleRejectItem: (index: number) => Promise<void>;
   handleRejectAll: () => Promise<void>;
   handleEditItem: (index: number) => void;
+  handleRejectAll: () => Promise<void>;
+  handleEditItem: (index: number) => void;
+  handleUpdatePendingItem: (index: number, updates: Partial<PendingItem>) => void;
   resetPendingState: () => void;
 }
 
@@ -88,6 +93,11 @@ export const usePendingItems = ({
     projectId ? { projectId } : "skip"
   );
 
+  const laborSections = useQuery(
+    api.labor.getLaborSections,
+    projectId ? { projectId } : "skip"
+  );
+
   // Mutations
   const markFunctionCallsAsConfirmed = useMutation(api.ai.threads.markFunctionCallsAsConfirmed);
   const deleteTask = useMutation(api.tasks.deleteTask);
@@ -98,6 +108,10 @@ export const usePendingItems = ({
   const deleteShoppingSection = useMutation(api.shopping.deleteShoppingListSection);
   const deleteSurvey = useMutation(api.surveys.deleteSurvey);
   const deleteContact = useMutation(api.contacts.deleteContact);
+  const deleteLaborItem = useMutation(api.labor.deleteLaborItem);
+  const createLaborSection = useMutation(api.labor.createLaborSection);
+  const updateLaborSection = useMutation(api.labor.updateLaborSection);
+  const deleteLaborSection = useMutation(api.labor.deleteLaborSection);
 
   // Actions
   const createConfirmedTask = useAction(api.ai.confirmedActions.createConfirmedTask);
@@ -110,6 +124,8 @@ export const usePendingItems = ({
   const editConfirmedShoppingItem = useAction(api.ai.confirmedActions.editConfirmedShoppingItem);
   const editConfirmedSurvey = useAction(api.ai.confirmedActions.editConfirmedSurvey);
   const bulkEditConfirmedTasks = useAction(api.ai.actions.bulkEditConfirmedTasks);
+  const createConfirmedLaborItem = useAction(api.ai.confirmedActions.createConfirmedLaborItem);
+  const editConfirmedLaborItem = useAction(api.ai.confirmedActions.editConfirmedLaborItem);
 
   // Load pending items from DB
   useEffect(() => {
@@ -120,7 +136,7 @@ export const usePendingItems = ({
           const parsedTypeValue = typeof parsed?.type === "string" ? parsed.type : undefined;
           const parsedType = isPendingItemType(parsedTypeValue) ? parsedTypeValue : undefined;
           const functionCallType = isPendingItemType(call.functionName) ? call.functionName : undefined;
-          
+
           return {
             type: parsedType ?? functionCallType ?? "task",
             operation: parsed.operation,
@@ -144,26 +160,35 @@ export const usePendingItems = ({
 
       if (pendingItemsFromDB.length > 0) {
         const expanded = expandBulkEditItems(normalizePendingItems(pendingItemsFromDB));
-        setPendingItems(expanded);
+        const withClientIds = expanded.map((item, index) => ({
+          ...item,
+          clientId: item.clientId ?? `${item.functionCall?.callId ?? "pending"}-${index}`,
+        }));
+        setPendingItems(withClientIds);
         setCurrentItemIndex(0);
 
-        const firstItem = expanded[0];
-        const shouldShowGrid = expanded.length > 1 || firstItem.operation === "bulk_edit" || firstItem.operation === "bulk_create";
-
-        if (shouldShowGrid) {
-          setShowConfirmationGrid(true);
-          setIsConfirmationDialogOpen(false);
-        } else {
-          setShowConfirmationGrid(false);
-          setIsConfirmationDialogOpen(true);
-        }
+        // Don't auto-open dialogs - let inline confirmations in StreamingMessage handle display
+        // Dialogs can still be opened manually if needed
+        setShowConfirmationGrid(false);
+        setIsConfirmationDialogOpen(false);
       }
     } else if (pendingFunctionCalls && pendingFunctionCalls.length === 0 && pendingItems.length > 0) {
-      setPendingItems([]);
-      setShowConfirmationGrid(false);
-      setIsConfirmationDialogOpen(false);
+      const hasResolvedItems = pendingItems.some(
+        (item) => item.status === "confirmed" || item.status === "rejected"
+      );
+      if (!hasResolvedItems) {
+        setPendingItems([]);
+        setShowConfirmationGrid(false);
+        setIsConfirmationDialogOpen(false);
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingFunctionCalls, pendingItems.length]);
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const scheduleResolvedRemoval = useCallback((clientId?: string) => {
+    // Intentionally left blank - resolved items should stay visible.
+  }, []);
 
   // Helper functions
   const resolveTeamSlug = useCallback(() => {
@@ -192,6 +217,29 @@ export const usePendingItems = ({
       return undefined;
     }
   }, [projectId, shoppingSections, createShoppingSection]);
+
+  const findOrCreateLaborSection = useCallback(async (sectionName: string): Promise<Id<"laborSections"> | undefined> => {
+    if (!sectionName || !projectId) return undefined;
+
+    const existingSection = laborSections?.find(
+      (s) => s.name.toLowerCase() === sectionName.toLowerCase()
+    );
+
+    if (existingSection) {
+      return existingSection._id;
+    }
+
+    try {
+      const newSectionId = await createLaborSection({
+        projectId,
+        name: sectionName,
+      });
+      return newSectionId;
+    } catch (error) {
+      console.error("Failed to create labor section:", error);
+      return undefined;
+    }
+  }, [projectId, laborSections, createLaborSection]);
 
   // Confirm single item helper
   const confirmSingleItem = useCallback(async (item: PendingItem) => {
@@ -246,9 +294,8 @@ export const usePendingItems = ({
 
           result = {
             success: errors.length === 0,
-            message: `Created ${createdIds.length}/${tasks.length} tasks successfully${
-              errors.length > 0 ? `. Errors: ${errors.slice(0, 3).join(', ')}` : ''
-            }`,
+            message: `Created ${createdIds.length}/${tasks.length} tasks successfully${errors.length > 0 ? `. Errors: ${errors.slice(0, 3).join(', ')}` : ''
+              }`,
           };
           break;
         }
@@ -284,9 +331,8 @@ export const usePendingItems = ({
 
           result = {
             success: errors.length === 0,
-            message: `Created ${createdIds.length}/${notes.length} notes successfully${
-              errors.length > 0 ? `. Errors: ${errors.slice(0, 3).join(', ')}` : ''
-            }`,
+            message: `Created ${createdIds.length}/${notes.length} notes successfully${errors.length > 0 ? `. Errors: ${errors.slice(0, 3).join(', ')}` : ''
+              }`,
           };
           break;
         }
@@ -362,9 +408,8 @@ export const usePendingItems = ({
 
           result = {
             success: errors.length === 0,
-            message: `Created ${createdIds.length}/${items.length} shopping items successfully${
-              errors.length > 0 ? `. Errors: ${errors.slice(0, 3).join(', ')}` : ''
-            }`,
+            message: `Created ${createdIds.length}/${items.length} shopping items successfully${errors.length > 0 ? `. Errors: ${errors.slice(0, 3).join(', ')}` : ''
+              }`,
           };
           break;
         }
@@ -401,9 +446,8 @@ export const usePendingItems = ({
 
           result = {
             success: errors.length === 0,
-            message: `Created ${createdIds.length}/${surveys.length} surveys successfully${
-              errors.length > 0 ? `. Errors: ${errors.slice(0, 3).join(', ')}` : ''
-            }`,
+            message: `Created ${createdIds.length}/${surveys.length} surveys successfully${errors.length > 0 ? `. Errors: ${errors.slice(0, 3).join(', ')}` : ''
+              }`,
           };
           break;
         }
@@ -447,9 +491,77 @@ export const usePendingItems = ({
 
           result = {
             success: errors.length === 0,
-            message: `Created ${createdIds.length}/${contacts.length} contacts successfully${
-              errors.length > 0 ? `. Errors: ${errors.slice(0, 3).join(', ')}` : ''
-            }`,
+            message: `Created ${createdIds.length}/${contacts.length} contacts successfully${errors.length > 0 ? `. Errors: ${errors.slice(0, 3).join(', ')}` : ''
+              }`,
+          };
+          break;
+        }
+        case 'labor': {
+          const data = item.data as BulkLaborData;
+          const items = Array.isArray(data.items) ? data.items : [];
+
+          if (items.length === 0) {
+            throw new Error("No labor items provided for bulk creation");
+          }
+
+          const createdIds: string[] = [];
+          const errors: string[] = [];
+
+          // Pre-create sections
+          const uniqueSectionNames = new Set<string>();
+          for (const laborData of items) {
+            if (laborData.sectionName && !laborData.sectionId) {
+              uniqueSectionNames.add(laborData.sectionName);
+            }
+          }
+
+          const sectionNameToId = new Map<string, Id<"laborSections">>();
+          for (const sectionName of uniqueSectionNames) {
+            const sectionId = await findOrCreateLaborSection(sectionName);
+            if (sectionId) {
+              sectionNameToId.set(sectionName, sectionId);
+            }
+          }
+
+          for (const laborData of items) {
+            try {
+              const { sectionName, ...laborItemData } = laborData;
+
+              if (sectionName && !laborItemData.sectionId) {
+                const sectionId = sectionNameToId.get(sectionName);
+                if (sectionId) {
+                  laborItemData.sectionId = sectionId;
+                }
+              }
+
+              const laborResult = await createConfirmedLaborItem({
+                projectId,
+                itemData: {
+                  name: laborItemData.name,
+                  quantity: laborItemData.quantity,
+                  unit: laborItemData.unit,
+                  notes: laborItemData.notes,
+                  unitPrice: laborItemData.unitPrice,
+                  sectionId: laborItemData.sectionId,
+                  assignedTo: laborItemData.assignedTo,
+                },
+              });
+
+              if (laborResult.success && laborResult.itemId) {
+                createdIds.push(laborResult.itemId);
+              } else if (!laborResult.success) {
+                errors.push(laborResult.message);
+              }
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              errors.push(message);
+            }
+          }
+
+          result = {
+            success: errors.length === 0,
+            message: `Created ${createdIds.length}/${items.length} labor items successfully${errors.length > 0 ? `. Errors: ${errors.slice(0, 3).join(', ')}` : ''
+              }`,
           };
           break;
         }
@@ -482,6 +594,14 @@ export const usePendingItems = ({
           await deleteContact({ contactId: item.data.contactId as Id<"contacts"> });
           result = { success: true, message: "Contact deleted successfully" };
           break;
+        case 'labor':
+          await deleteLaborItem({ itemId: item.data.itemId as Id<"laborItems"> });
+          result = { success: true, message: "Labor item deleted successfully" };
+          break;
+        case 'laborSection':
+          await deleteLaborSection({ sectionId: item.data.sectionId as Id<"laborSections"> });
+          result = { success: true, message: "Labor section deleted successfully" };
+          break;
         default:
           throw new Error(`Unknown content type for deletion: ${item.type}`);
       }
@@ -490,7 +610,7 @@ export const usePendingItems = ({
         case 'task': {
           const cleanUpdates = { ...(item.updates as Record<string, unknown>) };
           delete cleanUpdates.assignedToName;
-          
+
           result = await editConfirmedTask({
             taskId: item.originalItem?._id as Id<"tasks">,
             updates: cleanUpdates
@@ -537,6 +657,32 @@ export const usePendingItems = ({
             surveyId: item.originalItem?._id as Id<"surveys">,
             updates: item.updates as Record<string, unknown>
           });
+          break;
+        case 'labor': {
+          const laborUpdates = { ...(item.updates as Record<string, unknown>) };
+          const targetSectionName = laborUpdates["sectionName"] as string | undefined;
+
+          if (targetSectionName && !laborUpdates["sectionId"]) {
+            const sectionId = await findOrCreateLaborSection(targetSectionName);
+            if (sectionId) {
+              laborUpdates["sectionId"] = sectionId;
+            }
+          }
+
+          delete laborUpdates["sectionName"];
+
+          result = await editConfirmedLaborItem({
+            itemId: item.originalItem?._id as Id<"laborItems">,
+            updates: laborUpdates,
+          });
+          break;
+        }
+        case 'laborSection':
+          await updateLaborSection({
+            sectionId: item.originalItem?._id as Id<"laborSections">,
+            name: item.data.name as string,
+          });
+          result = { success: true, message: "Labor section updated successfully" };
           break;
         default:
           throw new Error(`Unknown content type for editing: ${item.type}`);
@@ -706,6 +852,38 @@ export const usePendingItems = ({
           });
           break;
         }
+        case 'labor': {
+          const rawLaborData = item.data as LaborItemInput;
+          const { sectionName, ...laborItemData } = rawLaborData;
+
+          if (sectionName && !laborItemData.sectionId) {
+            const sectionId = await findOrCreateLaborSection(sectionName);
+            if (sectionId) {
+              laborItemData.sectionId = sectionId;
+            }
+          }
+
+          result = await createConfirmedLaborItem({
+            projectId,
+            itemData: {
+              name: laborItemData.name,
+              quantity: laborItemData.quantity,
+              unit: laborItemData.unit,
+              notes: laborItemData.notes,
+              unitPrice: laborItemData.unitPrice,
+              sectionId: laborItemData.sectionId,
+              assignedTo: laborItemData.assignedTo,
+            },
+          });
+          break;
+        }
+        case 'laborSection':
+          await createLaborSection({
+            projectId,
+            name: item.data.name as string,
+          });
+          result = { success: true, message: "Labor section created successfully" };
+          break;
         default:
           throw new Error(`Unknown content type: ${item.type}`);
       }
@@ -716,24 +894,31 @@ export const usePendingItems = ({
     projectId,
     resolveTeamSlug,
     findOrCreateSection,
+    findOrCreateLaborSection,
     createConfirmedTask,
     createConfirmedNote,
     createConfirmedShoppingItem,
+    createConfirmedLaborItem,
     createConfirmedSurvey,
     createConfirmedContact,
     editConfirmedTask,
     editConfirmedNote,
     editConfirmedShoppingItem,
+    editConfirmedLaborItem,
     editConfirmedSurvey,
     bulkEditConfirmedTasks,
     deleteTask,
     deleteNote,
     deleteShoppingItem,
     deleteShoppingSection,
+    deleteLaborItem,
+    deleteLaborSection,
     deleteSurvey,
     deleteContact,
     createShoppingSection,
     updateShoppingSection,
+    createLaborSection,
+    updateLaborSection,
   ]);
 
   // Handlers
@@ -792,7 +977,7 @@ export const usePendingItems = ({
 
   const handleContentCancel = useCallback(() => {
     const currentItem = pendingItems[currentItemIndex];
-    
+
     if (currentItemIndex < pendingItems.length - 1) {
       setCurrentItemIndex(prev => prev + 1);
     } else {
@@ -820,7 +1005,8 @@ export const usePendingItems = ({
   const handleContentDialogClose = useCallback(() => {
     setIsConfirmationDialogOpen(false);
     if (editingItemIndex !== null) {
-      setShowConfirmationGrid(true);
+      // Don't re-open grid - keep everything inline
+      setShowConfirmationGrid(false);
       setEditingItemIndex(null);
     }
   }, [editingItemIndex]);
@@ -828,6 +1014,7 @@ export const usePendingItems = ({
   const handleConfirmAll = useCallback(async () => {
     setIsBulkProcessing(true);
     try {
+      const resolvedIds = pendingItems.map((item) => item.clientId).filter(Boolean) as string[];
       let successCount = 0;
       let failureCount = 0;
       const resultsByResponseId = new Map<string, { callId: string; result: string }[]>();
@@ -904,14 +1091,20 @@ export const usePendingItems = ({
         toast.error(`Failed to create all ${failureCount} items`);
       }
 
-      setPendingItems([]);
+      setPendingItems((prev) =>
+        prev.map((item) => ({
+          ...item,
+          status: "confirmed",
+        }))
+      );
       setShowConfirmationGrid(false);
+      resolvedIds.forEach((id) => scheduleResolvedRemoval(id));
     } catch {
       toast.error("Failed to process items");
     } finally {
       setIsBulkProcessing(false);
     }
-  }, [pendingItems, threadId, confirmSingleItem, markFunctionCallsAsConfirmed, setChatHistory]);
+  }, [pendingItems, threadId, confirmSingleItem, markFunctionCallsAsConfirmed, setChatHistory, scheduleResolvedRemoval]);
 
   const handleConfirmItem = useCallback(async (index: number) => {
     const item = pendingItems[index];
@@ -933,7 +1126,12 @@ export const usePendingItems = ({
         }
       }
 
-      setPendingItems(prev => prev.filter((_, i) => i !== index));
+      const resolvedId = item.clientId;
+      setPendingItems((prev) =>
+        prev.map((entry) =>
+          entry.clientId === resolvedId ? { ...entry, status: "confirmed" } : entry
+        )
+      );
 
       let successMessage = result.message || `${item.type} created successfully`;
       if ('taskId' in result && result.taskId) {
@@ -944,7 +1142,11 @@ export const usePendingItems = ({
         successMessage = `Note "${title}" created`;
       } else if ('itemId' in result && result.itemId) {
         const name = (item.data as { name?: string }).name || 'Unnamed';
-        successMessage = `Shopping item "${name}" created`;
+        if (item.type === 'labor') {
+          successMessage = `Labor item "${name}" created`;
+        } else {
+          successMessage = `Shopping item "${name}" created`;
+        }
       } else if ('surveyId' in result && result.surveyId) {
         const title = (item.data as { title?: string }).title || 'Untitled';
         successMessage = `Survey "${title}" created`;
@@ -963,19 +1165,25 @@ export const usePendingItems = ({
       if (pendingItems.length === 1) {
         setShowConfirmationGrid(false);
       }
+      scheduleResolvedRemoval(resolvedId);
     } catch (error) {
       toast.error(`Failed to create ${item.type}: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }, [pendingItems, threadId, confirmSingleItem, markFunctionCallsAsConfirmed, setChatHistory]);
+  }, [pendingItems, threadId, confirmSingleItem, markFunctionCallsAsConfirmed, setChatHistory, scheduleResolvedRemoval]);
 
   const handleRejectItem = useCallback(async (index: number) => {
     const item = pendingItems[index];
-    setPendingItems(prev => prev.filter((_, i) => i !== index));
-    
+    const resolvedId = item.clientId;
+    setPendingItems((prev) =>
+      prev.map((entry) =>
+        entry.clientId === resolvedId ? { ...entry, status: "rejected" } : entry
+      )
+    );
+
     if (pendingItems.length === 1) {
       setShowConfirmationGrid(false);
     }
-    
+
     toast.info(`${item.type} creation cancelled`);
 
     if (item.functionCall && item.responseId && threadId) {
@@ -1000,11 +1208,18 @@ export const usePendingItems = ({
         content: `❌ Rejected ${item.type} suggestion${item.data?.title ? `: "${item.data.title}"` : ""}.`,
       },
     ]);
-  }, [pendingItems, threadId, markFunctionCallsAsConfirmed, setChatHistory]);
+    scheduleResolvedRemoval(resolvedId);
+  }, [pendingItems, threadId, markFunctionCallsAsConfirmed, setChatHistory, scheduleResolvedRemoval]);
 
   const handleRejectAll = useCallback(async () => {
     const itemsToReject = [...pendingItems];
-    setPendingItems([]);
+    const resolvedIds = itemsToReject.map((item) => item.clientId).filter(Boolean) as string[];
+    setPendingItems((prev) =>
+      prev.map((item) => ({
+        ...item,
+        status: "rejected",
+      }))
+    );
     setShowConfirmationGrid(false);
     toast.info("All item creations cancelled");
 
@@ -1042,7 +1257,8 @@ export const usePendingItems = ({
         content: "❌ Rejected all pending AI suggestions.",
       },
     ]);
-  }, [pendingItems, threadId, markFunctionCallsAsConfirmed, setChatHistory]);
+    resolvedIds.forEach((id) => scheduleResolvedRemoval(id));
+  }, [pendingItems, threadId, markFunctionCallsAsConfirmed, setChatHistory, scheduleResolvedRemoval]);
 
   const handleEditItem = useCallback((index: number) => {
     setEditingItemIndex(index);
@@ -1057,6 +1273,16 @@ export const usePendingItems = ({
     setShowConfirmationGrid(false);
     setIsConfirmationDialogOpen(false);
     setEditingItemIndex(null);
+  }, []);
+
+  const handleUpdatePendingItem = useCallback((index: number, updates: Partial<PendingItem>) => {
+    setPendingItems((prev) => {
+      const newItems = [...prev];
+      if (index >= 0 && index < newItems.length) {
+        newItems[index] = { ...newItems[index], ...updates };
+      }
+      return newItems;
+    });
   }, []);
 
   return {
@@ -1081,11 +1307,19 @@ export const usePendingItems = ({
     handleRejectItem,
     handleRejectAll,
     handleEditItem,
+    handleUpdatePendingItem,
     resetPendingState,
   };
 };
 
 export default usePendingItems;
+
+
+
+
+
+
+
 
 
 

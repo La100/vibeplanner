@@ -292,3 +292,64 @@ export const searchContacts = internalAction({
     };
   },
 });
+
+export const searchLaborItems = internalAction({
+  args: {
+    projectId: v.id("projects"),
+    query: v.optional(v.string()),
+    sectionName: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  returns: v.object({
+    count: v.number(),
+    total: v.number(),
+    items: v.array(v.any()),
+  }),
+  handler: async (ctx, args) => {
+    const limit = args.limit || 10;
+
+    // Get all labor items for the project
+    const allItems = await ctx.runQuery(api.labor.getLaborItemsByProject, {
+      projectId: args.projectId,
+    }) as any[];
+
+    let filteredItems: any[] = allItems;
+
+    // Filter by section if provided
+    if (args.sectionName && args.sectionName.trim().length > 0) {
+      // Get all sections
+      const sections = await ctx.runQuery(api.labor.getLaborSections, {
+        projectId: args.projectId,
+      });
+      const section = sections.find((s: any) =>
+        s.name.toLowerCase() === args.sectionName!.toLowerCase()
+      );
+      if (section) {
+        filteredItems = filteredItems.filter((item: any) => item.sectionId === section._id);
+      }
+    }
+
+    // Search by query if provided
+    if (args.query && args.query.trim().length > 0) {
+      const queryLower = args.query.toLowerCase();
+      filteredItems = filteredItems.filter((item: any) => {
+        const nameMatch = item.name?.toLowerCase().includes(queryLower);
+        const notesMatch = item.notes?.toLowerCase().includes(queryLower);
+        const unitMatch = item.unit?.toLowerCase().includes(queryLower);
+        return nameMatch || notesMatch || unitMatch;
+      });
+    }
+
+    // Sort by creation time (most recent first)
+    filteredItems.sort((a: any, b: any) => (b._creationTime || 0) - (a._creationTime || 0));
+
+    // Limit results
+    const results = filteredItems.slice(0, limit);
+
+    return {
+      count: results.length,
+      total: filteredItems.length,
+      items: results,
+    };
+  },
+});

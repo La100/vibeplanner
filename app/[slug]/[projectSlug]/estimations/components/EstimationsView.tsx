@@ -1,0 +1,314 @@
+'use client';
+
+import { useState } from 'react';
+import { useQuery, useMutation } from 'convex/react';
+import { api } from '@/convex/_generated/api';
+import { Doc, Id } from '@/convex/_generated/dataModel';
+import { useProject } from '@/components/providers/ProjectProvider';
+import { toast } from 'sonner';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  PlusIcon,
+  Calculator,
+  FileTextIcon,
+  TrashIcon,
+  EditIcon,
+  EyeIcon,
+  MoreHorizontalIcon,
+} from 'lucide-react';
+import { format } from 'date-fns';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+
+import { CreateEstimationDialog } from './CreateEstimationDialog';
+import { EstimationPreviewDialog } from './EstimationPreviewDialog';
+
+export function EstimationsViewSkeleton() {
+  return (
+    <div className="p-4 sm:p-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
+        <div className="mb-4 sm:mb-0">
+          <Skeleton className="h-9 w-64 mb-2" />
+          <Skeleton className="h-5 w-80" />
+        </div>
+        <Skeleton className="h-10 w-48" />
+      </div>
+
+      <div className="grid gap-4">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="border rounded-lg p-6">
+            <Skeleton className="h-6 w-1/3 mb-4" />
+            <Skeleton className="h-4 w-1/2 mb-2" />
+            <Skeleton className="h-4 w-1/4" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function EstimationsView() {
+  const { project } = useProject();
+
+  const estimations = useQuery(api.costEstimations.listCostEstimations, { projectId: project._id });
+  const stats = useQuery(api.costEstimations.getEstimationStats, { projectId: project._id });
+
+  const deleteEstimation = useMutation(api.costEstimations.deleteCostEstimation);
+  const updateStatus = useMutation(api.costEstimations.updateEstimationStatus);
+
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [previewEstimationId, setPreviewEstimationId] = useState<Id<"costEstimations"> | null>(null);
+
+  if (estimations === undefined || stats === undefined) {
+    return <EstimationsViewSkeleton />;
+  }
+
+  if (project === null) {
+    return <div>Project not found</div>;
+  }
+
+  const currencySymbol = project.currency === "EUR" ? "€" : project.currency === "PLN" ? "zł" : "$";
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'draft': return 'secondary';
+      case 'sent': return 'default';
+      case 'accepted': return 'default';
+      case 'rejected': return 'destructive';
+      case 'expired': return 'secondary';
+      default: return 'secondary';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'draft': return 'Draft';
+      case 'sent': return 'Sent';
+      case 'accepted': return 'Accepted';
+      case 'rejected': return 'Rejected';
+      case 'expired': return 'Expired';
+      default: return status;
+    }
+  };
+
+  const handleDelete = async (id: Id<"costEstimations">) => {
+    if (!confirm('Are you sure you want to delete this estimation?')) return;
+    try {
+      await deleteEstimation({ estimationId: id });
+      toast.success('Estimation deleted');
+    } catch {
+      toast.error('Failed to delete estimation');
+    }
+  };
+
+  const handleStatusChange = async (id: Id<"costEstimations">, status: Doc<"costEstimations">["status"]) => {
+    try {
+      await updateStatus({ estimationId: id, status });
+      toast.success(`Status updated to ${getStatusLabel(status)}`);
+    } catch {
+      toast.error('Failed to update status');
+    }
+  };
+
+  return (
+    <div className="w-full max-w-6xl mx-auto px-6 pb-24 pt-8 sm:px-8">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-10">
+        <div className="mb-4 sm:mb-0 space-y-4">
+          <div className="flex items-center gap-3">
+            <Calculator className="h-8 w-8 text-[#6D8B73]" />
+            <h1 className="text-4xl md:text-5xl font-medium tracking-tight font-[var(--font-display-serif)] text-[#1A1A1A]">
+              Cost Estimations
+            </h1>
+          </div>
+          <div className="flex flex-wrap gap-3 items-center">
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#E7E2D9] bg-white px-4 py-2 text-sm font-medium text-[#6D8B73]">
+              {project.name}
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#E7E2D9] bg-white px-4 py-2 text-sm font-medium text-[#3C3A37]">
+              {stats.total} estimations
+            </span>
+            {stats.acceptedValue > 0 && (
+              <span className="inline-flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-4 py-2 text-sm font-medium text-green-700">
+                Accepted: {stats.acceptedValue.toFixed(2)} {currencySymbol}
+              </span>
+            )}
+          </div>
+        </div>
+        <Button
+          onClick={() => setIsCreateOpen(true)}
+          className="rounded-full bg-[#0E0E0E] px-6 text-white shadow-[0_14px_36px_rgba(14,14,14,0.18)] hover:bg-[#1F1F1F] transition-transform hover:-translate-y-0.5"
+        >
+          <PlusIcon className="h-4 w-4 mr-2" />
+          New Estimation
+        </Button>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-10">
+        {[
+          { label: 'Draft', count: stats.draft, color: 'bg-gray-100 text-gray-700' },
+          { label: 'Sent', count: stats.sent, color: 'bg-blue-50 text-blue-700' },
+          { label: 'Accepted', count: stats.accepted, color: 'bg-green-50 text-green-700' },
+          { label: 'Rejected', count: stats.rejected, color: 'bg-red-50 text-red-700' },
+          { label: 'Expired', count: stats.expired, color: 'bg-yellow-50 text-yellow-700' },
+        ].map((stat) => (
+          <div
+            key={stat.label}
+            className={`rounded-[20px] p-4 ${stat.color}`}
+          >
+            <div className="text-2xl font-semibold">{stat.count}</div>
+            <div className="text-sm opacity-80">{stat.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Estimations List */}
+      {estimations.length === 0 ? (
+        <div className="rounded-[32px] border border-[#E7E2D9] bg-white p-12 text-center shadow-[0_24px_60px_rgba(20,20,20,0.08)]">
+          <FileTextIcon className="h-16 w-16 mx-auto text-[#C0B9AF] mb-4" />
+          <h3 className="text-xl font-medium font-[var(--font-display-serif)] text-[#1A1A1A] mb-2">
+            No Estimations Yet
+          </h3>
+          <p className="text-[#8C8880] mb-6">
+            Create your first cost estimation to generate professional quotations for clients.
+          </p>
+          <Button
+            onClick={() => setIsCreateOpen(true)}
+            className="rounded-full bg-[#0E0E0E] px-6"
+          >
+            <PlusIcon className="h-4 w-4 mr-2" />
+            Create Estimation
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {estimations.map((estimation) => (
+            <div
+              key={estimation._id}
+              className="rounded-[24px] border border-[#E7E2D9] bg-white p-6 shadow-sm hover:shadow-md transition-shadow"
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="text-lg font-medium text-[#1A1A1A]">{estimation.title}</h3>
+                    <Badge variant={getStatusColor(estimation.status)}>
+                      {getStatusLabel(estimation.status)}
+                    </Badge>
+                  </div>
+                  <div className="flex flex-wrap gap-4 text-sm text-[#8C8880]">
+                    {estimation.estimationNumber && (
+                      <span>#{estimation.estimationNumber}</span>
+                    )}
+                    <span>Created: {format(new Date(estimation.estimationDate), 'MMM d, yyyy')}</span>
+                    {estimation.location && (
+                      <span>{estimation.location}</span>
+                    )}
+                    {estimation.customerName && (
+                      <span>Client: {estimation.customerName}</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <div className="text-sm text-[#8C8880]">Gross Total</div>
+                    <div className="text-xl font-semibold text-[#1A1A1A]">
+                      {estimation.grossTotal?.toFixed(2) || '0.00'} {currencySymbol}
+                    </div>
+                  </div>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-9 w-9 p-0">
+                        <MoreHorizontalIcon className="h-5 w-5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setPreviewEstimationId(estimation._id)}>
+                        <EyeIcon className="h-4 w-4 mr-2" />
+                        Preview
+                      </DropdownMenuItem>
+                      <DropdownMenuItem>
+                        <EditIcon className="h-4 w-4 mr-2" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => handleStatusChange(estimation._id, 'sent')}>
+                        Mark as Sent
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleStatusChange(estimation._id, 'accepted')}>
+                        Mark as Accepted
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleStatusChange(estimation._id, 'rejected')}>
+                        Mark as Rejected
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-red-600"
+                        onClick={() => handleDelete(estimation._id)}
+                      >
+                        <TrashIcon className="h-4 w-4 mr-2" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+
+              {/* Summary Row */}
+              <div className="mt-4 pt-4 border-t border-[#E7E2D9] flex flex-wrap gap-6 text-sm">
+                <div>
+                  <span className="text-[#8C8880]">Labor: </span>
+                  <span className="font-medium">{estimation.laborTotal?.toFixed(2) || '0.00'} {currencySymbol}</span>
+                </div>
+                <div>
+                  <span className="text-[#8C8880]">Materials: </span>
+                  <span className="font-medium">{estimation.materialsTotal?.toFixed(2) || '0.00'} {currencySymbol}</span>
+                </div>
+                <div>
+                  <span className="text-[#8C8880]">VAT ({estimation.vatPercent}%): </span>
+                  <span className="font-medium">{estimation.vatAmount?.toFixed(2) || '0.00'} {currencySymbol}</span>
+                </div>
+                {estimation.discountPercent && estimation.discountPercent > 0 && (
+                  <div>
+                    <span className="text-red-500">Discount ({estimation.discountPercent}%): </span>
+                    <span className="font-medium text-red-500">-{estimation.discountAmount?.toFixed(2) || '0.00'} {currencySymbol}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Create Dialog */}
+      <CreateEstimationDialog
+        open={isCreateOpen}
+        onOpenChange={setIsCreateOpen}
+        projectId={project._id}
+        teamId={project.teamId}
+        currencySymbol={currencySymbol}
+      />
+
+      {/* Preview Dialog */}
+      {previewEstimationId && (
+        <EstimationPreviewDialog
+          open={!!previewEstimationId}
+          onOpenChange={(open) => !open && setPreviewEstimationId(null)}
+          estimationId={previewEstimationId}
+          currencySymbol={currencySymbol}
+        />
+      )}
+    </div>
+  );
+}
+
+

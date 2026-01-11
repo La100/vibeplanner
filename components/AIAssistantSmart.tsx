@@ -7,8 +7,9 @@
  * Business logic is extracted to hooks in components/ai-assistant/hooks/
  */
 
-import { useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -18,49 +19,73 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useUser } from "@clerk/nextjs";
 import { useProject } from '@/components/providers/ProjectProvider';
-import { 
-  Loader2, 
-  Paperclip, 
-  X, 
-  FileText, 
-  ArrowUp, 
-  Square, 
-  MessageSquare, 
-  Sparkles, 
-  RefreshCcw, 
-  Trash2, 
-  Plus 
+import {
+  Loader2,
+  MessageSquare,
+  Sparkles,
+  RefreshCcw,
+  Plus,
+  ChevronDown,
+  Workflow
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Menu } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { UniversalConfirmationDialog } from "@/components/UniversalConfirmationDialog";
-import { AIConfirmationGrid, type PendingContentItem } from "@/components/AIConfirmationGrid";
+import { type PendingContentItem } from "@/components/AIConfirmationGrid";
 import { AISubscriptionWall } from "@/components/AISubscriptionWall";
+import { UniversalConfirmationDialog } from "@/components/UniversalConfirmationDialog";
 
 // Import from reorganized modules
 import { useAIChat } from "@/components/ai-assistant/useAIChat";
 import { usePendingItems } from "@/components/ai-assistant/usePendingItems";
 import { useFileUpload } from "@/components/ai-assistant/useFileUpload";
-import { QUICK_PROMPTS, ACCEPTED_FILE_TYPES } from "@/components/ai-assistant/constants";
-
-const formatTokens = (tokens?: number) => {
-  if (!tokens) return "0";
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(2)}M`;
-  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`;
-  return tokens.toString();
-};
+import { QUICK_PROMPTS } from "@/components/ai-assistant/constants";
+import { WorkflowWizard } from "@/components/ai-assistant/WorkflowWizard";
+import { ChatSidebar, type ThreadListItem } from "@/components/ai-assistant/ChatSidebar";
+import { ChatInput } from "@/components/ai-assistant/ChatInput";
+import { ChatMessageList } from "@/components/ai-assistant/ChatMessageList";
+import { getWorkflow, getWorkflowStep } from "@/convex/ai/workflows/loader";
+import { createWorkflowContextSection } from "@/convex/ai/helpers/workflowContextBuilder";
 
 const AIAssistantSmart = () => {
   const { user } = useUser();
   const { project, team } = useProject();
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
+  const [localMessageAttachments, setLocalMessageAttachments] = useState<Record<string, Array<{
+    name: string;
+    size: number;
+    type: string;
+    previewUrl?: string;
+  }>>>({});
+  const pendingAttachmentsRef = useRef<Array<{
+    name: string;
+    size: number;
+    type: string;
+    previewUrl?: string;
+  }> | null>(null);
+  const attachmentUrlsRef = useRef<Set<string>>(new Set());
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const sessionParam = searchParams.get("session");
+  const lastSessionParamRef = useRef<string | null>(null);
+  const suppressSessionSyncRef = useRef(false);
+  const suppressedSessionParamRef = useRef<string | null>(null);
+
+  // Workflow wizard state
+  const [showWorkflowWizard, setShowWorkflowWizard] = useState(false);
+  const [activeWorkflow, setActiveWorkflow] = useState<{
+    workflowId: string;
+    currentStepId: string;
+    previousResponses: Record<string, string>;
+  } | null>(null);
 
   // Check if team has AI access
   const aiAccess = useQuery(api.stripe.checkTeamAIAccess, team?._id ? { teamId: team._id } : "skip");
-  
+
   // File input ref (shared between upload hook and component)
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -69,16 +94,16 @@ const AIAssistantSmart = () => {
   const addFile = useMutation(api.files.addFile);
 
   // ==================== HOOKS ====================
-  
+
   // Chat hook - manages messages, threads, and sending
   const {
     message,
     setMessage,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     chatHistory,
     setChatHistory,
     isLoading,
     setIsLoading,
-    sessionTokens,
     threadId,
     showHistory,
     setShowHistory,
@@ -87,16 +112,18 @@ const AIAssistantSmart = () => {
     hasThreads,
     showEmptyState,
     chatIsLoading,
-    previousThreadsCount,
     messagesEndRef,
     inputRef,
     handleSendMessage: sendMessageWithFile,
     handleStopResponse,
     handleClearChat,
-    handleClearPreviousThreads,
     handleNewChat,
     handleThreadSelect: selectThread,
     handleQuickPromptClick,
+    // Streaming-related
+    uiMessages,
+    isStreaming,
+    messageMetadataByIndex,
   } = useAIChat({
     projectId: project?._id,
     userClerkId: user?.id,
@@ -104,9 +131,9 @@ const AIAssistantSmart = () => {
 
   // File upload hook
   const {
-    selectedFile,
-    setSelectedFile,
-    uploadedFileId,
+    selectedFiles,
+    setSelectedFiles,
+    uploadedFileIds,
     isUploading,
     handleFileSelect,
     handleRemoveFile,
@@ -119,6 +146,7 @@ const AIAssistantSmart = () => {
     setCurrentItemIndex,
     isConfirmationDialogOpen,
     setIsConfirmationDialogOpen,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showConfirmationGrid,
     setShowConfirmationGrid,
     isCreatingContent,
@@ -132,6 +160,7 @@ const AIAssistantSmart = () => {
     handleRejectItem,
     handleRejectAll,
     handleEditItem,
+    handleUpdatePendingItem,
     resetPendingState,
   } = usePendingItems({
     projectId: project?._id,
@@ -142,26 +171,138 @@ const AIAssistantSmart = () => {
 
   // ==================== HANDLERS ====================
 
+  const updateSessionParam = useCallback((nextThreadId?: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextThreadId) {
+      params.set("session", nextThreadId);
+    } else {
+      params.delete("session");
+    }
+    const query = params.toString();
+    router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
+  }, [searchParams, router, pathname]);
+
+  useEffect(() => {
+    if (suppressSessionSyncRef.current) {
+      if (sessionParam !== suppressedSessionParamRef.current) {
+        suppressSessionSyncRef.current = false;
+        suppressedSessionParamRef.current = null;
+        lastSessionParamRef.current = null;
+      }
+      return;
+    }
+    if (!sessionParam || sessionParam === threadId) return;
+    if (lastSessionParamRef.current === sessionParam) return;
+    lastSessionParamRef.current = sessionParam;
+    selectThread(sessionParam);
+    resetPendingState();
+    setSelectedFiles([]);
+  }, [sessionParam, threadId, selectThread, resetPendingState, setSelectedFiles]);
+
+  useEffect(() => {
+    if (!threadId) return;
+    if (sessionParam === threadId) {
+      lastSessionParamRef.current = threadId;
+      return;
+    }
+    lastSessionParamRef.current = threadId;
+    updateSessionParam(threadId);
+  }, [threadId, sessionParam, updateSessionParam]);
+
+  useEffect(() => {
+    if (uiMessages.length > 0 || (!isLoading && !isStreaming)) {
+      setPendingUserMessage(null);
+    }
+  }, [uiMessages.length, isLoading, isStreaming]);
+
+  useEffect(() => {
+    if (!pendingAttachmentsRef.current || uiMessages.length === 0) return;
+    const lastUserMessage = [...uiMessages].reverse().find((msg) => msg.role === "user");
+    if (!lastUserMessage || localMessageAttachments[lastUserMessage.key]) return;
+    setLocalMessageAttachments((prev) => ({
+      ...prev,
+      [lastUserMessage.key]: pendingAttachmentsRef.current ?? [],
+    }));
+    pendingAttachmentsRef.current = null;
+  }, [uiMessages, localMessageAttachments]);
+
+  useEffect(() => {
+    const urlsRef = attachmentUrlsRef.current;
+    return () => {
+      urlsRef.forEach((url) => URL.revokeObjectURL(url));
+      urlsRef.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    setLocalMessageAttachments((prev) => {
+      Object.values(prev).flat().forEach((attachment) => {
+        if (attachment.previewUrl) {
+          URL.revokeObjectURL(attachment.previewUrl);
+          attachmentUrlsRef.current.delete(attachment.previewUrl);
+        }
+      });
+      return {};
+    });
+  }, [threadId]);
+
   const handleThreadSelect = (selectedThreadId: string) => {
     selectThread(selectedThreadId);
     resetPendingState();
-        setSelectedFile(null);
+    setSelectedFiles([]);
+    setPendingUserMessage(null);
   };
 
   const handleNewChatClick = () => {
+    suppressSessionSyncRef.current = true;
+    suppressedSessionParamRef.current = sessionParam;
     handleNewChat();
     resetPendingState();
-    setSelectedFile(null);
+    setSelectedFiles([]);
+    setPendingUserMessage(null);
+    lastSessionParamRef.current = sessionParam;
+    updateSessionParam(undefined);
+  };
+
+  const handleClearChatClick = async () => {
+    suppressSessionSyncRef.current = true;
+    suppressedSessionParamRef.current = sessionParam;
+    await handleClearChat();
+    setPendingUserMessage(null);
+    lastSessionParamRef.current = sessionParam;
+    updateSessionParam(undefined);
   };
 
   const handleSendMessage = async () => {
+    const trimmedMessage = message.trim();
+    const fileLabel = selectedFiles.length > 0
+      ? `📎 Attached: ${selectedFiles.map((file) => file.name).join(", ")}`
+      : "";
+    if (selectedFiles.length > 0) {
+      const attachments = selectedFiles.map((file) => {
+        const isImage = file.type.startsWith("image/");
+        const previewUrl = isImage ? URL.createObjectURL(file) : undefined;
+        if (previewUrl) {
+          attachmentUrlsRef.current.add(previewUrl);
+        }
+        return {
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          previewUrl,
+        };
+      });
+      pendingAttachmentsRef.current = attachments;
+    } else {
+      pendingAttachmentsRef.current = null;
+    }
+    setPendingUserMessage(trimmedMessage || fileLabel || null);
     await sendMessageWithFile(
-      selectedFile,
-      uploadedFileId,
+      selectedFiles,
+      uploadedFileIds,
       () => setIsLoading(true),
       () => {
-        setSelectedFile(null);
-        setIsLoading(false);
+        setSelectedFiles([]);
       },
       async (args) => {
         const result = await generateUploadUrl({
@@ -173,133 +314,96 @@ const AIAssistantSmart = () => {
       },
       addFile as (args: { projectId: Id<"projects">; fileKey: string; fileName: string; fileType: string; fileSize: number; origin: string }) => Promise<string>
     );
-    setSelectedFile(null);
+    setSelectedFiles([]);
   };
 
   const handleAttachmentClick = () => {
     fileInputRef.current?.click();
   };
 
+  // ==================== WORKFLOW HANDLERS ====================
+
+  const handleStartWorkflow = async (workflowId: string, stepId: string, hasFile: boolean) => {
+    const workflow = getWorkflow(workflowId);
+    const step = getWorkflowStep(workflowId, stepId);
+
+    if (!workflow || !step) return;
+
+    // Set active workflow state
+    setActiveWorkflow({
+      workflowId,
+      currentStepId: stepId,
+      previousResponses: {},
+    });
+
+    // If step has a prompt, send it as a message
+    if (step.prompt) {
+      // Build workflow context (used for debugging purposes)
+      createWorkflowContextSection(
+        workflowId,
+        stepId,
+        {},
+        hasFile || selectedFiles.length > 0
+      );
+
+      // Create the message with workflow context prefix
+      const workflowMessage = `[WORKFLOW: ${workflow.name} - ${step.name}]\n\n${step.prompt}`;
+
+      setMessage(workflowMessage);
+
+      // Trigger send
+      setTimeout(() => {
+        handleSendMessage();
+      }, 100);
+    }
+
+    // Close wizard panel after starting (keeps workflow active)
+    setShowWorkflowWizard(false);
+  };
+
+  const handleWorkflowStepChange = (stepId: string) => {
+    if (!activeWorkflow) return;
+
+    setActiveWorkflow(prev => prev ? {
+      ...prev,
+      currentStepId: stepId,
+    } : null);
+  };
+
+  const handleCloseWorkflow = () => {
+    setShowWorkflowWizard(false);
+    setActiveWorkflow(null);
+  };
+
   // ==================== RENDER HELPERS ====================
 
   const renderInputArea = () => (
-    <motion.div 
-      initial={{ y: 20, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ delay: 0.3, type: "spring", stiffness: 100 }}
-      className={cn(
-        "relative rounded-[2rem] p-1.5 sm:p-2",
-        "bg-background border border-border/50 shadow-sm",
-        "transition-all duration-300",
-        "focus-within:ring-1 focus-within:ring-primary/20",
-        "hover:border-primary/20"
-      )}
-    >
-      <AnimatePresence>
-        {selectedFile && (
-          <motion.div 
-            initial={{ opacity: 0, y: 10, height: 0 }}
-            animate={{ opacity: 1, y: -10, height: "auto" }}
-            exit={{ opacity: 0, y: 10, height: 0 }}
-            className="absolute bottom-full left-4 mb-2 flex items-center gap-2"
-          >
-             <div className="relative group">
-                <div className="flex items-center gap-2 bg-background/80 p-2 rounded-xl border border-border/50 shadow-sm">
-                  <FileText className="h-8 w-8 text-primary" />
-                  <div className="flex flex-col">
-                    <span className="text-xs font-medium max-w-[120px] truncate">{selectedFile.name}</span>
-                    <span className="text-[10px] text-muted-foreground">{(selectedFile.size / 1024 / 1024).toFixed(1)} MB</span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 rounded-full hover:bg-destructive/10 hover:text-destructive -mr-1"
-                    onClick={handleRemoveFile}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
-             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <div className="flex items-end gap-2 sm:gap-3 pl-2 sm:pl-4 pr-2 sm:pr-3 py-2 sm:py-3">
-        <input
-          ref={fileInputRef}
-          type="file"
-          onChange={handleFileSelect}
-          accept={ACCEPTED_FILE_TYPES}
-          className="hidden"
-        />
-        
-        <div className="flex items-center gap-2 pb-1">
-          <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-              onClick={handleAttachmentClick}
-              disabled={isLoading || isUploading}
-              title="Attach file"
-            >
-              <Paperclip className="h-5 w-5" />
-            </Button>
-        </div>
-
-        <div className="w-px h-8 bg-border/50 mb-1.5 hidden sm:block" />
-
-        <textarea
-           ref={inputRef}
-           value={message}
-           onChange={(e) => setMessage(e.target.value)}
-           onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !isLoading && !isUploading) {
-                e.preventDefault();
-                handleSendMessage();
-              }
-            }}
-           placeholder={isUploading ? "Uploading..." : "Ask about your project..."}
-           rows={1}
-           disabled={isUploading}
-           className={cn(
-              "flex-1 resize-none bg-transparent",
-              "text-sm sm:text-base placeholder:text-muted-foreground/50",
-              "focus:outline-none",
-              "py-2.5 px-2",
-              "max-h-[200px] min-h-[44px]"
-           )}
-        />
-
-        <Button
-           onClick={isLoading && !isUploading ? handleStopResponse : handleSendMessage}
-           disabled={isUploading || (!message.trim() && !selectedFile && !isLoading)}
-           size="icon"
-           className={cn(
-             "h-10 w-10 rounded-full",
-             isLoading && !isUploading ? "bg-destructive text-destructive-foreground" : "bg-foreground text-background",
-             "shadow-md transition-all duration-200 hover:scale-105 active:scale-95",
-             "disabled:opacity-50 disabled:hover:scale-100"
-           )}
-        >
-           {isUploading ? (
-             <Loader2 className="h-5 w-5 animate-spin" />
-           ) : isLoading ? (
-             <Square className="h-4 w-4 fill-current" />
-           ) : (
-             <ArrowUp className="h-5 w-5" />
-           )}
-        </Button>
-      </div>
-    </motion.div>
+    <ChatInput
+      message={message}
+      setMessage={setMessage}
+      selectedFiles={selectedFiles}
+      isLoading={isLoading}
+      isUploading={isUploading}
+      inputRef={inputRef}
+      fileInputRef={fileInputRef}
+      onSendMessage={handleSendMessage}
+      onStopResponse={handleStopResponse}
+      onFileSelect={handleFileSelect}
+      onRemoveFile={handleRemoveFile}
+      onAttachmentClick={handleAttachmentClick}
+    />
   );
 
   // ==================== MAIN RENDER ====================
+
+  const shouldShowEmptyState = showEmptyState && !pendingUserMessage;
+  const shouldShowChatLoading = chatIsLoading && uiMessages.length === 0 && !pendingUserMessage;
 
   const isQuotaBlocked = !!(
     aiAccess &&
     !aiAccess.hasAccess &&
     (
-      aiAccess.remainingCredits === 0 ||
+      aiAccess.remainingTokens === 0 ||
       (aiAccess.message || "").toLowerCase().includes("wyczerpano")
     )
   );
@@ -307,45 +411,37 @@ const AIAssistantSmart = () => {
   // Show limit block if quota exhausted, otherwise paywall if no access
   if (aiAccess !== undefined && !aiAccess.hasAccess && team?._id) {
     if (isQuotaBlocked) {
-      const usedCredits = aiAccess.usedCredits ?? 0;
-      const totalCredits = aiAccess.totalCredits ?? 0;
-      const usagePercent = totalCredits > 0 ? Math.min(100, (usedCredits / totalCredits) * 100) : 100;
+      const remainingTokens = aiAccess.remainingTokens ?? 0;
 
       return (
         <div className="flex min-h-screen items-center justify-center px-4 bg-background/50">
           <Card className="max-w-lg w-full border-border/50 shadow-2xl rounded-3xl overflow-hidden bg-card/80 backdrop-blur-xl">
             <CardHeader className="space-y-4 pb-2">
               <Badge variant="secondary" className="w-fit bg-red-100 text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 border-0 px-3 py-1 rounded-full">
-                Kredyty wyczerpane
+                Tokens exhausted
               </Badge>
               <div className="space-y-2">
-                <CardTitle className="text-2xl font-display tracking-tight">Wykorzystano kredyty AI</CardTitle>
+                <CardTitle className="text-2xl font-display tracking-tight">No AI tokens available</CardTitle>
                 <CardDescription className="text-base">{aiAccess.message}</CardDescription>
               </div>
             </CardHeader>
             <CardContent className="space-y-4 pt-4">
               <div className="rounded-2xl border border-border/50 bg-muted/30 p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Kredyty AI</span>
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Remaining tokens</span>
                   <span className="text-sm font-semibold text-foreground">
-                    {usedCredits} / {totalCredits}
+                    {remainingTokens.toLocaleString()}
                   </span>
                 </div>
                 <div className="h-2 rounded-full bg-muted overflow-hidden">
                   <div
                     className="h-full bg-gradient-to-r from-red-500 to-orange-500 rounded-full"
-                    style={{ width: `${usagePercent}%` }}
+                    style={{ width: "100%" }}
                   />
                 </div>
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Chat: {aiAccess.chatCreditsUsed ?? 0} kr</span>
-                  <span>Obrazy: {aiAccess.imageCreditsUsed ?? 0} kr</span>
-                </div>
-                {aiAccess.billingWindowStart && (
-                  <div className="text-xs text-muted-foreground pt-1 border-t border-border/30">
-                    Okres od {new Date(aiAccess.billingWindowStart).toLocaleDateString()}
-                  </div>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  Contact your administrator to add more tokens.
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -370,141 +466,22 @@ const AIAssistantSmart = () => {
 
   return (
     <>
-      {aiAccess?.hasAccess && (
-        <div className="w-full px-4 sm:px-6 lg:px-8 mt-3 flex justify-end">
-          <div className="inline-flex items-center gap-3 rounded-full border border-border/50 bg-muted/25 px-4 py-2 shadow-sm">
-            <Sparkles className="h-4 w-4 text-primary" />
-            {(() => {
-              const usedCredits = aiAccess.usedCredits ?? 0;
-              const totalCredits = aiAccess.totalCredits ?? 0;
-              const remainingCredits = aiAccess.remainingCredits ?? 0;
-              const usagePercent = totalCredits > 0 ? Math.min(100, (usedCredits / totalCredits) * 100) : 0;
-              return (
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center gap-1 text-foreground">
-                    <span className="text-sm font-semibold font-display leading-none">{remainingCredits}</span>
-                    <span className="text-[11px] text-muted-foreground">/ {totalCredits} kredytów</span>
-                  </div>
-                  {totalCredits > 0 && (
-                    <div className="h-1 rounded-full bg-muted overflow-hidden w-24">
-                      <div
-                        className="h-full bg-gradient-to-r from-blue-500/70 to-purple-500/70 rounded-full"
-                        style={{ width: `${100 - usagePercent}%` }}
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-
       <div className="relative flex flex-col h-[calc(100vh-4rem)] bg-background text-foreground overflow-hidden md:flex-row-reverse">
         {/* Sidebar with chat history (desktop) */}
-        <aside
-          className={cn(
-            "hidden shrink-0 flex-col bg-muted/20 border-l border-border/50 overflow-hidden transition-[width] duration-300 ease-out md:flex md:sticky md:self-start md:top-4 md:h-full",
-            showHistory ? "w-80" : "w-0"
-          )}
-        >
-          <div
-            className={cn(
-              "flex flex-col h-full transition-all duration-200 ease-out",
-              showHistory ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4 pointer-events-none"
-            )}
-          >
-            <div className="flex items-center justify-between p-4 pb-2">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="h-4 w-4 text-primary" />
-                <h2 className="text-sm font-semibold">Project chats</h2>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                onClick={() => setShowHistory(false)}
-              >
-                <X className="h-4 w-4" />
-                <span className="sr-only">Close sidebar</span>
-              </Button>
-            </div>
-
-            <div className="px-4 pb-4">
-              <Button 
-                onClick={handleNewChatClick} 
-                className="w-full justify-start pl-3" 
-                variant="outline" 
-                size="sm"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                New Chat
-              </Button>
-            </div>
-
-            <Separator className="opacity-50" />
-
-            <ScrollArea className="flex-1">
-              {isThreadListLoading ? (
-                <div className="flex flex-col items-center justify-center p-8 text-muted-foreground">
-                  <Loader2 className="h-6 w-6 animate-spin mb-2" />
-                  <span className="text-xs">Loading history...</span>
-                </div>
-              ) : hasThreads ? (
-                <div className="flex flex-col p-2 gap-1">
-                  {threadList.map((thread) => {
-                    const isActive = thread.threadId === threadId;
-                    const previewRaw = (thread.lastMessagePreview ?? "").replace(/\s+/g, " ").trim();
-                    const preview =
-                      previewRaw.length > 0
-                        ? previewRaw
-                        : thread.messageCount === 0
-                        ? "No messages yet."
-                        : thread.lastMessageRole === "assistant"
-                        ? "Assistant replied."
-                        : "You replied.";
-                    const relativeTime = formatDistanceToNow(
-                      new Date(thread.lastMessageAt ?? Date.now()),
-                      { addSuffix: true }
-                    );
-
-                    return (
-                      <Button
-                        key={thread.threadId}
-                        variant={isActive ? "secondary" : "ghost"}
-                        className={cn(
-                          "w-full justify-start h-auto py-3 px-3 flex-col items-start gap-1",
-                          isActive ? "bg-secondary" : "text-muted-foreground hover:text-foreground"
-                        )}
-                        onClick={() => handleThreadSelect(thread.threadId)}
-                      >
-                        <div className="flex w-full justify-between items-baseline gap-2">
-                          <span className="font-medium text-sm truncate">{thread.title}</span>
-                          <span className="text-[10px] text-muted-foreground shrink-0 whitespace-nowrap">{relativeTime}</span>
-                        </div>
-                        <span className="text-xs text-muted-foreground line-clamp-1 text-left w-full font-normal opacity-90">
-                          {preview}
-                        </span>
-                      </Button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="p-8 text-center">
-                  <div className="bg-muted/50 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-3">
-                    <MessageSquare className="h-5 w-5 text-muted-foreground" />
-                  </div>
-                  <p className="text-sm font-medium">No chats yet</p>
-                  <p className="text-xs text-muted-foreground mt-1">Start a new conversation to get help with your project.</p>
-                </div>
-              )}
-            </ScrollArea>
-          </div>
-        </aside>
+        <ChatSidebar
+          showHistory={showHistory}
+          setShowHistory={setShowHistory}
+          isThreadListLoading={isThreadListLoading}
+          hasThreads={hasThreads}
+          threadList={threadList as ThreadListItem[]}
+          currentThreadId={threadId}
+          onThreadSelect={handleThreadSelect}
+          onNewChat={handleNewChatClick}
+        />
 
         {/* Main conversation area */}
         <div className="relative flex flex-1 flex-col min-h-0">
-          
+
           {/* Mobile header */}
           <div className="flex items-center justify-between border-b border-border/60 px-4 py-2 md:hidden z-20 bg-background/50 backdrop-blur sticky top-0">
             <Sheet>
@@ -523,13 +500,13 @@ const AIAssistantSmart = () => {
                 </SheetHeader>
                 <div className="flex flex-col h-full overflow-hidden">
                   <div className="p-4">
-                    <Button 
+                    <Button
                       onClick={() => {
                         handleNewChatClick();
                         // Close sheet logic would go here if controlled, but we rely on simple click for now
-                      }} 
-                      className="w-full justify-start pl-3" 
-                      variant="outline" 
+                      }}
+                      className="w-full justify-start pl-3"
+                      variant="outline"
                       size="sm"
                     >
                       <Plus className="mr-2 h-4 w-4" />
@@ -607,28 +584,13 @@ const AIAssistantSmart = () => {
               <span className="sr-only">Toggle chat history</span>
               <MessageSquare className="h-5 w-5" />
             </Button>
-            {previousThreadsCount > 0 && (
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={handleClearPreviousThreads}
-                className="h-10 w-10 rounded-full"
-              >
-                <span className="sr-only">Clear previous chats</span>
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            )}
-            {sessionTokens.cost > 0 && (
-              <span className="text-xs text-muted-foreground">
-                Estimated cost: ${sessionTokens.cost.toFixed(4)}
-              </span>
-            )}
             {threadId && (
               <Button
                 variant="outline"
                 size="icon"
-                onClick={handleClearChat}
+                onClick={handleClearChatClick}
                 className="h-10 w-10 rounded-full"
+                title="Wyczyść bieżącą rozmowę"
               >
                 <span className="sr-only">Clear chat</span>
                 <RefreshCcw className="h-4 w-4" />
@@ -636,202 +598,216 @@ const AIAssistantSmart = () => {
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto overflow-x-hidden px-6">
-            {chatIsLoading ? (
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-40">
+            {shouldShowChatLoading ? (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                 Loading conversation…
               </div>
             ) : (
               <div className={cn(
-                  "mx-auto flex max-w-4xl flex-col space-y-4",
-                  showEmptyState ? "min-h-full justify-center items-center gap-4 pt-6 pb-6" : "pt-6 pb-4"
-                )}>
-                {showEmptyState ? (
-                   <div className="flex flex-col items-center justify-center w-full">
-                      {/* Hero Section */}
-                      <motion.div 
+                "mx-auto flex max-w-4xl flex-col space-y-4",
+                shouldShowEmptyState ? "min-h-full justify-center items-center gap-4 pt-6 pb-6" : "pt-6 pb-6"
+              )}>
+                <AnimatePresence mode="popLayout">
+                  {shouldShowEmptyState ? (
+                    <motion.div
+                      key="empty-state"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0, transition: { duration: 0.2 } }}
+                      className="flex flex-col items-center justify-center min-h-[60vh] w-full max-w-2xl mx-auto px-4"
+                    >
+                      {aiAccess?.currentPlan === "free" && (
+                        <Badge variant="outline" className="mb-8 rounded-full px-4 py-1.5 border-amber-200 bg-amber-50 text-amber-700 gap-2 hover:bg-amber-100 transition-colors cursor-pointer shadow-sm">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                          Upgrade Plan
+                        </Badge>
+                      )}
+
+                      <motion.h1
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.5 }}
-                        className="space-y-3 text-center mb-4"
+                        transition={{ delay: 0.1 }}
+                        className="text-4xl md:text-5xl font-medium tracking-tight mb-3 text-center text-foreground font-display"
                       >
-                        <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-foreground font-display">
-                          AI Assistant
-                        </h1>
-                        <p className="text-base sm:text-lg text-muted-foreground max-w-xl mx-auto leading-relaxed px-4">
-                           Manage your project with <span className="italic font-serif text-foreground">intelligence</span>. 
-                           From planning to <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600 font-semibold">execution</span>.
-                        </p>
-                      </motion.div>
+                        Hey {user?.firstName || "User"}! 👋
+                      </motion.h1>
 
-                      {/* Quick Prompts */}
-                        <div className="w-full overflow-x-auto pb-4 -mx-6 px-6 sm:mx-0 sm:px-0 sm:overflow-visible sm:pb-0 scrollbar-none snap-x snap-mandatory">
-                          <motion.div 
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.5, delay: 0.2 }}
-                            className="flex sm:grid sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-4xl w-full mx-auto min-w-max sm:min-w-0"
+                      <motion.p
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.15 }}
+                        className="text-muted-foreground text-center mb-12 text-lg"
+                      >
+                        How's it going? What can I help you with today?
+                      </motion.p>
+
+                      {/* Spacer for input that will animate from bottom */}
+                      <div className="h-[140px] w-full max-w-2xl" />
+
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.3 }}
+                        className="mt-8 w-full flex flex-col items-center max-w-4xl"
+                      >
+                        <div className="flex items-center gap-4 mb-8">
+                          <Button
+                            variant="ghost"
+                            className="text-muted-foreground gap-2 hover:text-foreground transition-colors group"
+                            onClick={() => setShowTemplates(!showTemplates)}
                           >
-                           {QUICK_PROMPTS.slice(0, 3).map((item) => (
-                               <button
-                                 key={item.label}
-                                 onClick={() => handleQuickPromptClick(item.prompt)}
-                                 className={cn(
-                                   "group relative overflow-hidden rounded-3xl text-left transition-all duration-300 h-32 p-5 w-[280px] sm:w-auto snap-center shrink-0",
-                                   "bg-card/50 hover:bg-card border border-border/50 hover:border-primary/20 shadow-sm hover:shadow-xl hover:-translate-y-1"
-                                 )}
-                               >
-                               <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                               
-                               <div className="relative z-10 flex flex-col h-full justify-between">
-                                 <div className="flex items-center gap-3">
-                                   <div className="h-8 w-8 rounded-full bg-background flex items-center justify-center shadow-sm text-primary">
-                                      <Sparkles className="h-4 w-4" />
-                                   </div>
-                                   <span className="font-medium text-foreground">{item.label}</span>
-                                 </div>
-                                 <p className="text-sm text-muted-foreground line-clamp-2 group-hover:text-foreground transition-colors whitespace-normal">
-                                   {item.prompt}
-                                 </p>
-                               </div>
-                             </button>
-                           ))}
-                          </motion.div>
+                            <ChevronDown className={cn("h-4 w-4 transition-transform duration-300", showTemplates && "rotate-180")} />
+                            Templates
+                          </Button>
+                          <div className="w-px h-6 bg-border/50" />
+                          <Button
+                            variant="outline"
+                            className="gap-2 border-primary/30 hover:border-primary hover:bg-primary/5 transition-colors"
+                            onClick={() => setShowWorkflowWizard(true)}
+                          >
+                            <Workflow className="h-4 w-4 text-primary" />
+                            Renovation Workflow
+                          </Button>
                         </div>
-                   </div>
-                ) : (
-                  <>
-                    <AnimatePresence initial={false}>
-                    {chatHistory.map((chat, index) => {
-                      const isUser = chat.role === "user";
-                      
-                      return (
-                        <motion.div
-                          key={index}
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ duration: 0.5 }}
-                          className={cn("flex flex-col gap-4", isUser ? "items-end" : "items-start")}
-                        >
-                          {isUser ? (
-                            <div className="max-w-[85%]">
-                               <div className="bg-foreground text-background px-6 py-4 rounded-3xl rounded-tr-sm shadow-lg">
-                                 <p className="text-lg leading-relaxed whitespace-pre-wrap">{chat.content}</p>
-                               </div>
-                               {chat.fileInfo && (
-                                <div className="mt-2 justify-end flex">
-                                  <div className="bg-card border border-border rounded-xl p-2 text-xs flex items-center gap-2 max-w-[200px]">
-                                     <FileText className="h-4 w-4" />
-                                     <span className="truncate">{chat.fileInfo.name}</span>
-                                  </div>
-                                </div>
-                               )}
-                            </div>
-                          ) : (
-                            <div className="w-full max-w-4xl">
-                               {chat.content === "" && !chat.fileInfo ? (
-                                  <div className="flex items-center gap-2 pl-4">
-                                     <div className="h-2.5 w-2.5 rounded-full bg-foreground animate-pulse" />
-                                  </div>
-                               ) : (
-                               <div className="relative rounded-3xl bg-transparent overflow-hidden">
-                                  <div className="relative z-10 p-8">
-                                      <div className="prose prose-neutral dark:prose-invert max-w-none leading-relaxed text-lg text-foreground/90">
-                                          <div dangerouslySetInnerHTML={{ __html: chat.content.replace(/\n/g, '<br/>') }} />
-                                      </div>
 
-                                      {chat.tokenUsage && (
-                                        <div className="mt-6 flex items-center gap-2">
-                                          <Badge variant="outline" className="bg-background/50 backdrop-blur border-border/50 text-xs text-muted-foreground font-normal">
-                                            Estimated cost: ${chat.tokenUsage.estimatedCostUSD.toFixed(4)}
-                                          </Badge>
-                                          {chat.mode && (
-                                            <Badge variant="outline" className="bg-background/50 backdrop-blur border-border/50 text-xs text-muted-foreground font-normal">
-                                              {chat.mode === "full" ? "Full Context" : "Recent Context"}
-                                            </Badge>
-                                          )}
-                                        </div>
-                                      )}
+                        <AnimatePresence>
+                          {showTemplates && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0, y: -20 }}
+                              animate={{ opacity: 1, height: "auto", y: 0 }}
+                              exit={{ opacity: 0, height: 0, y: -20 }}
+                              className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 overflow-hidden px-4 sm:px-0 pb-8"
+                            >
+                              {QUICK_PROMPTS.map((item) => (
+                                <button
+                                  key={item.label}
+                                  onClick={() => handleQuickPromptClick(item.prompt)}
+                                  className={cn(
+                                    "text-left p-4 rounded-xl border border-border/40 bg-card/40 hover:bg-card hover:border-primary/20 transition-all duration-200 group/item shadow-sm"
+                                  )}
+                                >
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <Sparkles className="h-3.5 w-3.5 text-primary/70 group-hover/item:text-primary transition-colors" />
+                                    <span className="font-medium text-sm text-foreground/80 group-hover/item:text-foreground">{item.label}</span>
                                   </div>
-                               </div>
-                               )}
+                                  <p className="text-xs text-muted-foreground line-clamp-2 group-hover/item:text-foreground/70">{item.prompt}</p>
+                                </button>
+                              ))}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </motion.div>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="chat-messages"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.2 }}
+                      className="w-full"
+                    >
+                      {uiMessages.length === 0 && (isLoading || isStreaming) ? (
+                        <div className="flex flex-col gap-6">
+                          {pendingUserMessage && (
+                            <div className="flex flex-col gap-4 items-end">
+                              <div className="max-w-[85%]">
+                                <div className="bg-foreground text-background px-6 py-4 rounded-3xl shadow-lg">
+                                  <p className="text-lg leading-relaxed whitespace-pre-wrap">
+                                    {pendingUserMessage}
+                                  </p>
+                                </div>
+                              </div>
                             </div>
                           )}
-                        </motion.div>
-                      );
-                    })}
-                    </AnimatePresence>
-                    <div ref={messagesEndRef} className="h-4" />
-                  </>
-                )}
+                          <div className="flex items-center gap-3 pl-4 py-4 text-muted-foreground">
+                            <div className="h-3 w-3 rounded-full bg-foreground animate-pulse" />
+                            <div className="h-3 w-3 rounded-full bg-foreground/60 animate-pulse" style={{ animationDelay: "150ms" }} />
+                            <div className="h-3 w-3 rounded-full bg-foreground/30 animate-pulse" style={{ animationDelay: "300ms" }} />
+                            <span className="text-sm">Preparing response...</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <ChatMessageList
+                          uiMessages={uiMessages}
+                          messagesEndRef={messagesEndRef}
+                          messageMetadataByIndex={messageMetadataByIndex}
+                          localMessageAttachments={localMessageAttachments}
+                          pendingItems={pendingItems as PendingContentItem[]}
+                          isBulkProcessing={isBulkProcessing}
+                          onConfirmItem={handleConfirmItem}
+                          onRejectItem={handleRejectItem}
+                          onEditItem={(idx) => {
+                            handleEditItem(idx);
+                            setShowConfirmationGrid(false);
+                            setIsConfirmationDialogOpen(true);
+                            setCurrentItemIndex(idx);
+                          }}
+                          onConfirmAll={handleConfirmAll}
+                          onRejectAll={handleRejectAll}
+                          onUpdateItem={handleUpdatePendingItem}
+                        />
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             )}
           </div>
 
-          {/* Input Area */}
-          <div
-            className={cn(
-              "w-full px-2 sm:px-6 py-4 sm:py-6 z-50 mt-auto"
-            )}
+          {/* Input Area - always rendered at bottom, offset animates for empty state */}
+          <motion.div
+            initial={false}
+            animate={{
+              y: shouldShowEmptyState ? "calc(-50vh + 140px)" : 0,
+            }}
+            transition={{
+              type: "spring",
+              stiffness: 350,
+              damping: 32,
+            }}
+            className="absolute left-0 right-0 bottom-6 px-2 sm:px-6 z-50"
           >
             <div className="max-w-3xl mx-auto">
-               {renderInputArea()}
+              {renderInputArea()}
             </div>
-          </div>
-
+          </motion.div>
         </div>
       </div>
 
-    {/* Confirmation Grid Modal for Multiple Items */}
-    {showConfirmationGrid && (
-      <Dialog open={showConfirmationGrid} onOpenChange={setShowConfirmationGrid}>
-        <DialogContent
-          className="flex flex-col overflow-hidden p-4 sm:p-8"
-          style={{
-            width: "min(95vw, 1280px)",
-            height: "min(95vh, 900px)",
-            maxWidth: "95vw",
-            maxHeight: "95vh",
-            margin: "auto",
-          }}
-        >
-          <DialogHeader className="flex-shrink-0">
-            <DialogTitle>Review AI Suggestions</DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto">
-            <AIConfirmationGrid
-              pendingItems={pendingItems as PendingContentItem[]}
-              onConfirmAll={handleConfirmAll}
-              onConfirmItem={handleConfirmItem}
-              onRejectItem={handleRejectItem}
-              onRejectAll={handleRejectAll}
-              onEditItem={(index) => {
-                handleEditItem(index);
-                setShowConfirmationGrid(false);
-                setIsConfirmationDialogOpen(true);
-                setCurrentItemIndex(index);
-              }}
-              isProcessing={isBulkProcessing}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
-    )}
+      {/* Note: Confirmation dialogs removed - inline confirmations now handle all pending items display */
+        /* Re-added UniversalConfirmationDialog to support editing from inline items */
+        pendingItems[currentItemIndex] && (
+          <UniversalConfirmationDialog
+            isOpen={isConfirmationDialogOpen}
+            onClose={handleContentDialogClose}
+            onConfirm={handleContentConfirm}
+            onCancel={handleContentCancel}
+            onEdit={handleContentEdit}
+            contentItem={pendingItems[currentItemIndex]}
+            isLoading={isCreatingContent}
+            itemNumber={currentItemIndex + 1}
+            totalItems={pendingItems.length}
+          />
+        )}
 
-    {/* Universal Confirmation Dialog for Single Items */}
-    {pendingItems.length > 0 && !showConfirmationGrid && (
-      <UniversalConfirmationDialog
-        isOpen={isConfirmationDialogOpen}
-        onClose={handleContentDialogClose}
-        onConfirm={handleContentConfirm}
-        onCancel={handleContentCancel}
-        onEdit={(updatedItem) => handleContentEdit(updatedItem as unknown as Record<string, unknown>)}
-        contentItem={pendingItems[currentItemIndex] as PendingContentItem}
-        isLoading={isCreatingContent}
-        itemNumber={currentItemIndex + 1}
-        totalItems={pendingItems.length}
-      />
-    )}
+      {/* Workflow Wizard Sheet */}
+      <Sheet open={showWorkflowWizard} onOpenChange={setShowWorkflowWizard}>
+        <SheetContent side="right" className="w-full sm:w-[450px] p-0 overflow-hidden">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Renovation Workflow</SheetTitle>
+          </SheetHeader>
+          <WorkflowWizard
+            onStartWorkflow={handleStartWorkflow}
+            onStepChange={handleWorkflowStepChange}
+            onClose={handleCloseWorkflow}
+            uploadedFileIds={uploadedFileIds}
+            hasUploadedFile={selectedFiles.length > 0 || uploadedFileIds.length > 0}
+            onFileUploadRequest={handleAttachmentClick}
+            isAIResponding={isLoading || isStreaming}
+          />
+        </SheetContent>
+      </Sheet>
     </>
   );
 };

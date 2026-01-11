@@ -1,11 +1,11 @@
 "use client";
 
-import { useOrganizationList, useOrganization } from "@clerk/nextjs";
+import { useOrganizationList, useUser, useClerk } from "@clerk/nextjs";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, FolderOpen, Users, Building2, ArrowRight } from "lucide-react";
+import { Plus, FolderOpen, Users, Building2, Sparkles, Palette, Settings, HelpCircle, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,37 +13,75 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 
 export function SmartDashboard() {
-  const { userMemberships } = useOrganizationList({
+  const router = useRouter();
+  const { userMemberships, setActive, isLoaded } = useOrganizationList({
     userMemberships: { infinite: true },
   });
-  const { organization } = useOrganization();
 
   const organizations = userMemberships?.data?.map(membership => ({
     id: membership.organization.id,
     name: membership.organization.name,
+    slug: membership.organization.slug,
     role: membership.role
   })) || [];
 
-  // Auto-select the organization if user has only one
-  // Note: This logic is handled by the UI flow instead
+  // Auto-redirect if user has exactly one organization
+  useEffect(() => {
+    if (!isLoaded) return;
 
-  // Show projects directly if user has one organization
-  if (organizations.length === 1 && organization) {
-    return <SingleOrgDashboard organization={organization} />;
+    if (organizations.length >= 1) {
+      // Always take the first organization
+      const org = organizations[0];
+      console.log("Redirecting to organization:", org);
+      // Always redirect to the organization's URL
+      setActive?.({ organization: org.id }).then(() => {
+        console.log("Organization set, pushing to:", `/${org.slug}`);
+        router.push(`/${org.slug}`);
+      });
+    }
+  }, [isLoaded, organizations.length, setActive, router, organizations]);
+
+  // Show loading while checking organizations
+  if (!isLoaded) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <div className="text-center space-y-4">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto" />
+          <p className="text-muted-foreground">Loading your workspace...</p>
+        </div>
+      </div>
+    );
   }
 
-  // Show organization selector if multiple organizations
-  if (organizations.length > 1) {
-    return <MultiOrgDashboard organizations={organizations} />;
+  // If user has organization(s), show loading while redirecting
+  if (organizations.length >= 1) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <div className="text-center space-y-4">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto" />
+          <p className="text-muted-foreground">Redirecting to your organization...</p>
+        </div>
+      </div>
+    );
   }
 
   // No organizations - show create prompt
   return <NoOrgDashboard />;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function SingleOrgDashboard({ organization }: { organization: { id: string; name: string; membersCount: number } }) {
   const router = useRouter();
   const [showNewProjectForm, setShowNewProjectForm] = useState(false);
@@ -278,62 +316,93 @@ function SingleOrgDashboard({ organization }: { organization: { id: string; name
   );
 }
 
-function MultiOrgDashboard({ organizations }: { organizations: { id: string; name: string; role: string }[] }) {
-  const { setActive } = useOrganizationList();
+function UserMenu() {
+  const { user } = useUser();
+  const { signOut } = useClerk();
+  const router = useRouter();
 
-  if (!setActive) {
-    return <div>Loading...</div>
-  }
+  if (!user) return null;
+
+  const userInitials = user.firstName && user.lastName
+    ? `${user.firstName[0]}${user.lastName[0]}`
+    : user.emailAddresses[0]?.emailAddress[0]?.toUpperCase() || "U";
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-3xl font-bold tracking-tight">Select Organization</h2>
-      <p className="text-muted-foreground">
-        You are a member of multiple organizations. Select one to continue.
-      </p>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {organizations.map(org => (
-          <Card 
-            key={org.id} 
-            className="cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => setActive({ organization: org.id })}
-          >
-            <CardHeader>
-              <CardTitle>{org.name}</CardTitle>
-              <CardDescription>Role: {org.role}</CardDescription>
-            </CardHeader>
-            <CardContent className="flex items-center justify-between text-muted-foreground">
-              <span>Go to organization</span>
-              <ArrowRight className="h-4 w-4" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </div>
-  )
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" className="relative h-12 w-12 rounded-full">
+          <Avatar className="h-12 w-12">
+            <AvatarImage src={user.imageUrl} alt={user.fullName || "User"} />
+            <AvatarFallback className="bg-yellow-500 text-white font-semibold">
+              {userInitials}
+            </AvatarFallback>
+          </Avatar>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="w-64" align="end" forceMount>
+        <DropdownMenuLabel className="font-normal">
+          <div className="flex flex-col space-y-1">
+            <p className="text-sm font-medium leading-none">{user.fullName || "User"}</p>
+            <p className="text-xs leading-none text-muted-foreground">
+              {user.primaryEmailAddress?.emailAddress}
+            </p>
+          </div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => router.push("/pricing")} className="cursor-pointer">
+          <Sparkles className="mr-2 h-4 w-4" />
+          <span>Rozszerz plan</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => router.push("/personalization")} className="cursor-pointer">
+          <Palette className="mr-2 h-4 w-4" />
+          <span>Personalizacja</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => router.push("/settings")} className="cursor-pointer">
+          <Settings className="mr-2 h-4 w-4" />
+          <span>Ustawienia</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => router.push("/help")} className="cursor-pointer">
+          <HelpCircle className="mr-2 h-4 w-4" />
+          <span>Pomoc</span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => signOut()} className="cursor-pointer text-red-600">
+          <LogOut className="mr-2 h-4 w-4" />
+          <span>Wyloguj się</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 function NoOrgDashboard() {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { createOrganization } = useOrganizationList();
+  const router = useRouter();
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Welcome to VibePlanner!</CardTitle>
-        <CardDescription>
-          It looks like you don't belong to any organization.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <p className="mb-4">
-          To get started, create a new organization for your team.
-        </p>
-        <Button onClick={() => createOrganization ? createOrganization({name: "My Organization"}) : null}>
-          <Plus className="mr-2 h-4 w-4" />
-          Create Organization
-        </Button>
-      </CardContent>
-    </Card>
+    <div className="space-y-6">
+      <div className="flex items-center justify-end">
+        <UserMenu />
+      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Welcome to VibePlanner!</CardTitle>
+          <CardDescription>
+            It looks like you don't belong to any organization.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-4">
+            To get started, create a new organization for your team.
+          </p>
+          <Button onClick={() => router.push("/organization")}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Organization
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
   )
 }
 

@@ -4,17 +4,25 @@
  * Static configuration and constant values for the AI Assistant.
  */
 
-import type { PendingItemType, QuickPrompt } from "./types";
+import type { PendingItemType, AnyPendingItemType, QuickPrompt } from "./types";
 
 // ==================== PENDING ITEM TYPES ====================
 
-export const PENDING_ITEM_TYPES: PendingItemType[] = [
+/** Canonical pending item types (without operation prefix) */
+export const CANONICAL_TYPES: PendingItemType[] = [
   "task",
   "note",
   "shopping",
   "survey",
   "contact",
   "shoppingSection",
+  "labor",
+  "laborSection",
+];
+
+/** All valid pending item types including legacy names (for backwards compatibility) */
+export const ALL_PENDING_ITEM_TYPES: AnyPendingItemType[] = [
+  ...CANONICAL_TYPES,
   "create_task",
   "create_note",
   "create_shopping_item",
@@ -24,7 +32,29 @@ export const PENDING_ITEM_TYPES: PendingItemType[] = [
   "create_multiple_notes",
   "create_multiple_shopping_items",
   "create_multiple_surveys",
+  "create_labor_item",
+  "create_labor_section",
+  "create_multiple_labor_items",
 ];
+
+/** @deprecated Use CANONICAL_TYPES or ALL_PENDING_ITEM_TYPES */
+export const PENDING_ITEM_TYPES = ALL_PENDING_ITEM_TYPES;
+
+/** Maps legacy type names to canonical types */
+export const LEGACY_TYPE_TO_CANONICAL: Record<string, PendingItemType> = {
+  create_task: "task",
+  create_note: "note",
+  create_shopping_item: "shopping",
+  create_survey: "survey",
+  create_contact: "contact",
+  create_multiple_tasks: "task",
+  create_multiple_notes: "note",
+  create_multiple_shopping_items: "shopping",
+  create_multiple_surveys: "survey",
+  create_labor_item: "labor",
+  create_labor_section: "laborSection",
+  create_multiple_labor_items: "labor",
+};
 
 // ==================== QUICK PROMPTS ====================
 
@@ -70,6 +100,13 @@ export const TOOL_NAME_MAPPING: Record<string, { type: PendingItemType; operatio
   edit_multiple_surveys: { type: "survey", operation: "bulk_edit" },
   delete_survey: { type: "survey", operation: "delete" },
   delete_contact: { type: "contact", operation: "delete" },
+  // Labor tools
+  edit_labor_item: { type: "labor", operation: "edit" },
+  edit_multiple_labor_items: { type: "labor", operation: "bulk_edit" },
+  delete_labor_item: { type: "labor", operation: "delete" },
+  create_labor_section: { type: "laborSection", operation: "create" },
+  edit_labor_section: { type: "laborSection", operation: "edit" },
+  delete_labor_section: { type: "laborSection", operation: "delete" },
 };
 
 // ==================== ALLOWED SHOPPING FIELDS ====================
@@ -109,6 +146,17 @@ export const MAX_FILE_SIZE_MB = 512;
 export const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 export const ACCEPTED_FILE_TYPES = "image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.xlsm,.txt,.json,.jsonl,.csv,.md,.py,.js,.ts,.html,.css,.xml,.rtf";
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -1,0 +1,251 @@
+/**
+ * Confirmed Actions - Labor
+ * 
+ * Labor item and section CRUD operations that require user confirmation from AI suggestions.
+ */
+
+import { action } from "../../_generated/server";
+import { v } from "convex/values";
+import { api } from "../../_generated/api";
+import { ensureProjectAccess } from "./helpers";
+
+export const createConfirmedLaborItem = action({
+  args: {
+    projectId: v.id("projects"),
+    itemData: v.object({
+      name: v.string(),
+      quantity: v.number(),
+      unit: v.optional(v.string()),
+      notes: v.optional(v.string()),
+      unitPrice: v.optional(v.number()),
+      sectionId: v.optional(v.id("laborSections")),
+      assignedTo: v.optional(v.string()),
+    }),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    itemId: v.optional(v.id("laborItems")),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    try {
+      await ensureProjectAccess(ctx, args.projectId, true);
+
+      const itemId: any = await ctx.runMutation(api.labor.createLaborItem, {
+        projectId: args.projectId,
+        name: args.itemData.name,
+        quantity: args.itemData.quantity,
+        unit: args.itemData.unit || "m²",
+        notes: args.itemData.notes,
+        unitPrice: args.itemData.unitPrice,
+        sectionId: args.itemData.sectionId,
+        assignedTo: args.itemData.assignedTo,
+      });
+
+      return {
+        success: true,
+        itemId,
+        message: "Labor item created successfully",
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to create labor item: ${error}`,
+      };
+    }
+  },
+});
+
+export const createConfirmedLaborSection = action({
+  args: {
+    projectId: v.id("projects"),
+    sectionData: v.object({
+      name: v.string(),
+    }),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    sectionId: v.optional(v.id("laborSections")),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    try {
+      await ensureProjectAccess(ctx, args.projectId, true);
+
+      const sectionId: any = await ctx.runMutation(api.labor.createLaborSection, {
+        name: args.sectionData.name,
+        projectId: args.projectId,
+      });
+
+      return {
+        success: true,
+        sectionId,
+        message: "Labor section created successfully",
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to create labor section: ${error}`,
+      };
+    }
+  },
+});
+
+export const editConfirmedLaborItem = action({
+  args: {
+    itemId: v.id("laborItems"),
+    updates: v.object({
+      name: v.optional(v.string()),
+      notes: v.optional(v.string()),
+      quantity: v.optional(v.number()),
+      unit: v.optional(v.string()),
+      unitPrice: v.optional(v.number()),
+      sectionId: v.optional(v.union(v.id("laborSections"), v.null())),
+      assignedTo: v.optional(v.string()),
+    }),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    try {
+      const item = await ctx.runQuery(api.labor.getLaborItem, { itemId: args.itemId });
+      if (!item) {
+        throw new Error("Labor item not found");
+      }
+      await ensureProjectAccess(ctx, item.projectId, true);
+
+      await ctx.runMutation(api.labor.updateLaborItem, {
+        itemId: args.itemId,
+        name: args.updates.name,
+        notes: args.updates.notes,
+        quantity: args.updates.quantity,
+        unit: args.updates.unit,
+        unitPrice: args.updates.unitPrice,
+        sectionId: args.updates.sectionId,
+        assignedTo: args.updates.assignedTo,
+      });
+
+      return {
+        success: true,
+        message: "Labor item updated successfully",
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to update labor item: ${error}`,
+      };
+    }
+  },
+});
+
+export const editConfirmedLaborSection = action({
+  args: {
+    sectionId: v.id("laborSections"),
+    updates: v.object({
+      name: v.optional(v.string()),
+    }),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    try {
+      const db = (ctx as any).db;
+      const section = db ? await db.get(args.sectionId) : null;
+      if (!section) {
+        throw new Error("Labor section not found");
+      }
+
+      await ensureProjectAccess(ctx, section.projectId, true);
+
+      await ctx.runMutation(api.labor.updateLaborSection, {
+        sectionId: args.sectionId,
+        name: args.updates.name ?? section.name,
+      });
+
+      return {
+        success: true,
+        message: "Labor section updated successfully",
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to update labor section: ${error}`,
+      };
+    }
+  },
+});
+
+export const deleteConfirmedLaborItem = action({
+  args: {
+    itemId: v.id("laborItems"),
+    reason: v.optional(v.string()),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    try {
+      const item = await ctx.runQuery(api.labor.getLaborItem, { itemId: args.itemId });
+      if (!item) {
+        throw new Error("Labor item not found");
+      }
+      await ensureProjectAccess(ctx, item.projectId, true);
+
+      await ctx.runMutation(api.labor.deleteLaborItem, {
+        itemId: args.itemId,
+      });
+
+      return {
+        success: true,
+        message: "Labor item deleted successfully",
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to delete labor item: ${error}`,
+      };
+    }
+  },
+});
+
+export const deleteConfirmedLaborSection = action({
+  args: {
+    sectionId: v.id("laborSections"),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    try {
+      const db = (ctx as any).db;
+      const section = db ? await db.get(args.sectionId) : null;
+      if (!section) {
+        throw new Error("Labor section not found");
+      }
+
+      await ensureProjectAccess(ctx, section.projectId, true);
+
+      await ctx.runMutation(api.labor.deleteLaborSection, {
+        sectionId: args.sectionId,
+      });
+
+      return {
+        success: true,
+        message: "Labor section deleted successfully",
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to delete labor section: ${error}`,
+      };
+    }
+  },
+});
+
+

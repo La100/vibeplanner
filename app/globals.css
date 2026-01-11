@@ -46,7 +46,7 @@
 
 :root {
   --radius: 0.625rem;
-  --background: #FAF7F2;
+  --background: #faf8f7;
   --foreground: #1A1A1A;
   --card: #FFFFFF;
   --card-foreground: #1A1A1A;
@@ -69,7 +69,7 @@
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: #FAF7F2;
+  --sidebar: #faf8f7;
   --sidebar-foreground: #1A1A1A;
   --sidebar-primary: #0E0E0E;
   --sidebar-primary-foreground: #FFFFFF;
@@ -582,4 +582,31 @@
 
 .no-arrows {
   -moz-appearance: textfield;
+}
+
+/* AI Streaming Animations */
+@keyframes blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite;
 }

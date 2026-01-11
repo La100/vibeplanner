@@ -64,9 +64,11 @@ interface ContentItem {
     | 'task'
     | 'note'
     | 'shopping'
+    | 'labor'
     | 'survey'
     | 'contact'
     | 'shoppingSection'
+    | 'laborSection'
     | 'create_task'
     | 'create_note'
     | 'create_shopping_item'
@@ -75,7 +77,10 @@ interface ContentItem {
     | 'create_multiple_tasks'
     | 'create_multiple_notes'
     | 'create_multiple_shopping_items'
-    | 'create_multiple_surveys';
+    | 'create_multiple_surveys'
+    | 'create_labor_item'
+    | 'create_labor_section'
+    | 'create_multiple_labor_items';
   data: Record<string, unknown>;
   operation?: 'create' | 'edit' | 'delete' | 'bulk_edit' | 'bulk_create';
   originalItem?: Record<string, unknown>;
@@ -118,7 +123,10 @@ const canonicalType = (type: ContentItem['type']): Exclude<ContentItem['type'],
   'create_multiple_tasks' |
   'create_multiple_notes' |
   'create_multiple_shopping_items' |
-  'create_multiple_surveys'> => {
+  'create_multiple_surveys' |
+  'create_labor_item' |
+  'create_labor_section' |
+  'create_multiple_labor_items'> => {
   switch (type) {
     case 'create_task':
     case 'create_multiple_tasks':
@@ -134,6 +142,11 @@ const canonicalType = (type: ContentItem['type']): Exclude<ContentItem['type'],
       return 'survey';
     case 'create_contact':
       return 'contact';
+    case 'create_labor_item':
+    case 'create_multiple_labor_items':
+      return 'labor';
+    case 'create_labor_section':
+      return 'laborSection';
     default:
       return type;
   }
@@ -143,18 +156,22 @@ const typeIcons = {
   task: "📝",
   note: "📄",
   shopping: "🛒",
+  labor: "🛠️",
   survey: "📊",
   contact: "👤",
-  shoppingSection: "🏷️"
+  shoppingSection: "🏷️",
+  laborSection: "🏗️"
 } as const;
 
 const typeLabels = {
   task: "task",
   note: "note",
   shopping: "shopping item",
+  labor: "labor item",
   survey: "survey",
   contact: "contact",
-  shoppingSection: "shopping section"
+  shoppingSection: "shopping section",
+  laborSection: "labor section"
 } as const;
 
 export function UniversalConfirmationDialog({
@@ -674,7 +691,7 @@ export function UniversalConfirmationDialog({
                   ...prev,
                   data: { ...prev.data, sectionName: e.target.value }
                 }))}
-                placeholder="Łazienka"
+                placeholder="Bathroom"
                 className="flex-1"
               />
             </div>
@@ -781,6 +798,171 @@ export function UniversalConfirmationDialog({
             )
           )}
         </div>
+      </div>
+    );
+  };
+
+  const renderLaborContent = () => {
+    const data = isEditing ? editedItem.data : contentItem.data;
+    return (
+      <div className="space-y-4">
+        <div className="space-y-2">
+          {isEditing ? (
+            <>
+              <Input
+                value={String(editedItem.data.name || '')}
+                onChange={(e) => setEditedItem(prev => ({
+                  ...prev,
+                  data: { ...prev.data, name: e.target.value }
+                }))}
+                placeholder="Nazwa pracy"
+                className="font-semibold text-lg"
+              />
+              <Textarea
+                value={String(editedItem.data.notes || '')}
+                onChange={(e) => setEditedItem(prev => ({
+                  ...prev,
+                  data: { ...prev.data, notes: e.target.value }
+                }))}
+                className="text-sm resize-none"
+                rows={2}
+                placeholder="Notatki"
+              />
+            </>
+          ) : (
+            <>
+              <h3 className="font-semibold text-lg">{String(data.name)}</h3>
+              {Boolean(data.notes && String(data.notes)) && (
+                <p className="text-sm text-gray-600">{String(data.notes)}</p>
+              )}
+            </>
+          )}
+        </div>
+
+        {isEditing ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-600 w-24 flex items-center gap-1">
+                <Package className="w-4 h-4" />
+                Ilość:
+              </label>
+              <Input
+                type="number"
+                value={Number(editedItem.data.quantity || 1)}
+                onChange={(e) => setEditedItem(prev => ({
+                  ...prev,
+                  data: { ...prev.data, quantity: Number(e.target.value) }
+                }))}
+                className="flex-1"
+                min="1"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-600 w-24">
+                Jednostka:
+              </label>
+              <Input
+                value={String(editedItem.data.unit || '')}
+                onChange={(e) => setEditedItem(prev => ({
+                  ...prev,
+                  data: { ...prev.data, unit: e.target.value }
+                }))}
+                placeholder="m²"
+                className="flex-1"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-600 w-24 flex items-center gap-1">
+                <DollarSign className="w-4 h-4" />
+                Cena:
+              </label>
+              <Input
+                type="number"
+                value={Number(editedItem.data.unitPrice || 0)}
+                onChange={(e) => setEditedItem(prev => ({
+                  ...prev,
+                  data: { ...prev.data, unitPrice: Number(e.target.value) }
+                }))}
+                placeholder="0.00"
+                className="flex-1"
+                step="0.01"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-600 w-24 flex items-center gap-1">
+                <Home className="w-4 h-4" />
+                Sekcja:
+              </label>
+              <Input
+                value={String(editedItem.data.sectionName || '')}
+                onChange={(e) => setEditedItem(prev => ({
+                  ...prev,
+                  data: { ...prev.data, sectionName: e.target.value }
+                }))}
+                placeholder="Bathroom"
+                className="flex-1"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-600 w-24 flex items-center gap-1">
+                <User className="w-4 h-4" />
+                Osoba:
+              </label>
+              <Input
+                value={String(editedItem.data.assignedTo || '')}
+                onChange={(e) => setEditedItem(prev => ({
+                  ...prev,
+                  data: { ...prev.data, assignedTo: e.target.value }
+                }))}
+                placeholder="Wykonawca"
+                className="flex-1"
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="flex items-center gap-2">
+              <Package className="w-4 h-4 text-gray-500" />
+              <span className="text-gray-600">Ilość:</span>
+              <span className="font-medium">{String(data.quantity)}</span>
+            </div>
+
+            {Boolean(data.unit && String(data.unit)) && (
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600">Jednostka:</span>
+                <span className="font-medium">{String(data.unit)}</span>
+              </div>
+            )}
+
+            {Boolean(data.unitPrice && String(data.unitPrice)) && (
+              <div className="flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-gray-500" />
+                <span className="text-gray-600">Cena:</span>
+                <span className="font-medium">{String(data.unitPrice)} PLN</span>
+              </div>
+            )}
+
+            {Boolean(data.sectionName && String(data.sectionName)) && (
+              <div className="flex items-center gap-2">
+                <Home className="w-4 h-4 text-gray-500" />
+                <span className="text-gray-600">Sekcja:</span>
+                <span className="font-medium">{String(data.sectionName)}</span>
+              </div>
+            )}
+
+            {Boolean(data.assignedTo && String(data.assignedTo)) && (
+              <div className="flex items-center gap-2">
+                <User className="w-4 h-4 text-gray-500" />
+                <span className="text-gray-600">Osoba:</span>
+                <span className="font-medium">{String(data.assignedTo)}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -1170,6 +1352,9 @@ export function UniversalConfirmationDialog({
       case 'shopping':
         bodyContent = renderShoppingContent();
         break;
+      case 'labor':
+        bodyContent = renderLaborContent();
+        break;
       case 'survey':
         bodyContent = renderSurveyContent();
         break;
@@ -1184,6 +1369,18 @@ export function UniversalConfirmationDialog({
               <h3 className="font-semibold text-lg">{String(contentItem.data.name || 'Unnamed Section')}</h3>
               <p className="text-sm text-gray-600">
                 Shopping list section for organizing items.
+              </p>
+            </div>
+          </div>
+        );
+        break;
+      case 'laborSection':
+        bodyContent = (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <h3 className="font-semibold text-lg">{String(contentItem.data.name || 'Unnamed Section')}</h3>
+              <p className="text-sm text-gray-600">
+                Labor section for organizing work items.
               </p>
             </div>
           </div>

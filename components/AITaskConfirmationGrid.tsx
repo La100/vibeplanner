@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ItemPreviewCard } from "./ItemPreviewCard";
+import { ConfirmationCard } from "@/components/ai-assistant/InlineConfirmation";
+import type { PendingContentItem } from "@/components/AIConfirmationGrid";
 import { Loader2 } from "lucide-react";
 
 interface PendingTask {
@@ -25,6 +26,7 @@ interface AITaskConfirmationGridProps {
   onRejectItem: (index: number) => void;
   onRejectAll: () => void;
   onEditItem?: (index: number) => void;
+  onUpdateItem?: (index: number, updates: Partial<PendingContentItem>) => void;
   isProcessing?: boolean;
 }
 
@@ -35,6 +37,7 @@ export const AITaskConfirmationGrid = ({
   onRejectItem,
   onRejectAll,
   onEditItem,
+  onUpdateItem,
   isProcessing = false
 }: AITaskConfirmationGridProps) => {
   const [currentPage, setCurrentPage] = useState(0);
@@ -134,12 +137,14 @@ export const AITaskConfirmationGrid = ({
                   <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
                 </div>
               )}
-              <ItemPreviewCard
+              <ConfirmationCard
                 item={item}
                 index={actualIndex}
                 onConfirm={handleConfirmItem}
                 onReject={onRejectItem}
                 onEdit={onEditItem}
+                onUpdate={onUpdateItem}
+                isProcessing={isItemProcessing}
               />
             </div>
           );

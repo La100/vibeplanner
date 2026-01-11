@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { SignedIn, SignedOut, UserButton, SignInButton, SignUpButton } from "@clerk/nextjs";
+import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 import { motion, useScroll, useMotionValueEvent } from "framer-motion";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -47,19 +47,14 @@ export function Navbar() {
           <UserButton appearance={{ elements: { userButtonAvatarBox: "rounded-full" } }} />
         </SignedIn>
         <SignedOut>
-          <SignInButton mode="modal">
-            <Button variant="ghost" className="text-sm font-medium text-muted-foreground hover:text-foreground">
-              Log in
-            </Button>
-          </SignInButton>
-          <SignUpButton mode="modal">
-            <Button className="rounded-full bg-foreground text-background hover:bg-foreground/90 px-6">
-              Get Started
-            </Button>
-          </SignUpButton>
+          <Button asChild variant="ghost" className="text-sm font-medium text-muted-foreground hover:text-foreground">
+            <Link href="/sign-in">Log in</Link>
+          </Button>
+          <Button asChild className="rounded-full bg-foreground text-background hover:bg-foreground/90 px-6">
+            <Link href="/sign-up">Get Started</Link>
+          </Button>
         </SignedOut>
       </div>
     </motion.header>
   );
 }
-

@@ -1,0 +1,603 @@
+"use client";
+
+import { useState, useRef, useEffect, useMemo } from "react";
+import { useParams } from "next/navigation";
+import { useQuery, useAction, useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Loader2,
+  X,
+  Download,
+  Sparkles,
+  Paperclip,
+  History,
+} from "lucide-react";
+import { AISubscriptionWall } from "@/components/AISubscriptionWall";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+
+// Reuse ChatSidebar and ChatInput from ai-assistant
+import { ChatSidebar, ThreadListItem } from "@/components/ai-assistant/ChatSidebar";
+import { ChatInput } from "@/components/ai-assistant/ChatInput";
+
+export default function VisualizationsPage() {
+  const params = useParams<{ slug: string }>();
+  const [message, setMessage] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Session state
+  const [currentSessionId, setCurrentSessionId] = useState<Id<"aiVisualizationSessions"> | null>(null);
+  const [showHistory, setShowHistory] = useState(true);
+
+  // Lightbox state
+  const [selectedLightbox, setSelectedLightbox] = useState<{
+    url: string;
+    prompt: string;
+  } | null>(null);
+
+  const team = useQuery(api.teams.getTeamBySlug, params.slug ? { slug: params.slug } : "skip");
+  const aiAccess = useQuery(api.stripe.checkTeamAIAccess, team?._id ? { teamId: team._id } : "skip");
+
+  // Session queries
+  const sessions = useQuery(
+    api.ai.visualizationSessions.listSessions,
+    team?._id ? { teamId: team._id } : "skip"
+  );
+
+  const currentSession = useQuery(
+    api.ai.visualizationSessions.getSession,
+    currentSessionId ? { sessionId: currentSessionId } : "skip"
+  );
+
+  const sessionMessages = useQuery(
+    api.ai.visualizationSessions.getSessionMessages,
+    currentSessionId ? { sessionId: currentSessionId } : "skip"
+  );
+
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Actions and mutations
+  const generateVisualization = useAction(api.ai.imageGen.generation.generateVisualization);
+  const getUploadUrl = useAction(api.ai.imageGen.generation.getUploadUrl);
+  const createSession = useMutation(api.ai.visualizationSessions.createSession);
+  const addUserMessage = useMutation(api.ai.visualizationSessions.addUserMessage);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const deleteSession = useMutation(api.ai.visualizationSessions.deleteSession);
+
+  // Map sessions to ThreadListItem format for ChatSidebar
+  const threadList: ThreadListItem[] = useMemo(() => {
+    if (!sessions) return [];
+    return sessions.map((session) => ({
+      threadId: session._id,
+      title: session.title || "New visualization",
+      lastMessageAt: session.lastMessageAt,
+      lastMessagePreview: `${session.imageCount} image${session.imageCount !== 1 ? "s" : ""}`,
+      messageCount: session.messageCount,
+    }));
+  }, [sessions]);
+
+  // Auto-scroll to bottom of messages
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [sessionMessages]);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto";
+      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 200)}px`;
+    }
+  }, [message]);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !team) return;
+
+    setIsUploading(true);
+    const newFiles: File[] = [];
+
+    for (const file of Array.from(files)) {
+      if (file.size > 20 * 1024 * 1024) {
+        toast.error(`${file.name} is too large (max 20MB)`);
+        continue;
+      }
+      newFiles.push(file);
+    }
+
+    setSelectedFiles((prev) => [...prev, ...newFiles]);
+    setIsUploading(false);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleNewChat = () => {
+    setCurrentSessionId(null);
+    setMessage("");
+    setSelectedFiles([]);
+  };
+
+  const handleThreadSelect = (threadId: string) => {
+    setCurrentSessionId(threadId as Id<"aiVisualizationSessions">);
+    setMessage("");
+    setSelectedFiles([]);
+  };
+
+  const handleSendMessage = async () => {
+    if (!message.trim() || isGenerating || isUploading || !team) return;
+
+    const userPrompt = message;
+    setMessage("");
+    setIsGenerating(true);
+
+    const filesToUpload = [...selectedFiles];
+    setSelectedFiles([]);
+
+    try {
+      let sessionId = currentSessionId;
+
+      // Create a new session if we don't have one
+      if (!sessionId) {
+        sessionId = await createSession({
+          teamId: team._id,
+          initialPrompt: userPrompt,
+        });
+        setCurrentSessionId(sessionId);
+      }
+
+      // Upload reference images if any
+      const uploadedRefs: Array<{ storageKey: string; mimeType: string; name: string; base64?: string }> = [];
+
+      for (const file of filesToUpload) {
+        try {
+          const { url, key } = await getUploadUrl({
+            teamId: team._id,
+            fileName: file.name,
+            fileType: file.type,
+          });
+
+          await fetch(url, {
+            method: "PUT",
+            body: file,
+            headers: { "Content-Type": file.type },
+          });
+
+          uploadedRefs.push({
+            storageKey: key,
+            mimeType: file.type,
+            name: file.name,
+          });
+        } catch (err) {
+          console.error("Failed to upload file:", err);
+        }
+      }
+
+      // Add user message to session
+      await addUserMessage({
+        sessionId,
+        text: userPrompt,
+        referenceImages: uploadedRefs.length > 0 ? uploadedRefs : undefined,
+      });
+
+      // Build history from session messages
+      const history = sessionMessages?.map((msg) => ({
+        role: msg.role as "user" | "model",
+        text: msg.text,
+        imageStorageKey: msg.imageStorageKey,
+        imageMimeType: msg.imageMimeType,
+      })) || [];
+
+      // Generate visualization
+      const result = await generateVisualization({
+        prompt: userPrompt,
+        referenceImages: uploadedRefs.length > 0 ? uploadedRefs : undefined,
+        teamId: team._id,
+        sessionId,
+        history: history.length > 0 ? history : undefined,
+      });
+
+      if (result.success) {
+        toast.success("Visualization generated!");
+      } else {
+        toast.error(result.error || "Generation failed");
+      }
+    } catch (error) {
+      toast.error("Generation failed");
+      console.error(error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleStopResponse = () => {
+    // For now, we can't stop Gemini generation mid-flight
+    // This is a placeholder for future implementation
+  };
+
+  const handleDownload = async (imageUrl: string) => {
+    if (!imageUrl) return;
+
+    try {
+      const response = await fetch(`/api/image-proxy?url=${encodeURIComponent(imageUrl)}`);
+      if (!response.ok) throw new Error("Download failed");
+      const blob = await response.blob();
+
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = `visualization-${Date.now()}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+      toast.success("Downloaded");
+    } catch (error) {
+      console.error("Download failed:", error);
+      toast.error("Download failed");
+    }
+  };
+
+  const suggestions = [
+    {
+      text: "Minimalist Scandinavian living room with natural oak floors",
+      image: "/samplevisuals/sample1.jpeg",
+    },
+    {
+      text: "Japanese zen garden with stone pathway and bamboo",
+      image: "https://images.unsplash.com/photo-1585938389612-a552a28d6914?q=80&w=800&auto=format&fit=crop",
+    },
+    {
+      text: "Industrial loft conversion with exposed steel beams",
+      image: "https://images.unsplash.com/photo-1600607686527-6fb886090705?q=80&w=800&auto=format&fit=crop",
+    },
+    {
+      text: "Mediterranean terrace with olive trees at sunset",
+      image: "https://images.unsplash.com/photo-1523413651479-597eb2da0ad6?q=80&w=800&auto=format&fit=crop",
+    },
+  ];
+
+  // Check access
+  const isQuotaBlocked = !!(
+    aiAccess &&
+    !aiAccess.hasAccess &&
+    (aiAccess.remainingTokens === 0 || (aiAccess.message || "").toLowerCase().includes("wyczerpan"))
+  );
+
+  if (aiAccess !== undefined && !aiAccess.hasAccess && team?._id) {
+    if (isQuotaBlocked) {
+      return (
+        <div className="flex min-h-screen items-center justify-center px-4 bg-background/50">
+          <Card className="max-w-lg w-full border-border/50 shadow-2xl rounded-3xl overflow-hidden bg-card/80 backdrop-blur-xl">
+            <CardHeader className="space-y-4 pb-2">
+              <Badge
+                variant="secondary"
+                className="w-fit bg-red-100 text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 border-0 px-3 py-1 rounded-full"
+              >
+                Tokeny wyczerpane
+              </Badge>
+              <CardTitle className="text-2xl font-display tracking-tight">Brak tokenów AI</CardTitle>
+              <CardDescription className="text-base">{aiAccess.message}</CardDescription>
+            </CardHeader>
+          </Card>
+        </div>
+      );
+    }
+    return <AISubscriptionWall teamId={team._id} teamSlug={team.slug} />;
+  }
+
+  if (aiAccess === undefined && team?._id) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  const showEmptyState = !currentSessionId && !isGenerating;
+
+  return (
+    <>
+      <div className="flex h-[calc(100vh-4rem)] bg-background text-foreground overflow-hidden">
+        {/* Main content area */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between gap-3 p-4 border-b border-border/50">
+            <div className="flex items-center gap-2">
+              {currentSession && (
+                <>
+                  <h2 className="font-medium truncate max-w-[300px]">
+                    {currentSession.title || "New visualization"}
+                  </h2>
+                  <Badge variant="secondary" className="text-xs">
+                    {currentSession.imageCount} image{currentSession.imageCount !== 1 ? "s" : ""}
+                  </Badge>
+                </>
+              )}
+            </div>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowHistory(!showHistory)}
+              className="h-8 w-8"
+              title="Toggle history"
+            >
+              <History className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Messages area */}
+          <div className="flex-1 overflow-y-auto px-6">
+            {showEmptyState ? (
+              /* Empty State / Hero */
+              <div className="flex flex-col items-center justify-center min-h-full w-full max-w-2xl mx-auto px-4 py-12 animate-in fade-in zoom-in-95 duration-500">
+                <h1 className="text-4xl md:text-5xl font-medium tracking-tight mb-3 text-center text-foreground font-display">
+                  Visualizations
+                </h1>
+
+                <p className="text-muted-foreground text-center mb-12 text-lg">
+                  Describe your <span className="italic font-serif text-foreground">vision</span>. AI
+                  brings it to{" "}
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600 font-semibold">
+                    life
+                  </span>
+                  .
+                </p>
+
+                {/* Input area using ChatInput */}
+                <ChatInput
+                  message={message}
+                  setMessage={setMessage}
+                  selectedFiles={selectedFiles}
+                  isLoading={isGenerating}
+                  isUploading={isUploading}
+                  inputRef={inputRef}
+                  fileInputRef={fileInputRef}
+                  onSendMessage={handleSendMessage}
+                  onStopResponse={handleStopResponse}
+                  onFileSelect={handleFileSelect}
+                  onRemoveFile={handleRemoveFile}
+                  onAttachmentClick={() => fileInputRef.current?.click()}
+                />
+
+                {/* Suggestions */}
+                <div className="mt-16 w-full flex flex-col items-center max-w-4xl">
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.5 }}
+                    className="flex flex-nowrap overflow-x-auto snap-x snap-mandatory gap-5 pb-4 -mx-6 px-6 max-w-5xl mx-auto no-scrollbar w-full"
+                  >
+                    {suggestions.map((suggestion) => (
+                      <button
+                        key={suggestion.text}
+                        onClick={() => setMessage(suggestion.text)}
+                        className={cn(
+                          "group relative overflow-hidden rounded-[20px] text-left transition-all duration-300 aspect-[5/3] flex-shrink-0 border border-white/40 shadow-lg",
+                          "min-w-[70vw] sm:min-w-[300px] md:min-w-[280px] lg:min-w-[260px] snap-center",
+                          "hover:shadow-2xl hover:-translate-y-1.5 hover:border-white/70"
+                        )}
+                      >
+                        <div className="absolute inset-0 z-0">
+                          <img
+                            src={suggestion.image}
+                            alt=""
+                            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                          />
+                          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+                        </div>
+
+                        <div className="relative z-10 h-full flex flex-col justify-end p-5">
+                          <p className="text-white font-semibold leading-snug text-sm drop-shadow-sm">
+                            {suggestion.text}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </motion.div>
+                </div>
+              </div>
+            ) : (
+              /* Conversation view */
+              <div className="max-w-4xl mx-auto py-6 space-y-6">
+                <AnimatePresence initial={false}>
+                  {sessionMessages?.map((msg) => (
+                    <motion.div
+                      key={msg._id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={cn(
+                        "flex gap-4",
+                        msg.role === "user" ? "justify-end" : "justify-start"
+                      )}
+                    >
+                      {msg.role === "user" ? (
+                        /* User message */
+                        <div className="max-w-[80%] bg-foreground text-background rounded-2xl rounded-tr-sm px-4 py-3">
+                          <p className="text-sm">{msg.text}</p>
+                          {msg.referenceImages && msg.referenceImages.length > 0 && (
+                            <div className="flex gap-2 mt-2">
+                              {msg.referenceImages.map((img, i) => (
+                                <div key={i} className="text-xs opacity-70 flex items-center gap-1">
+                                  <Paperclip className="h-3 w-3" />
+                                  {img.name}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        /* Model message with image */
+                        <div className="max-w-[85%] space-y-3">
+                          {msg.imageUrl && (
+                            <div
+                              className="relative rounded-2xl overflow-hidden border border-border/50 shadow-lg cursor-pointer hover:shadow-xl transition-shadow group"
+                              onClick={() =>
+                                setSelectedLightbox({
+                                  url: msg.imageUrl!,
+                                  prompt: msg.text,
+                                })
+                              }
+                            >
+                              <img
+                                src={msg.imageUrl}
+                                alt={msg.text}
+                                className="w-full max-h-[60vh] object-contain bg-muted/20"
+                              />
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <Sparkles className="h-8 w-8 text-white drop-shadow-lg" />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {msg.text && msg.text !== "Generated image." && (
+                            <div className="bg-muted/50 rounded-2xl rounded-tl-sm px-4 py-3">
+                              <p className="text-sm text-muted-foreground">{msg.text}</p>
+                            </div>
+                          )}
+
+                          {msg.imageUrl && (
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8"
+                                onClick={() => handleDownload(msg.imageUrl!)}
+                              >
+                                <Download className="h-3.5 w-3.5 mr-2" />
+                                Download
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+
+                {/* Generating indicator */}
+                {isGenerating && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex gap-4 justify-start"
+                  >
+                    <div className="bg-muted/50 rounded-2xl px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="h-2.5 w-2.5 rounded-full bg-foreground animate-pulse" />
+                        <span className="text-muted-foreground text-sm">Generating visualization...</span>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
+                <div ref={messagesEndRef} />
+              </div>
+            )}
+          </div>
+
+          {/* Input area for conversation */}
+          {!showEmptyState && (
+            <div className="w-full px-6 py-4 border-t border-border/50">
+              <ChatInput
+                message={message}
+                setMessage={setMessage}
+                selectedFiles={selectedFiles}
+                isLoading={isGenerating}
+                isUploading={isUploading}
+                inputRef={inputRef}
+                fileInputRef={fileInputRef}
+                onSendMessage={handleSendMessage}
+                onStopResponse={handleStopResponse}
+                onFileSelect={handleFileSelect}
+                onRemoveFile={handleRemoveFile}
+                onAttachmentClick={() => fileInputRef.current?.click()}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Sidebar using ChatSidebar */}
+        <ChatSidebar
+          showHistory={showHistory}
+          setShowHistory={setShowHistory}
+          isThreadListLoading={sessions === undefined}
+          hasThreads={(sessions?.length ?? 0) > 0}
+          threadList={threadList}
+          currentThreadId={currentSessionId ?? undefined}
+          onThreadSelect={handleThreadSelect}
+          onNewChat={handleNewChat}
+        />
+      </div>
+
+      {/* Lightbox Modal */}
+      <AnimatePresence>
+        {selectedLightbox && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-background/95 backdrop-blur-xl z-[10000] flex flex-col items-center justify-center p-8"
+            onClick={() => setSelectedLightbox(null)}
+          >
+            <div className="absolute top-4 right-4 z-50">
+              <Button
+                variant="secondary"
+                size="icon"
+                className="rounded-full h-12 w-12 shadow-lg"
+                onClick={() => setSelectedLightbox(null)}
+              >
+                <X className="h-6 w-6" />
+              </Button>
+            </div>
+
+            <motion.div
+              className="relative w-full h-full flex items-center justify-center"
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+            >
+              <img
+                src={selectedLightbox.url}
+                alt={selectedLightbox.prompt}
+                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </motion.div>
+
+            <div
+              className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-3 z-50 bg-black/50 backdrop-blur-md p-2 rounded-full border border-white/10 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Button
+                variant="ghost"
+                className="rounded-full text-white hover:bg-white/20 hover:text-white px-6 h-10"
+                onClick={() => handleDownload(selectedLightbox.url)}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}

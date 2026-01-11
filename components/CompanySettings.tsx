@@ -1,23 +1,35 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { OrganizationProfile } from "@clerk/nextjs";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
+import { motion } from "framer-motion";
 
-import { Sparkles, Zap, BarChart3, TrendingUp, AlertCircle } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { 
+  Sparkles, 
+  BarChart3, 
+  AlertCircle,
+  CreditCard,
+  Building2,
+  Settings,
+  Globe,
+  Check,
+  Shield,
+  Users,
+  Coins,
+  Clock3
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { SubscriptionCard } from "@/components/ui/billing/SubscriptionCard";
-import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { GEMINI_4K_IMAGE_CREDITS } from "@/lib/aiPricing";
+import { Separator } from "@/components/ui/separator";
+import { GEMINI_4K_IMAGE_TOKENS, formatTokens } from "@/lib/aiPricing";
 
 export default function CompanySettings() {
   const params = useParams<{ slug: string }>();
@@ -26,366 +38,508 @@ export default function CompanySettings() {
   const teamData = useQuery(api.teams.getTeamSettings, 
     params.slug ? { teamSlug: params.slug } : "skip"
   );
-  const aiAccess = useQuery(api.stripe.checkTeamAIAccess, teamData?.teamId ? { teamId: teamData.teamId } : "skip");
+  
+  const teamId = teamData?.teamId;
+  
+  const aiAccess = useQuery(api.stripe.checkTeamAIAccess, teamId ? { teamId } : "skip");
+  const subscription = useQuery(api.stripe.getTeamSubscription, teamId ? { teamId } : "skip");
+  const usageBreakdown = useQuery(api.ai.usage.getTeamUsageBreakdown, teamId ? { teamId } : "skip");
   
   const updateTeamSettings = useMutation(api.teams.updateTeamSettings);
-  const createCheckoutSession = useAction(api.stripeActions.createCheckoutSession);
+  const ensureBillingWindow = useMutation(api.stripe.ensureBillingWindow);
+  const createBillingPortalSession = useAction(api.stripeActions.createBillingPortalSession);
+  const ensureSubscriptionSynced = useAction(api.stripeActions.ensureSubscriptionSynced);
+  const teamPayments = useQuery(api.stripe.getTeamPayments, teamId ? { teamId } : "skip");
   
   // Local state for team settings
   const [teamSettings, setTeamSettings] = useState<{
     currency: "USD" | "EUR" | "PLN" | "GBP" | "CAD" | "AUD" | "JPY" | "CHF" | "SEK" | "NOK" | "DKK" | "CZK" | "HUF" | "CNY" | "INR" | "BRL" | "MXN" | "KRW" | "SGD" | "HKD";
-    isPublic: boolean;
-    allowGuestAccess: boolean;
   }>({
     currency: "PLN",
-    isPublic: false,
-    allowGuestAccess: false,
   });
-  const [upgradingPlan, setUpgradingPlan] = useState(false);
+  const [savingPreferences, setSavingPreferences] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const billingWindowEnsuredRef = useRef(false);
 
   // Synchronize data from backend
   useEffect(() => {
     if (teamData) {
       setTeamSettings({
         currency: (teamData.currency as "USD" | "EUR" | "PLN" | "GBP" | "CAD" | "AUD" | "JPY" | "CHF" | "SEK" | "NOK" | "DKK" | "CZK" | "HUF" | "CNY" | "INR" | "BRL" | "MXN" | "KRW" | "SGD" | "HKD") || "PLN",
-        isPublic: teamData.settings.isPublic,
-        allowGuestAccess: teamData.settings.allowGuestAccess,
       });
     }
   }, [teamData]);
+
+  useEffect(() => {
+    if (subscription && subscription.stripeCustomerId && subscription.subscriptionPlan === "free") {
+      ensureSubscriptionSynced({ teamId: subscription.teamId }).catch(console.error);
+    }
+  }, [subscription, ensureSubscriptionSynced]);
+
+  useEffect(() => {
+    if (!subscription || !teamData?.teamId || billingWindowEnsuredRef.current) return;
+
+    const start = subscription.currentPeriodStart;
+    const end = subscription.currentPeriodEnd;
+    const now = Date.now();
+    const invalidWindow = !start || !end || end <= start || end < now;
+
+    if (invalidWindow) {
+      billingWindowEnsuredRef.current = true;
+      ensureBillingWindow({ teamId: teamData.teamId }).catch(console.error);
+    }
+  }, [subscription, teamData?.teamId, ensureBillingWindow]);
 
   if (!teamData) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        <p className="text-sm text-muted-foreground animate-pulse">Loading settings...</p>
       </div>
     );
   }
 
   const handleSaveTeamSettings = async () => {
+    setSavingPreferences(true);
     try {
       await updateTeamSettings({
         teamId: teamData.teamId,
         currency: teamSettings.currency,
-        settings: {
-          isPublic: teamSettings.isPublic,
-          allowGuestAccess: teamSettings.allowGuestAccess,
-        },
       });
-      toast.success("Settings saved");
+      toast.success("Preferences updated successfully");
     } catch (error) {
-      toast.error("Failed to save settings");
+      toast.error("Failed to update preferences");
       console.error(error);
+    } finally {
+      setSavingPreferences(false);
     }
   };
 
+  const handleManageSubscription = async () => {
+    if (!teamData?.teamId) return;
+
+    setPortalLoading(true);
+    try {
+      const result = await createBillingPortalSession({
+        teamId: teamData.teamId,
+      });
+
+      if (result.url) {
+        window.location.href = result.url;
+      } else {
+        toast.error("Failed to open billing portal");
+      }
+    } catch (error) {
+      console.error("Error creating billing portal session:", error);
+      toast.error("Error opening billing portal");
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+
+  const containerVariants = {
+    hidden: { opacity: 0, y: 10 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } }
+  };
+
+  const remainingCredits = aiAccess?.remainingTokens ?? 0;
+  const totalCredits = aiAccess?.totalTokens ?? remainingCredits;
+  const usedCredits = usageBreakdown?.totalTokens ?? Math.max(0, totalCredits - remainingCredits);
+  const usagePercent = totalCredits > 0 ? Math.min(100, Math.round((usedCredits / totalCredits) * 100)) : 0;
+  const planStatus = subscription?.subscriptionStatus;
+  const subscriptionLabel = planStatus === "trialing" ? "Trial" : subscription?.planDetails?.name || "Free";
+  const subscriptionSubtext = planStatus === "trialing"
+    ? "Active trial subscription"
+    : planStatus === "active"
+      ? "Active subscription"
+      : "No active subscription";
+
   return (
-    <div className="min-h-screen bg-background/30">
-      <div className="space-y-12 p-8 max-w-6xl mx-auto">
+    <div className="min-h-screen bg-background pb-20">
+      <div className="max-w-5xl mx-auto px-6 py-10 space-y-8">
         
-        <div className="flex flex-col gap-1">
-          <h1 className="text-3xl font-light tracking-tight">Settings</h1>
-          <p className="text-muted-foreground font-light">Manage your organization and billing.</p>
+        {/* Header */}
+        <div className="flex flex-col gap-2 border-b border-border/40 pb-6">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+              <Building2 className="h-5 w-5" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">Organization Settings</h1>
+              <p className="text-sm text-muted-foreground">Manage your team profile, billing, and preferences.</p>
+            </div>
+          </div>
         </div>
 
         <Tabs defaultValue="organization" className="w-full">
-          <TabsList className="bg-transparent p-0 gap-8 border-b border-border/20 w-full justify-start rounded-none h-auto mb-12">
-            {["organization", "team", "subscription"].map((tab) => (
-              <TabsTrigger 
-                key={tab}
-                value={tab} 
-                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-foreground rounded-none px-0 py-3 text-muted-foreground/60 data-[state=active]:text-foreground transition-all hover:text-foreground/80 capitalize font-medium"
-              >
-                {tab === "subscription" ? "Billing & AI" : tab}
-              </TabsTrigger>
-            ))}
+          <TabsList className="w-full justify-start h-auto p-1 bg-muted/30 rounded-lg border border-border/40 mb-8 overflow-x-auto flex-nowrap">
+            <TabsTrigger 
+              value="organization" 
+              className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all rounded-md flex items-center gap-2 justify-center"
+            >
+              <Users className="h-4 w-4" />
+              Organization
+            </TabsTrigger>
+            <TabsTrigger 
+              value="preferences" 
+              className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all rounded-md flex items-center gap-2 justify-center"
+            >
+              <Settings className="h-4 w-4" />
+              Preferences
+            </TabsTrigger>
+            <TabsTrigger 
+              value="billing" 
+              className="flex-1 min-w-[120px] py-2.5 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all rounded-md flex items-center gap-2 justify-center"
+            >
+              <CreditCard className="h-4 w-4" />
+              Billing & AI
+            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="organization" className="space-y-8 animate-in fade-in-50 duration-500 slide-in-from-bottom-2">
-            <div className="grid gap-8">
-              <div className="space-y-2">
-                <h2 className="text-lg font-medium tracking-tight">Organization Profile</h2>
-                <p className="text-sm text-muted-foreground font-light max-w-xl">
-                  Manage your organization's general information and members.
-                </p>
-              </div>
-              
-              <Card className="border-border/20 shadow-none bg-card/30">
-                <CardContent className="p-0">
-                  <OrganizationProfile 
-                    routing="hash"
-                    appearance={{
-                      elements: {
-                        rootBox: "w-full",
-                        card: "shadow-none border-none bg-transparent w-full",
-                        navbar: "hidden",
-                        pageScrollBox: "p-0",
-                        headerTitle: "hidden",
-                        headerSubtitle: "hidden",
-                        viewSectionTitle: "text-base font-medium mb-4",
-                        formButtonPrimary: "bg-foreground text-background hover:opacity-90 transition-opacity",
-                      }
-                    }}
-                  />
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="team" className="space-y-12 animate-in fade-in-50 duration-500 slide-in-from-bottom-2">
-            <div className="grid gap-12 md:grid-cols-2">
-              {/* Left Column: Preferences */}
-              <div className="space-y-8">
-                <div className="space-y-2">
-                  <h2 className="text-lg font-medium tracking-tight">Preferences</h2>
-                  <p className="text-sm text-muted-foreground font-light">
-                    Team operation settings.
+          {/* Organization Tab */}
+          <TabsContent value="organization">
+            <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
+              <div className="grid gap-6">
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-lg font-medium">Organization Profile</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Update your organization's logo, name, and manage members.
                   </p>
                 </div>
                 
-                <Card className="border-border/20 shadow-none bg-card/30">
-                  <CardContent className="p-6 space-y-6">
-                    <div className="space-y-3">
-                      <Label htmlFor="currency" className="text-sm font-normal text-muted-foreground">Default Currency</Label>
-                      <Select 
+                <Card className="border-border/40 shadow-sm overflow-hidden">
+                  <CardContent className="p-0">
+                    <OrganizationProfile 
+                      routing="hash"
+                    />
+                  </CardContent>
+                </Card>
+              </div>
+            </motion.div>
+          </TabsContent>
+
+          {/* Preferences Tab */}
+          <TabsContent value="preferences">
+            <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-8">
+              <div className="grid gap-6 max-w-2xl">
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-lg font-medium">Regional Settings</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Configure your region and currency preferences.
+                  </p>
+                </div>
+                
+                <Card className="border-border/40 shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="text-base font-medium flex items-center gap-2">
+                      <Globe className="h-4 w-4 text-primary" />
+                      Default Currency
+                    </CardTitle>
+                    <CardDescription>
+                      Select the currency used for project estimates and financial reports.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="currency">Currency</Label>
+                      <Select
                         value={teamSettings.currency}
                         onValueChange={(value) => setTeamSettings({ ...teamSettings, currency: value as typeof teamSettings.currency })}
                       >
-                        <SelectTrigger className="w-full bg-transparent border-border/20 h-10">
+                        <SelectTrigger id="currency" className="w-full bg-background/50">
                           <SelectValue placeholder="Select currency" />
                         </SelectTrigger>
                         <SelectContent>
-                          {["USD", "EUR", "PLN", "GBP", "CAD"].map(curr => (
-                            <SelectItem key={curr} value={curr}>{curr}</SelectItem>
+                          {[
+                            { value: "USD", label: "US Dollar ($)" },
+                            { value: "EUR", label: "Euro (€)" },
+                            { value: "PLN", label: "Polish Złoty (zł)" },
+                            { value: "GBP", label: "British Pound (£)" },
+                            { value: "CAD", label: "Canadian Dollar (C$)" },
+                            { value: "AUD", label: "Australian Dollar (A$)" },
+                            { value: "JPY", label: "Japanese Yen (¥)" },
+                          ].map(curr => (
+                            <SelectItem key={curr.value} value={curr.value}>
+                              <span className="font-medium">{curr.value}</span> 
+                              <span className="text-muted-foreground ml-2 text-xs">({curr.label})</span>
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
                   </CardContent>
-                </Card>
-
-                <Card className="border-border/20 shadow-none bg-card/30">
-                   <CardHeader className="px-6 pt-6 pb-2">
-                      <CardTitle className="text-sm font-medium">Visibility</CardTitle>
-                    </CardHeader>
-                  <CardContent className="p-6 space-y-6">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-sm font-normal text-muted-foreground">Public Team</Label>
-                      <Switch 
-                        checked={teamSettings.isPublic}
-                        onCheckedChange={(checked) => setTeamSettings({ ...teamSettings, isPublic: checked })}
-                      />
-                    </div>
-                    <div className="h-px bg-border/10" />
-                    <div className="flex items-center justify-between">
-                      <Label className="text-sm font-normal text-muted-foreground">Guest Access</Label>
-                      <Switch 
-                        checked={teamSettings.allowGuestAccess}
-                        onCheckedChange={(checked) => setTeamSettings({ ...teamSettings, allowGuestAccess: checked })}
-                      />
-                    </div>
-                  </CardContent>
-                  <CardFooter className="bg-muted/5 border-t border-border/10 p-4">
-                    <Button onClick={handleSaveTeamSettings} className="ml-auto bg-foreground text-background hover:opacity-90 h-9 px-6 font-normal">
-                      Save
+                  <CardFooter className="bg-muted/30 border-t border-border/40 px-6 py-4 flex justify-between items-center">
+                    <p className="text-xs text-muted-foreground">
+                      Changes apply to all new projects.
+                    </p>
+                    <Button 
+                      onClick={handleSaveTeamSettings} 
+                      disabled={savingPreferences}
+                      className="min-w-[100px]"
+                    >
+                      {savingPreferences ? (
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent" />
+                      ) : (
+                        <>
+                          <Check className="h-4 w-4 mr-2" />
+                          Save Changes
+                        </>
+                      )}
                     </Button>
                   </CardFooter>
                 </Card>
-              </div>
 
-              {/* Right Column: Roles */}
-              <div className="space-y-8">
-                <div className="space-y-2">
-                  <h2 className="text-lg font-medium tracking-tight">Roles</h2>
-                  <p className="text-sm text-muted-foreground font-light">
-                    Access levels overview.
+                {/* Role Information Block */}
+                <div className="mt-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Shield className="h-4 w-4 text-muted-foreground" />
+                    <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Role Permissions</h3>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    {[
+                      { role: "Admin", desc: "Full access to all settings, billing, and members.", color: "bg-blue-500/10 text-blue-600 border-blue-200" },
+                      { role: "Member", desc: "Can create and manage projects and content.", color: "bg-emerald-500/10 text-emerald-600 border-emerald-200" },
+                      { role: "Customer", desc: "Limited view-only or restricted access.", color: "bg-orange-500/10 text-orange-600 border-orange-200" }
+                    ].map((item) => (
+                      <div key={item.role} className={`rounded-lg border px-4 py-3 ${item.color}`}>
+                        <div className="font-semibold text-sm mb-1">{item.role}</div>
+                        <div className="text-xs opacity-80 leading-snug">{item.desc}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </TabsContent>
+
+          {/* Billing & AI Tab */}
+          <TabsContent value="billing">
+            <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-8">
+              <div className="space-y-6">
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-lg font-medium">Credits & Billing</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Manage your credits and view transaction history.
                   </p>
                 </div>
 
-                <div className="grid gap-3">
-                  {[
-                    { role: "Admin", desc: "Full access to all settings.", color: "bg-blue-500" },
-                    { role: "Member", desc: "Can manage projects and content.", color: "bg-emerald-500" },
-                    { role: "Customer", desc: "Limited project access.", color: "bg-orange-500" }
-                  ].map((item) => (
-                    <div key={item.role} className="flex items-center gap-4 rounded-lg border border-border/10 bg-card/20 p-4">
-                      <div className={`h-2 w-2 rounded-full ${item.color} shrink-0`} />
-                      <div>
-                        <h4 className="text-sm font-medium">{item.role}</h4>
-                        <p className="text-xs text-muted-foreground font-light">{item.desc}</p>
+                <div className="grid gap-6 md:grid-cols-2">
+                  <Card className="border-border/40 shadow-sm">
+                    <CardHeader className="pb-4">
+                      <CardTitle className="text-base font-medium flex items-center gap-2">
+                        <Coins className="h-4 w-4" />
+                        Available Credits
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-0">
+                      <div className="text-4xl font-semibold tracking-tight tabular-nums">
+                        {remainingCredits.toLocaleString()} credits
                       </div>
-                    </div>
-                  ))}
+                      <p className="text-xs text-muted-foreground mt-2">
+                        {aiAccess?.hasAccess ? "Active balance" : "No active credits"}
+                      </p>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-border/40 shadow-sm">
+                    <CardHeader className="pb-4">
+                      <CardTitle className="text-base font-medium flex items-center gap-2">
+                        <CreditCard className="h-4 w-4" />
+                        Subscription
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4 pt-0">
+                      <div className="space-y-1">
+                        <div className="text-2xl font-semibold tracking-tight">{subscriptionLabel}</div>
+                        <p className="text-sm text-muted-foreground">{subscriptionSubtext}</p>
+                      </div>
+                      <Button
+                        onClick={handleManageSubscription}
+                        disabled={portalLoading}
+                        className="w-full"
+                      >
+                        {portalLoading ? "Opening..." : "Manage Subscription"}
+                      </Button>
+                    </CardContent>
+                  </Card>
                 </div>
+
+                <Card className="border-border/40 shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="text-base font-medium">Transaction History</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {teamPayments && teamPayments.length > 0 ? (
+                      <div className="space-y-4">
+                        {teamPayments.map((payment) => {
+                          const amount = payment.amount / 100;
+                          const currency = payment.currency?.toUpperCase() || "USD";
+                          const formatted = new Intl.NumberFormat("en-US", {
+                            style: "currency",
+                            currency,
+                          }).format(amount);
+                          const createdAt = new Date(payment.created * 1000).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          });
+
+                          return (
+                            <div
+                              key={payment.stripePaymentIntentId}
+                              className="flex flex-col gap-1 rounded-lg border border-border/40 px-4 py-3 text-sm"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-medium">{formatted}</span>
+                                <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                                  {payment.status}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                <span>{createdAt}</span>
+                                <span>{payment.stripePaymentIntentId.slice(-8)}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center gap-2 py-8 text-muted-foreground">
+                        <Clock3 className="h-6 w-6" />
+                        <p className="text-sm">No transactions yet</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
-            </div>
-          </TabsContent>
 
-          <TabsContent value="subscription" className="space-y-12 animate-in fade-in-50 duration-500 slide-in-from-bottom-2">
-            
-            {/* AI Usage */}
-            {aiAccess && aiAccess.subscriptionLimits?.hasAIFeatures && (
-              <Card className="overflow-hidden border-border/10 shadow-sm bg-card/40">
-                <CardContent className="p-0">
-                  <div className="grid lg:grid-cols-2 border-border/10">
-                    
-                    {/* Left: Usage */}
-                    <div className="p-8 lg:p-10 space-y-10 lg:border-r border-border/10">
-                      {(() => {
-                        const totalCredits = aiAccess.totalCredits || 0;
-                        const usedCredits = aiAccess.usedCredits || 0;
-                        const remainingCredits = aiAccess.remainingCredits || 0;
-                        const extraCredits = aiAccess.extraCredits || 0;
-                        const baseCredits = totalCredits - extraCredits;
-                        const percent = totalCredits ? Math.min(100, (usedCredits / totalCredits) * 100) : 0;
+              <Separator />
 
+              <div className="space-y-6">
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-lg font-medium">Usage</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Monitor your usage, costs, and resource consumption across all services.
+                  </p>
+                </div>
+
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <Card className="border-border/40 shadow-sm">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base font-medium">Credits Overview</CardTitle>
+                      <CardDescription>
+                        {usageBreakdown?.periodStart
+                          ? new Date(usageBreakdown.periodStart).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                          : "Current period"}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div>
+                        <div className="text-xl font-semibold tabular-nums">{formatTokens(usedCredits)}</div>
+                        <p className="text-xs text-muted-foreground">credits used this billing period</p>
+                      </div>
+                      <div>
+                        <div className="text-xl font-semibold tabular-nums">{formatTokens(remainingCredits)}</div>
+                        <p className="text-xs text-muted-foreground">credits remaining this billing period</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-border/40 shadow-sm">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base font-medium flex items-center gap-2">
+                        Usage Limits & Warnings
+                        <span className="text-muted-foreground" title="Limits reset with each billing period.">
+                          <AlertCircle className="h-3.5 w-3.5" />
+                        </span>
+                      </CardTitle>
+                      <CardDescription>
+                        {usageBreakdown?.periodEnd
+                          ? `${new Date(usageBreakdown.periodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+                          : "Billing period"}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Subscription Plan</span>
+                        <span className="font-medium">{subscriptionLabel}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Monthly Cost</span>
+                        <span className="font-medium">
+                          {subscription?.planDetails?.price ? `$${subscription.planDetails.price}` : "Free"}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>{formatTokens(usedCredits)} used</span>
+                          <span>{formatTokens(totalCredits)} total</span>
+                        </div>
+                        <Progress value={usagePercent} className="h-2 bg-muted/30" indicatorClassName="bg-foreground" />
+                        <p className="text-xs text-muted-foreground">{usagePercent}% used</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <Card className="border-border/40 shadow-sm">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base font-medium">Credit Breakdown</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between text-sm text-muted-foreground">
+                      <span>Credits Used</span>
+                      <span>
+                        {formatTokens(usedCredits)} of {formatTokens(totalCredits)} credits
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted/30 flex">
+                      {[
+                        { key: "assistant", color: "bg-blue-500" },
+                        { key: "visualizations", color: "bg-emerald-500" },
+                        { key: "other", color: "bg-amber-500" },
+                      ].map((segment) => {
+                        const tokens = usageBreakdown?.byFeature?.[segment.key] || 0;
+                        const percent = usedCredits > 0 ? (tokens / usedCredits) * 100 : 0;
+                        if (percent <= 0) return null;
                         return (
-                          <>
-                            <div>
-                              <div className="flex items-center justify-between mb-6">
-                                <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/70">Wykorzystanie kredytów</span>
-                                {aiAccess.hasAccess && <Badge variant="secondary" className="bg-foreground text-background font-normal rounded-full px-3">Aktywne</Badge>}
-                              </div>
-
-                              <div className="flex items-baseline gap-2 mb-2">
-                                <span className="text-6xl font-extralight tracking-tight">
-                                  {usedCredits}
-                                </span>
-                                <span className="text-lg text-muted-foreground/50 font-light">
-                                  / {totalCredits} kredytów
-                                </span>
-                              </div>
-
-                              <div className="space-y-2 pt-4">
-                                <Progress value={percent} className="h-1 bg-muted/20" indicatorClassName="bg-foreground" />
-                                <div className="flex justify-between text-xs text-muted-foreground/60 font-light">
-                                  <span>Odnawia się {aiAccess.billingWindowStart ? new Date(aiAccess.billingWindowStart).toLocaleDateString() : "N/A"}</span>
-                                  <span>{remainingCredits} pozostało</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-12 pt-4">
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <BarChart3 className="h-3 w-3 text-muted-foreground" />
-                                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">Limit planu</span>
-                                </div>
-                                <div className="text-2xl font-light">{baseCredits}</div>
-                                <div className="text-xs text-muted-foreground/50">Miesięcznie</div>
-                              </div>
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <TrendingUp className="h-3 w-3 text-muted-foreground" />
-                                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">Dodatkowe kredyty</span>
-                                </div>
-                                <div className="text-2xl font-light text-violet-600 dark:text-violet-400">
-                                  +{extraCredits}
-                                </div>
-                                <div className="text-xs text-muted-foreground/50">Doładowanie</div>
-                              </div>
-                            </div>
-
-                            <div className="bg-muted/10 rounded-lg p-4 flex items-start gap-3">
-                               <AlertCircle className="h-4 w-4 text-muted-foreground/50 mt-0.5" />
-                               <div className="space-y-1">
-                                  <p className="text-sm font-medium">Koszt generacji</p>
-                                  <p className="text-xs text-muted-foreground/70 font-light leading-relaxed">
-                                    ~{GEMINI_4K_IMAGE_CREDITS} kredytów za obraz 4K.
-                                    Chat zależy od długości konwersacji.
-                                  </p>
-                               </div>
-                            </div>
-                          </>
+                          <div
+                            key={segment.key}
+                            className={segment.color}
+                            style={{ width: `${percent}%` }}
+                          />
                         );
-                      })()}
+                      })}
                     </div>
-
-                    {/* Right: Upgrade path */}
-                    <div className="p-8 lg:p-10 bg-muted/5 flex flex-col h-full">
-                       <div className="flex items-center gap-2 mb-8">
-                          <Sparkles className="h-4 w-4 text-amber-500 fill-amber-500" />
-                          <span className="text-sm font-medium">Upgrade AI Capacity</span>
-                       </div>
-
-                       <div className="space-y-4 flex-1">
-                          <div className="rounded-xl border border-amber-200/50 bg-amber-50/40 p-4">
-                            <div className="flex items-center gap-2 mb-2">
-                              <Zap className="h-4 w-4 text-amber-500" />
-                              <p className="text-sm font-medium text-amber-800">AI Scale Plan</p>
+                    <div className="space-y-3">
+                      {[
+                        { key: "assistant", label: "AI Assistant", icon: Sparkles, color: "text-blue-500" },
+                        { key: "visualizations", label: "Visualizations", icon: BarChart3, color: "text-emerald-500" },
+                        { key: "other", label: "Other", icon: AlertCircle, color: "text-amber-500" },
+                      ].map((item) => {
+                        const tokens = usageBreakdown?.byFeature?.[item.key] || 0;
+                        const percent = usedCredits > 0 ? (tokens / usedCredits) * 100 : 0;
+                        const Icon = item.icon;
+                        return (
+                          <div key={item.key} className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2">
+                              <Icon className={`h-4 w-4 ${item.color}`} />
+                              <span>{item.label}</span>
                             </div>
-                            <p className="text-sm text-amber-800/80">
-                              Move to the AI Scale plan for $99/mo and get 5x more AI generations. No manual credit top-ups needed.
-                            </p>
-                          </div>
-                          <div className="flex flex-col gap-2">
-                            <div className="flex justify-between text-sm text-muted-foreground/80">
-                              <span>AI budget</span>
-                              <span>5x vs AI Pro</span>
-                            </div>
-                            <div className="flex justify-between text-sm text-muted-foreground/80">
-                              <span>Price</span>
-                              <span>$99 / month</span>
+                            <div className="text-muted-foreground">
+                              {formatTokens(tokens)} credits ({percent.toFixed(1)}%)
                             </div>
                           </div>
-                       </div>
-
-                       <div className="mt-8 pt-6">
-                          <Button
-                            className="w-full h-12 bg-violet-600 hover:bg-violet-700 text-white font-medium rounded-lg transition-all"
-                            disabled={upgradingPlan || !teamData?.teamId}
-                            onClick={async () => {
-                              if (!teamData?.teamId) return;
-                              const priceId = process.env.NEXT_PUBLIC_STRIPE_AI_SCALE_PRICE_ID;
-                              if (!priceId) {
-                                toast.error("AI Scale price is not configured.");
-                                return;
-                              }
-                              setUpgradingPlan(true);
-                              try {
-                                const result = await createCheckoutSession({
-                                  teamId: teamData.teamId,
-                                  priceId,
-                                });
-                                if (result?.url) {
-                                  window.location.href = result.url;
-                                } else {
-                                  toast.error("Failed to start upgrade");
-                                }
-                              } catch {
-                                toast.error("Failed to start upgrade");
-                              } finally {
-                                setUpgradingPlan(false);
-                              }
-                            }}
-                          >
-                             {upgradingPlan ? (
-                               <div className="flex items-center gap-2">
-                                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                                 Processing...
-                               </div>
-                             ) : (
-                               <div className="flex items-center gap-2">
-                                 <Sparkles className="h-4 w-4 fill-white/20" />
-                                 Upgrade to AI Scale for $99
-                               </div>
-                             )}
-                          </Button>
-                          <p className="text-[10px] text-center text-muted-foreground/40 mt-3 uppercase tracking-wider">
-                            Secure payment via Stripe
-                          </p>
-                       </div>
+                        );
+                      })}
                     </div>
-
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-            
-            <div className="space-y-6">
-              <h2 className="text-xl font-medium tracking-tight">Subscription Plan</h2>
-              <SubscriptionCard teamId={teamData.teamId} />
-            </div>
+                    <p className="text-xs text-muted-foreground">
+                      {GEMINI_4K_IMAGE_TOKENS.toLocaleString()} tokens per 4K image.
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            </motion.div>
           </TabsContent>
         </Tabs>
       </div>
