@@ -42,7 +42,7 @@ export function Navbar() {
       <div className="flex items-center gap-4">
         <SignedIn>
           <Button variant="ghost" asChild className="rounded-full">
-            <Link href="/organization">Dashboard</Link>
+            <Link href="/dashboard">Dashboard</Link>
           </Button>
           <UserButton appearance={{ elements: { userButtonAvatarBox: "rounded-full" } }} />
         </SignedIn>

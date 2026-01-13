@@ -10,7 +10,7 @@ import { useMemo } from "react";
 export function HeroSection() {
   const { user } = useUser();
 
-  const primaryCtaHref = useMemo(() => (user ? "/organization" : "/sign-up"), [user]);
+  const primaryCtaHref = useMemo(() => (user ? "/dashboard" : "/sign-up"), [user]);
 
   return (
     <section className="relative overflow-hidden bg-[#FAF7F2]">

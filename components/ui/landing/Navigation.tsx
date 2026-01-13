@@ -57,7 +57,7 @@ const Navigation = () => {
                 variant="ghost"
                 className="rounded-full border border-transparent px-5 py-2 text-sm font-medium text-[#1A1A1A] hover:bg-[#F2EEE6]"
               >
-                <Link href="/organization">Dashboard</Link>
+                <Link href="/dashboard">Dashboard</Link>
               </Button>
               <UserButton appearance={{ elements: { userButtonAvatarBox: "rounded-full border border-[#E7E2D9]" } }} />
             </div>
@@ -85,7 +85,7 @@ const Navigation = () => {
                 variant="ghost"
                 className="rounded-full border border-transparent px-5 py-2 text-sm font-medium text-[#1A1A1A] hover:bg-[#F2EEE6]"
               >
-                <Link href="/organization">Dashboard</Link>
+                <Link href="/dashboard">Dashboard</Link>
               </Button>
               <UserButton appearance={{ elements: { userButtonAvatarBox: "rounded-full border border-[#E7E2D9]" } }} />
             </div>
@@ -130,7 +130,7 @@ const Navigation = () => {
                       asChild
                       className="rounded-full border border-[#E7E2D9] bg-white px-6 py-3 text-sm font-medium text-foreground shadow-sm"
                     >
-                      <Link href="/organization">Dashboard</Link>
+                      <Link href="/dashboard">Dashboard</Link>
                     </Button>
                     <UserButton />
                   </div>
