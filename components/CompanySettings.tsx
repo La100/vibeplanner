@@ -8,9 +8,9 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 
-import { 
-  Sparkles, 
-  BarChart3, 
+import {
+  Sparkles,
+  BarChart3,
   AlertCircle,
   CreditCard,
   Building2,
@@ -20,7 +20,9 @@ import {
   Shield,
   Users,
   Coins,
-  Clock3
+  Clock3,
+  HardDrive,
+  FolderOpen
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -44,6 +46,8 @@ export default function CompanySettings() {
   const aiAccess = useQuery(api.stripe.checkTeamAIAccess, teamId ? { teamId } : "skip");
   const subscription = useQuery(api.stripe.getTeamSubscription, teamId ? { teamId } : "skip");
   const usageBreakdown = useQuery(api.ai.usage.getTeamUsageBreakdown, teamId ? { teamId } : "skip");
+  const storageUsage = useQuery(api.files.getTeamStorageUsage, teamId ? { teamId } : "skip");
+  const resourceUsage = useQuery(api.teams.getTeamResourceUsage, teamId ? { teamId } : "skip");
   
   const updateTeamSettings = useMutation(api.teams.updateTeamSettings);
   const ensureBillingWindow = useMutation(api.stripe.ensureBillingWindow);
@@ -423,10 +427,13 @@ export default function CompanySettings() {
                   </p>
                 </div>
 
-                <div className="grid gap-6 lg:grid-cols-2">
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                   <Card className="border-border/40 shadow-sm">
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-base font-medium">Credits Overview</CardTitle>
+                      <CardTitle className="text-base font-medium flex items-center gap-2">
+                        <Coins className="h-4 w-4 text-blue-500" />
+                        AI Credits
+                      </CardTitle>
                       <CardDescription>
                         {usageBreakdown?.periodStart
                           ? new Date(usageBreakdown.periodStart).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
@@ -440,7 +447,21 @@ export default function CompanySettings() {
                       </div>
                       <div>
                         <div className="text-xl font-semibold tabular-nums">{formatTokens(remainingCredits)}</div>
-                        <p className="text-xs text-muted-foreground">credits remaining this billing period</p>
+                        <p className="text-xs text-muted-foreground">credits remaining</p>
+                      </div>
+                      <div className="space-y-2 pt-2">
+                        <Progress
+                          value={usagePercent}
+                          className="h-2 bg-muted/30"
+                          indicatorClassName={
+                            usagePercent >= 90
+                              ? "bg-red-500"
+                              : usagePercent >= 75
+                                ? "bg-orange-500"
+                                : "bg-blue-500"
+                          }
+                        />
+                        <p className="text-xs text-muted-foreground">{usagePercent}% used</p>
                       </div>
                     </CardContent>
                   </Card>
@@ -448,20 +469,134 @@ export default function CompanySettings() {
                   <Card className="border-border/40 shadow-sm">
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base font-medium flex items-center gap-2">
-                        Usage Limits & Warnings
+                        <HardDrive className="h-4 w-4 text-emerald-500" />
+                        Storage
+                      </CardTitle>
+                      <CardDescription>
+                        All projects combined
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div>
+                        <div className="text-xl font-semibold tabular-nums">
+                          {storageUsage?.usedGB.toFixed(2) ?? "0.00"} GB
+                        </div>
+                        <p className="text-xs text-muted-foreground">used of {storageUsage?.limitGB ?? 0} GB total</p>
+                      </div>
+                      <div className="space-y-2 pt-2">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>{storageUsage?.usedGB.toFixed(2) ?? "0.00"} GB used</span>
+                          <span>{storageUsage?.limitGB ?? 0} GB total</span>
+                        </div>
+                        <Progress
+                          value={storageUsage?.percentUsed ?? 0}
+                          className="h-2 bg-muted/30"
+                          indicatorClassName={
+                            (storageUsage?.percentUsed ?? 0) >= 90
+                              ? "bg-red-500"
+                              : (storageUsage?.percentUsed ?? 0) >= 75
+                                ? "bg-orange-500"
+                                : "bg-emerald-500"
+                          }
+                        />
+                        <p className="text-xs text-muted-foreground">{storageUsage?.percentUsed.toFixed(1) ?? "0.0"}% used</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-border/40 shadow-sm">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base font-medium flex items-center gap-2">
+                        <FolderOpen className="h-4 w-4 text-purple-500" />
+                        Projects
+                      </CardTitle>
+                      <CardDescription>
+                        Active projects
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div>
+                        <div className="text-xl font-semibold tabular-nums">
+                          {resourceUsage?.projectsUsed ?? 0} projects
+                        </div>
+                        <p className="text-xs text-muted-foreground">of {resourceUsage?.projectsLimit ?? 0} total</p>
+                      </div>
+                      <div className="space-y-2 pt-2">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>{resourceUsage?.projectsUsed ?? 0} used</span>
+                          <span>{resourceUsage?.projectsLimit ?? 0} total</span>
+                        </div>
+                        <Progress
+                          value={resourceUsage?.projectsPercentUsed ?? 0}
+                          className="h-2 bg-muted/30"
+                          indicatorClassName={
+                            (resourceUsage?.projectsPercentUsed ?? 0) >= 90
+                              ? "bg-red-500"
+                              : (resourceUsage?.projectsPercentUsed ?? 0) >= 75
+                                ? "bg-orange-500"
+                                : "bg-purple-500"
+                          }
+                        />
+                        <p className="text-xs text-muted-foreground">{resourceUsage?.projectsPercentUsed ?? 0}% used</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-border/40 shadow-sm">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base font-medium flex items-center gap-2">
+                        <Users className="h-4 w-4 text-orange-500" />
+                        Team Members
+                      </CardTitle>
+                      <CardDescription>
+                        Active members
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div>
+                        <div className="text-xl font-semibold tabular-nums">
+                          {resourceUsage?.membersUsed ?? 0} members
+                        </div>
+                        <p className="text-xs text-muted-foreground">of {resourceUsage?.membersLimit ?? 0} total</p>
+                      </div>
+                      <div className="space-y-2 pt-2">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>{resourceUsage?.membersUsed ?? 0} used</span>
+                          <span>{resourceUsage?.membersLimit ?? 0} total</span>
+                        </div>
+                        <Progress
+                          value={resourceUsage?.membersPercentUsed ?? 0}
+                          className="h-2 bg-muted/30"
+                          indicatorClassName={
+                            (resourceUsage?.membersPercentUsed ?? 0) >= 90
+                              ? "bg-red-500"
+                              : (resourceUsage?.membersPercentUsed ?? 0) >= 75
+                                ? "bg-orange-500"
+                                : "bg-orange-500"
+                          }
+                        />
+                        <p className="text-xs text-muted-foreground">{resourceUsage?.membersPercentUsed ?? 0}% used</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-border/40 shadow-sm md:col-span-2 lg:col-span-1">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base font-medium flex items-center gap-2">
+                        Subscription Plan
                         <span className="text-muted-foreground" title="Limits reset with each billing period.">
                           <AlertCircle className="h-3.5 w-3.5" />
                         </span>
                       </CardTitle>
                       <CardDescription>
                         {usageBreakdown?.periodEnd
-                          ? `${new Date(usageBreakdown.periodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+                          ? `Next billing: ${new Date(usageBreakdown.periodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
                           : "Billing period"}
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">Subscription Plan</span>
+                        <span className="text-muted-foreground">Plan</span>
                         <span className="font-medium">{subscriptionLabel}</span>
                       </div>
                       <div className="flex items-center justify-between text-sm">
@@ -470,13 +605,15 @@ export default function CompanySettings() {
                           {subscription?.planDetails?.price ? `$${subscription.planDetails.price}` : "Free"}
                         </span>
                       </div>
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{formatTokens(usedCredits)} used</span>
-                          <span>{formatTokens(totalCredits)} total</span>
-                        </div>
-                        <Progress value={usagePercent} className="h-2 bg-muted/30" indicatorClassName="bg-foreground" />
-                        <p className="text-xs text-muted-foreground">{usagePercent}% used</p>
+                      <div className="pt-2">
+                        <Button
+                          onClick={handleManageSubscription}
+                          disabled={portalLoading}
+                          variant="outline"
+                          className="w-full"
+                        >
+                          {portalLoading ? "Opening..." : "Manage Subscription"}
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>

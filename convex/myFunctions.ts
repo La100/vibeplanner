@@ -336,6 +336,8 @@ export const createOrUpdateMembership = internalMutation({
         let customerRecord = null;
         let needsActivation = false;
 
+        console.log(`[createOrUpdateMembership] Processing membership for email: ${args.userEmail}, clerkUserId: ${args.clerkUserId}, clerkOrgId: ${args.clerkOrgId}, role: ${args.role}`);
+
         if (args.userEmail) {
             // First check for invited customers by email
             const invitedCustomers = await ctx.db
@@ -347,9 +349,12 @@ export const createOrUpdateMembership = internalMutation({
                 ))
                 .collect();
 
+            console.log(`[createOrUpdateMembership] Found ${invitedCustomers.length} invited customers for email ${args.userEmail}`);
+
             if (invitedCustomers.length > 0) {
                 customerRecord = invitedCustomers[0]; // Use first one
                 needsActivation = true;
+                console.log(`[createOrUpdateMembership] Found invited customer for project: ${customerRecord.projectId}`);
             } else {
                 // Check for already active customers
                 customerRecord = await ctx.db
@@ -360,7 +365,15 @@ export const createOrUpdateMembership = internalMutation({
                         q.eq(q.field("status"), "active")
                     ))
                     .first();
+
+                if (customerRecord) {
+                    console.log(`[createOrUpdateMembership] Found active customer for project: ${customerRecord.projectId}`);
+                } else {
+                    console.log(`[createOrUpdateMembership] No customer record found for email ${args.userEmail}`);
+                }
             }
+        } else {
+            console.log(`[createOrUpdateMembership] No email provided in webhook`);
         }
 
         // If we have customers that need activation, activate them

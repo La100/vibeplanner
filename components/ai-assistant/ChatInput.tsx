@@ -33,6 +33,7 @@ interface ChatInputProps {
   onFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onRemoveFile: (index: number) => void;
   onAttachmentClick: () => void;
+  onPasteFiles?: (files: File[]) => void;
 }
 
 export function ChatInput({
@@ -48,6 +49,7 @@ export function ChatInput({
   onFileSelect,
   onRemoveFile,
   onAttachmentClick,
+  onPasteFiles,
 }: ChatInputProps) {
   const previewUrlsRef = useRef<Record<string, string>>({});
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
@@ -78,6 +80,44 @@ export function ChatInput({
       });
     };
   }, []);
+
+  // Handle paste events
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      if (!onPasteFiles) return;
+      if (isLoading || isUploading) return;
+
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const files: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            // Create a new File object with a proper name if the pasted file doesn't have one
+            const fileName = file.name || `pasted-image-${Date.now()}.${file.type.split('/')[1] || 'png'}`;
+            const renamedFile = new File([file], fileName, { type: file.type, lastModified: file.lastModified || Date.now() });
+            files.push(renamedFile);
+          }
+        }
+      }
+
+      if (files.length > 0) {
+        e.preventDefault();
+        onPasteFiles(files);
+      }
+    };
+
+    const textarea = inputRef.current;
+    if (textarea) {
+      textarea.addEventListener('paste', handlePaste);
+      return () => {
+        textarea.removeEventListener('paste', handlePaste);
+      };
+    }
+  }, [inputRef, onPasteFiles, isLoading, isUploading]);
 
   return (
     <motion.div

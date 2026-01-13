@@ -561,7 +561,11 @@ export const generateTaskDetailsFromPrompt = action({
         }
 
         const teamMembers: any[] = await ctx.runQuery(internal.teams.getTeamMembersForIndexing, { projectId: args.projectId });
-        const memberList = teamMembers.map((m: any) => ({ name: m.name, id: m.clerkUserId }));
+        const memberList = teamMembers.map((m: any) => ({
+            name: m.name || m.email || 'Unknown User',
+            email: m.email,
+            id: m.clerkUserId
+        }));
 
         const offsetHours = -args.timezoneOffsetInMinutes / 60;
         const offsetSign = offsetHours >= 0 ? "+" : "-";
@@ -606,7 +610,10 @@ The available properties are:
 The title is a short, concise summary. The description contains all other details, notes, and context.
 If a single date or deadline is mentioned, set both startDate and endDate to that date. For date ranges like "from Monday to Friday", set startDate to Monday and endDate to Friday.
 
-Here are the available team members for assignment. Match the name mentioned in the prompt to one of these users and return their ID.
+Here are the available team members for assignment. When assigning a task, match the name or email mentioned in the prompt to one of these users and return their ID (clerkUserId).
+For example, if the prompt mentions "assign to John" or "assign to john@example.com", find the matching user in this list and use their 'id' value for the assignedTo field.
+IMPORTANT: The assignedTo field must contain the user's ID (from the 'id' field below), NOT their name or email.
+
 Team Members:
 ${JSON.stringify(memberList, null, 2)}
 

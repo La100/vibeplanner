@@ -127,6 +127,28 @@ export default function VisualizationsPage() {
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const handlePasteFiles = async (files: File[]) => {
+    if (!team) return;
+
+    setIsUploading(true);
+    const newFiles: File[] = [];
+
+    for (const file of files) {
+      if (file.size > 20 * 1024 * 1024) {
+        toast.error(`${file.name} is too large (max 20MB)`);
+        continue;
+      }
+      newFiles.push(file);
+    }
+
+    if (newFiles.length > 0) {
+      setSelectedFiles((prev) => [...prev, ...newFiles]);
+      toast.success(`${newFiles.length} image${newFiles.length !== 1 ? 's' : ''} pasted`);
+    }
+
+    setIsUploading(false);
+  };
+
   const handleNewChat = () => {
     setCurrentSessionId(null);
     setMessage("");
@@ -374,6 +396,7 @@ export default function VisualizationsPage() {
                   onFileSelect={handleFileSelect}
                   onRemoveFile={handleRemoveFile}
                   onAttachmentClick={() => fileInputRef.current?.click()}
+                  onPasteFiles={handlePasteFiles}
                 />
 
                 {/* Suggestions */}
@@ -530,6 +553,7 @@ export default function VisualizationsPage() {
                 onFileSelect={handleFileSelect}
                 onRemoveFile={handleRemoveFile}
                 onAttachmentClick={() => fileInputRef.current?.click()}
+                onPasteFiles={handlePasteFiles}
               />
             </div>
           )}

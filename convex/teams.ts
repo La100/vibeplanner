@@ -197,7 +197,7 @@ export const inviteCustomerToProject = mutation({
 
     const teamMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
       )
       .unique();
@@ -219,6 +219,15 @@ export const inviteCustomerToProject = mutation({
       email: args.email,
       projectId: args.projectId,
       clerkOrgId: team.clerkOrgId,
+    });
+
+    // Wyślij email przez Clerk
+    await ctx.scheduler.runAfter(0, internal.teams.sendCustomerClerkInvitation, {
+      clerkOrgId: team.clerkOrgId,
+      email: args.email,
+      projectId: args.projectId,
+      projectName: project.name,
+      invitedBy: identity.subject,
     });
 
     return { invitationId, customerId };
@@ -455,8 +464,23 @@ export const getTeamMembersForIndexing = internalQuery({
       .withIndex("by_team", (q) => q.eq("teamId", project.teamId!))
       .collect();
 
-    // It filters members who have the projectId in their projectIds array, or who are not customers (admins, members).
-    return members.filter(m => m.projectIds?.includes(args.projectId) || m.role !== 'customer');
+    // Filter members who have access to this project
+    const filteredMembers = members.filter(m => m.projectIds?.includes(args.projectId) || m.role !== 'customer');
+
+    // Get user details for each member (including name and email for AI matching)
+    return await Promise.all(
+      filteredMembers.map(async (member) => {
+        const user = await ctx.db
+          .query("users")
+          .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", member.clerkUserId))
+          .unique();
+        return {
+          clerkUserId: member.clerkUserId,
+          name: user?.name,
+          email: user?.email,
+        };
+      })
+    );
   },
 });
 
@@ -744,6 +768,61 @@ export const sendClerkInvitation = internalAction({
 
     } catch (error) {
       console.error("Failed to send Clerk invitation:", error);
+      throw new Error((error as Error).message);
+    }
+  },
+});
+
+export const sendCustomerClerkInvitation = internalAction({
+  args: {
+    clerkOrgId: v.string(),
+    email: v.string(),
+    projectId: v.id("projects"),
+    projectName: v.string(),
+    invitedBy: v.string(),
+  },
+  async handler(ctx, args) {
+    const clerkApiKey = process.env.CLERK_SECRET_KEY;
+    if (!clerkApiKey) {
+      throw new Error("CLERK_SECRET_KEY environment variable not set");
+    }
+
+    const redirectUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+
+    try {
+      const response = await fetch(
+        `https://api.clerk.com/v1/organizations/${args.clerkOrgId}/invitations`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${clerkApiKey}`,
+          },
+          body: JSON.stringify({
+            email_address: args.email,
+            role: 'org:member', // Customers get member role in Clerk
+            inviter_user_id: args.invitedBy,
+            redirect_url: redirectUrl,
+            public_metadata: {
+              isCustomer: true,
+              projectId: args.projectId,
+              projectName: args.projectName,
+            }
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorBody = await response.json();
+        console.error("Clerk API Error (Customer Invitation):", JSON.stringify(errorBody, null, 2));
+        const clerkError = errorBody.errors[0]?.long_message || "Failed to send customer invitation.";
+        throw new Error(`Clerk API Error: ${clerkError}`);
+      }
+
+      console.log(`Customer invitation email sent successfully to ${args.email} for project ${args.projectName}`);
+
+    } catch (error) {
+      console.error("Failed to send customer Clerk invitation:", error);
       throw new Error((error as Error).message);
     }
   },
@@ -1142,5 +1221,78 @@ export const updateTeamSettings = mutation({
     await ctx.db.patch(args.teamId, updateData);
 
     return { success: true };
+  },
+});
+
+// Get team resource usage (projects, members)
+export const getTeamResourceUsage = query({
+  args: { teamId: v.id("teams") },
+  returns: v.object({
+    projectsUsed: v.number(),
+    projectsLimit: v.number(),
+    projectsPercentUsed: v.number(),
+    membersUsed: v.number(),
+    membersLimit: v.number(),
+    membersPercentUsed: v.number(),
+  }),
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const team = await ctx.db.get(args.teamId);
+    if (!team) {
+      throw new Error("Team not found");
+    }
+
+    // Check if user is member of this team
+    const membership = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", (q) =>
+        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!membership || !membership.isActive) {
+      throw new Error("Not authorized to view this team");
+    }
+
+    // Count projects
+    const projects = await ctx.db
+      .query("projects")
+      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+      .collect();
+    const projectsUsed = projects.length;
+
+    // Count active team members
+    const members = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
+    const membersUsed = members.length;
+
+    // Get limits from subscription
+    const plan = (team.subscriptionPlan || "free") as "free" | "basic" | "ai" | "ai_scale" | "pro" | "enterprise";
+    const limits = team.subscriptionLimits || {
+      maxProjects: plan === "free" ? 3 : plan === "basic" ? 10 : plan === "ai" || plan === "ai_scale" ? 20 : plan === "pro" ? 50 : 999,
+      maxTeamMembers: plan === "free" ? 1 : plan === "basic" ? 15 : plan === "ai" || plan === "ai_scale" ? 25 : plan === "pro" ? 50 : 999,
+    };
+
+    const projectsLimit = limits.maxProjects;
+    const membersLimit = limits.maxTeamMembers;
+
+    const projectsPercentUsed = projectsLimit > 0 ? Math.round((projectsUsed / projectsLimit) * 100) : 0;
+    const membersPercentUsed = membersLimit > 0 ? Math.round((membersUsed / membersLimit) * 100) : 0;
+
+    return {
+      projectsUsed,
+      projectsLimit,
+      projectsPercentUsed,
+      membersUsed,
+      membersLimit,
+      membersPercentUsed,
+    };
   },
 });

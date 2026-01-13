@@ -83,6 +83,8 @@ export default function RootLayout({
           appearance={clerkAppearance}
           signInFallbackRedirectUrl="/dashboard"
           signUpFallbackRedirectUrl="/dashboard"
+          afterSignInUrl="/dashboard"
+          afterSignUpUrl="/dashboard"
         >
           <ConvexClientProvider>
             {children}
