@@ -54,6 +54,8 @@ const AIAssistantSmart = () => {
   const { project, team } = useProject();
   const [showTemplates, setShowTemplates] = useState(false);
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
+  const [hasSentMessage, setHasSentMessage] = useState(false);
+  const pendingUserMessageUserCountRef = useRef<number | null>(null);
   const [localMessageAttachments, setLocalMessageAttachments] = useState<Record<string, Array<{
     name: string;
     size: number;
@@ -210,10 +212,22 @@ const AIAssistantSmart = () => {
   }, [threadId, sessionParam, updateSessionParam]);
 
   useEffect(() => {
-    if (uiMessages.length > 0 || (!isLoading && !isStreaming)) {
+    if (!pendingUserMessage) {
+      pendingUserMessageUserCountRef.current = null;
+      return;
+    }
+    const userMessages = uiMessages.filter((msg) => msg.role === "user");
+    if (pendingUserMessageUserCountRef.current === null) {
+      pendingUserMessageUserCountRef.current = userMessages.length;
+      return;
+    }
+    if (userMessages.length <= pendingUserMessageUserCountRef.current) return;
+    const lastUserMessage = [...uiMessages].reverse().find((msg) => msg.role === "user");
+    if (!lastUserMessage?.text) return;
+    if (lastUserMessage.text.trim() === pendingUserMessage.trim()) {
       setPendingUserMessage(null);
     }
-  }, [uiMessages.length, isLoading, isStreaming]);
+  }, [uiMessages, pendingUserMessage]);
 
   useEffect(() => {
     if (!pendingAttachmentsRef.current || uiMessages.length === 0) return;
@@ -251,6 +265,7 @@ const AIAssistantSmart = () => {
     resetPendingState();
     setSelectedFiles([]);
     setPendingUserMessage(null);
+    setHasSentMessage(true);
   };
 
   const handleNewChatClick = () => {
@@ -260,6 +275,7 @@ const AIAssistantSmart = () => {
     resetPendingState();
     setSelectedFiles([]);
     setPendingUserMessage(null);
+    setHasSentMessage(false);
     lastSessionParamRef.current = sessionParam;
     updateSessionParam(undefined);
   };
@@ -269,6 +285,7 @@ const AIAssistantSmart = () => {
     suppressedSessionParamRef.current = sessionParam;
     await handleClearChat();
     setPendingUserMessage(null);
+    setHasSentMessage(false);
     lastSessionParamRef.current = sessionParam;
     updateSessionParam(undefined);
   };
@@ -296,11 +313,16 @@ const AIAssistantSmart = () => {
     } else {
       pendingAttachmentsRef.current = null;
     }
+    // Set both states immediately to prevent flashing
     setPendingUserMessage(trimmedMessage || fileLabel || null);
+    pendingUserMessageUserCountRef.current = uiMessages.filter((msg) => msg.role === "user").length;
+    setHasSentMessage(true);
+    setIsLoading(true);
+
     await sendMessageWithFile(
       selectedFiles,
       uploadedFileIds,
-      () => setIsLoading(true),
+      () => {}, // Loading already set above
       () => {
         setSelectedFiles([]);
       },
@@ -396,7 +418,7 @@ const AIAssistantSmart = () => {
 
   // ==================== MAIN RENDER ====================
 
-  const shouldShowEmptyState = showEmptyState && !pendingUserMessage;
+  const shouldShowEmptyState = showEmptyState && !pendingUserMessage && !hasSentMessage && !isLoading && !isStreaming;
   const shouldShowChatLoading = chatIsLoading && uiMessages.length === 0 && !pendingUserMessage;
 
   const isQuotaBlocked = !!(
@@ -608,15 +630,8 @@ const AIAssistantSmart = () => {
                 "mx-auto flex max-w-4xl flex-col space-y-4",
                 shouldShowEmptyState ? "min-h-full justify-center items-center gap-4 pt-6 pb-6" : "pt-6 pb-6"
               )}>
-                <AnimatePresence mode="popLayout">
-                  {shouldShowEmptyState ? (
-                    <motion.div
-                      key="empty-state"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0, transition: { duration: 0.2 } }}
-                      className="flex flex-col items-center justify-center min-h-[60vh] w-full max-w-2xl mx-auto px-4"
-                    >
+                {shouldShowEmptyState ? (
+                  <div className="flex flex-col items-center justify-center min-h-[60vh] w-full max-w-2xl mx-auto px-4">
                       {aiAccess?.currentPlan === "free" && (
                         <Badge variant="outline" className="mb-8 rounded-full px-4 py-1.5 border-amber-200 bg-amber-50 text-amber-700 gap-2 hover:bg-amber-100 transition-colors cursor-pointer shadow-sm">
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
@@ -624,33 +639,18 @@ const AIAssistantSmart = () => {
                         </Badge>
                       )}
 
-                      <motion.h1
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1 }}
-                        className="text-4xl md:text-5xl font-medium tracking-tight mb-3 text-center text-foreground font-display"
-                      >
+                      <h1 className="text-4xl md:text-5xl font-medium tracking-tight mb-3 text-center text-foreground font-display">
                         Hey {user?.firstName || "User"}! 👋
-                      </motion.h1>
+                      </h1>
 
-                      <motion.p
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.15 }}
-                        className="text-muted-foreground text-center mb-12 text-lg"
-                      >
+                      <p className="text-muted-foreground text-center mb-12 text-lg">
                         How's it going? What can I help you with today?
-                      </motion.p>
+                      </p>
 
                       {/* Spacer for input that will animate from bottom */}
                       <div className="h-[140px] w-full max-w-2xl" />
 
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: 0.3 }}
-                        className="mt-8 w-full flex flex-col items-center max-w-4xl"
-                      >
+                      <div className="mt-8 w-full flex flex-col items-center max-w-4xl">
                         <div className="flex items-center gap-4 mb-8">
                           <Button
                             variant="ghost"
@@ -697,60 +697,52 @@ const AIAssistantSmart = () => {
                             </motion.div>
                           )}
                         </AnimatePresence>
-                      </motion.div>
-                    </motion.div>
+                      </div>
+                    </div>
                   ) : (
-                    <motion.div
-                      key="chat-messages"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ duration: 0.2 }}
-                      className="w-full"
-                    >
-                      {uiMessages.length === 0 && (isLoading || isStreaming) ? (
-                        <div className="flex flex-col gap-6">
-                          {pendingUserMessage && (
-                            <div className="flex flex-col gap-4 items-end">
-                              <div className="max-w-[85%]">
-                                <div className="bg-foreground text-background px-6 py-4 rounded-3xl shadow-lg">
-                                  <p className="text-lg leading-relaxed whitespace-pre-wrap">
-                                    {pendingUserMessage}
-                                  </p>
-                                </div>
+                    <div className="w-full">
+                      <div className="flex flex-col gap-6">
+                        {pendingUserMessage && (
+                          <div className="flex flex-col gap-4 items-end">
+                            <div className="max-w-[85%]">
+                              <div className="bg-foreground text-background px-6 py-4 rounded-3xl shadow-lg">
+                                <p className="text-lg leading-relaxed whitespace-pre-wrap">
+                                  {pendingUserMessage}
+                                </p>
                               </div>
                             </div>
-                          )}
-                          <div className="flex items-center gap-3 pl-4 py-4 text-muted-foreground">
+                          </div>
+                        )}
+                        {uiMessages.length === 0 && (isLoading || isStreaming) ? (
+                          <div className="flex items-center gap-3 pl-4 py-4">
                             <div className="h-3 w-3 rounded-full bg-foreground animate-pulse" />
                             <div className="h-3 w-3 rounded-full bg-foreground/60 animate-pulse" style={{ animationDelay: "150ms" }} />
                             <div className="h-3 w-3 rounded-full bg-foreground/30 animate-pulse" style={{ animationDelay: "300ms" }} />
-                            <span className="text-sm">Preparing response...</span>
                           </div>
-                        </div>
-                      ) : (
-                        <ChatMessageList
-                          uiMessages={uiMessages}
-                          messagesEndRef={messagesEndRef}
-                          messageMetadataByIndex={messageMetadataByIndex}
-                          localMessageAttachments={localMessageAttachments}
-                          pendingItems={pendingItems as PendingContentItem[]}
-                          isBulkProcessing={isBulkProcessing}
-                          onConfirmItem={handleConfirmItem}
-                          onRejectItem={handleRejectItem}
-                          onEditItem={(idx) => {
-                            handleEditItem(idx);
-                            setShowConfirmationGrid(false);
-                            setIsConfirmationDialogOpen(true);
-                            setCurrentItemIndex(idx);
-                          }}
-                          onConfirmAll={handleConfirmAll}
-                          onRejectAll={handleRejectAll}
-                          onUpdateItem={handleUpdatePendingItem}
-                        />
-                      )}
-                    </motion.div>
+                        ) : uiMessages.length > 0 ? (
+                          <ChatMessageList
+                            uiMessages={uiMessages}
+                            messagesEndRef={messagesEndRef}
+                            messageMetadataByIndex={messageMetadataByIndex}
+                            localMessageAttachments={localMessageAttachments}
+                            pendingItems={pendingItems as PendingContentItem[]}
+                            isBulkProcessing={isBulkProcessing}
+                            onConfirmItem={handleConfirmItem}
+                            onRejectItem={handleRejectItem}
+                            onEditItem={(idx) => {
+                              handleEditItem(idx);
+                              setShowConfirmationGrid(false);
+                              setIsConfirmationDialogOpen(true);
+                              setCurrentItemIndex(idx);
+                            }}
+                            onConfirmAll={handleConfirmAll}
+                            onRejectAll={handleRejectAll}
+                            onUpdateItem={handleUpdatePendingItem}
+                          />
+                        ) : null}
+                      </div>
+                    </div>
                   )}
-                </AnimatePresence>
               </div>
             )}
           </div>

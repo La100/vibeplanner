@@ -5,11 +5,7 @@ import { useQuery } from "convex/react";
 import { format } from "date-fns";
 import {
     Calendar as CalendarIcon,
-    Command,
-    StickyNote,
-    ShoppingCart,
-    User,
-    Hash
+    Command
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -64,6 +60,10 @@ export function InlineCreationForm({
         });
     };
 
+    // Determine operation from item
+    const operation = item.operation || 'create';
+    const operationVerb = operation === 'delete' ? 'Delete' : operation === 'edit' ? 'Update' : 'Create';
+
     return (
         <div className="w-full max-w-2xl mx-auto bg-background rounded-xl border border-border/40 shadow-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[50vh]">
             {/* Header gradient line based on type */}
@@ -72,24 +72,35 @@ export function InlineCreationForm({
             <div className="p-5 sm:p-6 space-y-5 flex-1 min-h-0 overflow-y-auto">
                 {/* Header */}
                 <div className="flex items-center gap-2 text-sm font-medium text-foreground/80">
-                    <span>Create:</span>
-                    <span className={cn("flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold uppercase tracking-wider", getBadgeStyle(type))}>
-                        {getIcon(type)}
-                        {getTitle(type, data)}
-                    </span>
+                    <span>{operationVerb}:</span>
                 </div>
 
-                {/* Content Forms */}
-                {type === "task" && (
-                    <TaskForm
-                        data={data}
-                        onUpdate={updateData}
-                        teamMembers={teamMembers}
-                    />
+                {/* Content Forms - only show for create/edit */}
+                {operation === 'delete' ? (
+                    <div className="space-y-3">
+                        <div className="text-base font-medium">
+                            {String(data.title || data.name || "Untitled")}
+                        </div>
+                        {(data.description || data.content) && (
+                            <div className="text-sm text-muted-foreground">
+                                {String(data.description || data.content)}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <>
+                        {type === "task" && (
+                            <TaskForm
+                                data={data}
+                                onUpdate={updateData}
+                                teamMembers={teamMembers}
+                            />
+                        )}
+                        {type === "note" && <NoteForm data={data} onUpdate={updateData} />}
+                        {type === "shopping" && <ShoppingForm data={data} onUpdate={updateData} />}
+                        {type === "contact" && <ContactForm data={data} onUpdate={updateData} />}
+                    </>
                 )}
-                {type === "note" && <NoteForm data={data} onUpdate={updateData} />}
-                {type === "shopping" && <ShoppingForm data={data} onUpdate={updateData} />}
-                {type === "contact" && <ContactForm data={data} onUpdate={updateData} />}
             </div>
 
             {/* Footer */}
@@ -123,7 +134,7 @@ export function InlineCreationForm({
                         onClick={handleConfirm}
                         className="bg-black dark:bg-white text-white dark:text-black hover:bg-black/90 dark:hover:bg-white/90 h-8 shadow-sm"
                     >
-                        Create {getLabel(type)}
+                        {operationVerb} {getLabel(type)}
                         <span className="ml-2 text-xs opacity-70 flex items-center font-normal">
                             <Command className="w-2.5 h-2.5 mr-0.5" /> ↵
                         </span>
@@ -437,40 +448,9 @@ function getGradient(type: string) {
     }
 }
 
-function getBadgeStyle(type: string) {
-    switch (type) {
-        case "task": return "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300";
-        case "note": return "bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300";
-        case "shopping": return "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300";
-        case "contact": return "bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300";
-        default: return "bg-gray-100 text-gray-700";
-    }
-}
-
-function getIcon(type: string) {
-    const cn = "w-3.5 h-3.5 mr-1.5";
-    switch (type) {
-        case "task": return <CalendarIcon className={cn} />;
-        case "note": return <StickyNote className={cn} />;
-        case "shopping": return <ShoppingCart className={cn} />;
-        case "contact": return <User className={cn} />;
-        default: return <Hash className={cn} />;
-    }
-}
-
-function getTitle(type: string, data: Record<string, unknown>) {
-    switch (type) {
-        case "task": return (data.title as string) || "New Event";
-        case "note": return (data.title as string) || "New Note";
-        case "shopping": return (data.name as string) || "New Item";
-        case "contact": return (data.name as string) || "New Contact";
-        default: return "New Item";
-    }
-}
-
 function getLabel(type: string) {
     switch (type) {
-        case "task": return "Event";
+        case "task": return "Item";
         case "note": return "Note";
         case "shopping": return "Item";
         case "contact": return "Contact";

@@ -138,6 +138,33 @@ export const getCurrentUserRoleInTeam = query({
   }
 });
 
+export const getCurrentUserRoleInClerkOrg = query({
+  args: {
+    clerkOrgId: v.string(),
+  },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const team = await ctx.db
+      .query("teams")
+      .withIndex("by_clerk_org", q => q.eq("clerkOrgId", args.clerkOrgId))
+      .unique();
+
+    if (!team) return null;
+
+    const teamMember = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q =>
+        q.eq("teamId", team._id).eq("clerkUserId", identity.subject)
+      )
+      .filter(q => q.eq(q.field("isActive"), true))
+      .unique();
+
+    return teamMember?.role || null;
+  }
+});
+
 export const getTeamSettings = query({
   args: {
     teamSlug: v.string(),
@@ -154,6 +181,41 @@ export const getTeamSettings = query({
     if (!team) return null;
 
     // Sprawdź czy użytkownik ma dostęp do zespołu
+    const teamMember = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", q =>
+        q.eq("teamId", team._id).eq("clerkUserId", identity.subject)
+      )
+      .filter(q => q.eq(q.field("isActive"), true))
+      .unique();
+
+    if (!teamMember) return null;
+
+    return {
+      teamId: team._id,
+      name: team.name,
+      description: team.description,
+      currency: team.currency || "PLN",
+      userRole: teamMember.role,
+    };
+  }
+});
+
+export const getTeamSettingsByClerkOrg = query({
+  args: {
+    clerkOrgId: v.string(),
+  },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const team = await ctx.db
+      .query("teams")
+      .withIndex("by_clerk_org", q => q.eq("clerkOrgId", args.clerkOrgId))
+      .unique();
+
+    if (!team) return null;
+
     const teamMember = await ctx.db
       .query("teamMembers")
       .withIndex("by_team_and_user", q =>

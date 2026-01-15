@@ -6,6 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { Doc } from "@/convex/_generated/dataModel";
 import { useParams } from "next/navigation";
 import { Building } from "lucide-react";
+import { useOrganization } from "@clerk/nextjs";
 
 interface ProjectContextType {
   project: Doc<"projects">;
@@ -30,13 +31,14 @@ const ProjectContext = createContext<ProjectContextType | null>(null);
 export function ProjectProvider({ children }: { 
   children: ReactNode; 
 }) {
-  const params = useParams<{ slug: string; projectSlug: string }>();
+  const params = useParams<{ projectSlug: string }>();
+  const { organization } = useOrganization();
   
   // Simple regular query approach
   const project = useQuery(
-    api.projects.getProjectBySlug,
-    params.slug && params.projectSlug
-      ? { teamSlug: params.slug, projectSlug: params.projectSlug }
+    api.projects.getProjectBySlugInClerkOrg,
+    organization?.id && params.projectSlug
+      ? { clerkOrgId: organization.id, projectSlug: params.projectSlug }
       : "skip"
   );
   

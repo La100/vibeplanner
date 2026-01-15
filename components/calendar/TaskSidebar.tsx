@@ -43,7 +43,7 @@ export function TaskSidebar({
 }: TaskSidebarProps) {
   const [isEditing, setIsEditing] = useState(false);
   const router = useRouter();
-  const params = useParams<{ slug: string, projectSlug: string }>();
+  const params = useParams<{ projectSlug: string }>();
 
   // Reset editing state when event changes
   useEffect(() => {
@@ -311,8 +311,8 @@ export function TaskSidebar({
                 variant="outline"
                 className="flex-1 h-10 sm:h-9"
                 onClick={() => {
-                  if (event?.sourceType === 'task' && params.slug && params.projectSlug && event?.sourceData?._id) {
-                    router.push(`/${params.slug}/${params.projectSlug}/tasks/${event.sourceData._id}`);
+                  if (event?.sourceType === 'task' && params.projectSlug && event?.sourceData?._id) {
+                    router.push(`/organisation/projects/${params.projectSlug}/tasks/${event.sourceData._id}`);
                   }
                 }}
               >

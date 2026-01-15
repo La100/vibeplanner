@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useOrganization } from "@clerk/nextjs";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -18,15 +18,14 @@ import { Badge } from "@/components/ui/badge";
 
 export default function CompanyProjects() {
   const router = useRouter();
-  const params = useParams<{ slug: string }>();
   const { organization, isLoaded } = useOrganization();
   const [showNewProjectForm, setShowNewProjectForm] = useState(false);
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Check if team exists first
-  const team = useQuery(api.teams.getTeamBySlug, 
-    params.slug ? { slug: params.slug } : "skip"
+  const team = useQuery(api.teams.getTeamByClerkOrg, 
+    organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
   
   // Get projects for this organization
@@ -93,7 +92,7 @@ export default function CompanyProjects() {
       
       // Navigate to the new project
       if (newProjectSlug) {
-        router.push(`/${params.slug}/${newProjectSlug}`);
+        router.push(`/organisation/projects/${newProjectSlug}`);
       }
     } catch (error) {
       console.error("Error creating project:", error);
@@ -265,7 +264,7 @@ export default function CompanyProjects() {
                 taskCount: teamTasks?.filter(t => t.projectId === project._id).length || 0,
                 completedTasks: teamTasks?.filter(t => t.projectId === project._id && t.status === 'done').length || 0,
               }}
-              onClick={() => router.push(`/${params.slug}/${project.slug}`)}
+              onClick={() => router.push(`/organisation/projects/${project.slug}`)}
             />
           ))
         ) : (
@@ -336,7 +335,7 @@ export default function CompanyProjects() {
               className="w-full bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700"
               onClick={() => {
                 setShowUpgradeDialog(false);
-                router.push(`/${params.slug}/settings?tab=subscription`);
+                router.push("/organisation/settings?tab=subscription");
               }}
             >
               <Sparkles className="mr-2 h-4 w-4" />

@@ -31,7 +31,7 @@ interface SurveyFormProps {
 
 export function SurveyForm({ projectSlug }: SurveyFormProps) {
   const router = useRouter();
-  const { project, team } = useProject();
+  const { project } = useProject();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -89,7 +89,7 @@ export function SurveyForm({ projectSlug }: SurveyFormProps) {
       }
 
       toast.success("Survey has been created!");
-      router.push(`/${team?.slug}/${projectSlug}/surveys`);
+      router.push(`/organisation/projects/${projectSlug}/surveys`);
     } catch (error) {
       toast.error("Error creating survey");
       console.error(error);

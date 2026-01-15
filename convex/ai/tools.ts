@@ -98,7 +98,8 @@ export const createTaskSchema = z.object({
   content: z.string().optional().describe("Rich text content"),
   priority: z.enum(["low", "medium", "high", "urgent"]).optional().describe("Task priority"),
   status: z.enum(["todo", "in_progress", "review", "done"]).default("todo").describe("Task status"),
-  assignedTo: z.string().optional().describe("Team member name or email from TEAM MEMBERS list"),
+  assignedTo: z.string().optional().describe("Clerk ID of the team member (format: user_xxxxx) from TEAM MEMBERS list. Use the 'Clerk ID' value shown in parentheses."),
+  assignedToName: z.string().optional().describe("Display name of the assigned team member (their actual name, not Clerk ID). Use the name shown before '(Clerk ID: ...)' in TEAM MEMBERS list."),
   startDate: z.string().optional().describe("Start date in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ). For all-day events, use midnight UTC (T00:00:00.000Z). For specific times, include the time in UTC."),
   endDate: z.string().optional().describe("End date in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ). For all-day events, use midnight UTC (T00:00:00.000Z). For specific times, include the time in UTC. Can be same as startDate for single-point events/reminders."),
   tags: z.array(z.string()).optional().describe("Task tags for categorization"),
@@ -115,7 +116,8 @@ export const editTaskSchema = z.object({
   content: z.string().optional().describe("New rich text content"),
   priority: z.enum(["low", "medium", "high", "urgent"]).optional().describe("New task priority"),
   status: z.enum(["todo", "in_progress", "review", "done"]).optional().describe("New task status"),
-  assignedTo: z.string().optional().describe("Team member name or email from TEAM MEMBERS list"),
+  assignedTo: z.string().optional().describe("Clerk ID of the team member (format: user_xxxxx) from TEAM MEMBERS list. Use the 'Clerk ID' value shown in parentheses."),
+  assignedToName: z.string().optional().describe("Display name of the assigned team member (their actual name, not Clerk ID). Use the name shown before '(Clerk ID: ...)' in TEAM MEMBERS list."),
   startDate: z.string().optional().describe("New start date in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ). For all-day events, use midnight UTC (T00:00:00.000Z). For specific times, include the time in UTC."),
   endDate: z.string().optional().describe("New end date in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ). For all-day events, use midnight UTC (T00:00:00.000Z). For specific times, include the time in UTC. Can be same as startDate for single-point events/reminders."),
   tags: z.array(z.string()).optional().describe("New task tags"),
@@ -127,6 +129,7 @@ export const editMultipleTasksSchema = z.object({
 
 export const deleteTaskSchema = z.object({
   taskId: z.string().describe("Task ID to delete"),
+  title: z.string().optional().describe("Task title for display purposes"),
   reason: z.string().optional().describe("Optional reason for deletion"),
 });
 
@@ -152,6 +155,7 @@ export const editMultipleNotesSchema = z.object({
 
 export const deleteNoteSchema = z.object({
   noteId: z.string().describe("Note ID to delete"),
+  title: z.string().optional().describe("Note title for display purposes"),
   reason: z.string().optional().describe("Optional reason for deletion"),
 });
 
@@ -208,6 +212,7 @@ export const editMultipleShoppingItemsSchema = z.object({
 
 export const deleteShoppingItemSchema = z.object({
   itemId: z.string().describe("Shopping item ID to delete"),
+  name: z.string().optional().describe("Item name for display purposes"),
   reason: z.string().optional().describe("Optional reason for deletion"),
 });
 
@@ -257,6 +262,7 @@ export const editMultipleLaborItemsSchema = z.object({
 
 export const deleteLaborItemSchema = z.object({
   itemId: z.string().describe("Labor item ID to delete"),
+  name: z.string().optional().describe("Item name for display purposes"),
   reason: z.string().optional().describe("Optional reason for deletion"),
 });
 
@@ -329,6 +335,7 @@ export const createContactSchema = z.object({
 
 export const deleteContactSchema = z.object({
   contactId: z.string().describe("Contact ID to delete"),
+  name: z.string().optional().describe("Contact name for display purposes"),
   reason: z.string().optional().describe("Optional reason for deletion"),
 });
 

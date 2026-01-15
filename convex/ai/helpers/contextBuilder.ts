@@ -67,7 +67,11 @@ export const buildTeamMembersContext = (teamMembers: TeamMember[]): string => {
   }
 
   const list = teamMembers
-    .map((member) => `- ${member.name || member.email || "Unknown"}`)
+    .map((member) => {
+      const displayName = member.name || member.email || "Unknown";
+      const clerkId = member.clerkUserId ? ` (Clerk ID: ${member.clerkUserId})` : "";
+      return `- ${displayName}${clerkId}`;
+    })
     .join('\n');
 
   return `\n\nTEAM MEMBERS:\n${list}`;
@@ -78,11 +82,16 @@ export const buildSystemInstructions = (
   currentDateTime: string,
   currentDate: string,
   teamMembersContext: string,
+  currentUserClerkId?: string,
 ): string => {
+  const currentUserSection = currentUserClerkId
+    ? `\n\nCURRENT USER (who sent this message): Clerk ID ${currentUserClerkId}\nWhen the user says "assign to me" or "przypisz do mnie", use this Clerk ID in the assignedTo field.`
+    : "";
+
   return `${systemPrompt}
 
 CURRENT DATE AND TIME: ${currentDateTime} (${currentDate})
-When setting due dates, use this as reference for "today", "tomorrow", "next week", etc.${teamMembersContext}
+When setting due dates, use this as reference for "today", "tomorrow", "next week", etc.${teamMembersContext}${currentUserSection}
 
 When the user asks for multiple types of content, prepare a balanced mix across tasks, notes, shopping items/sections, surveys, and contacts unless they explicitly specify quantities for each.`;
 };

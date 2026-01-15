@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useParams } from "next/navigation";
-import { OrganizationProfile } from "@clerk/nextjs";
+import { OrganizationProfile, useOrganization } from "@clerk/nextjs";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
@@ -34,11 +33,12 @@ import { Separator } from "@/components/ui/separator";
 import { GEMINI_4K_IMAGE_TOKENS, formatTokens } from "@/lib/aiPricing";
 
 export default function CompanySettings() {
-  const params = useParams<{ slug: string }>();
+  const { organization } = useOrganization();
   
   // Loading actual data from backend
-  const teamData = useQuery(api.teams.getTeamSettings, 
-    params.slug ? { teamSlug: params.slug } : "skip"
+  const teamData = useQuery(
+    api.teams.getTeamSettingsByClerkOrg, 
+    organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
   
   const teamId = teamData?.teamId;

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Suspense } from "react";
 import { useQuery } from "convex/react";
 import { useOrganization, useOrganizationList } from "@clerk/nextjs";
@@ -29,7 +29,6 @@ import {
 } from "lucide-react";
 
 function CompanySidebarContent() {
-  const params = useParams<{ slug: string }>();
   const router = useRouter();
   const { setOpenMobile } = useSidebar();
   useOrganizationList({
@@ -38,25 +37,25 @@ function CompanySidebarContent() {
   const { organization } = useOrganization();
 
   const team = useQuery(
-    api.teams.getTeamBySlug,
-    params.slug ? { slug: params.slug } : "skip"
+    api.teams.getTeamByClerkOrg,
+    organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
 
   // Get current user role in team
   const userRole = useQuery(
-    api.teams.getCurrentUserRoleInTeam,
-    params.slug ? { teamSlug: params.slug } : "skip"
+    api.teams.getCurrentUserRoleInClerkOrg,
+    organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
 
   // Define navigation items based on user role
   const allNavItems = [
-    { href: `/${params.slug}`, label: "Projects", icon: FolderOpen, allowedRoles: ["admin", "member"] },
-    { href: `/${params.slug}/visualizations`, label: "Visualizations", icon: Sparkles, allowedRoles: ["admin", "member"] },
-    { href: `/${params.slug}/product-library`, label: "Product Library", icon: Package, allowedRoles: ["admin", "member"] },
-    { href: `/${params.slug}/team`, label: "Team", icon: Users, allowedRoles: ["admin", "member"] },
-    { href: `/${params.slug}/contacts`, label: "Contacts", icon: Contact, allowedRoles: ["admin", "member"] },
-    { href: `/${params.slug}/reports`, label: "Reports", icon: BarChart3, allowedRoles: ["admin", "member"] },
-    { href: `/${params.slug}/settings`, label: "Settings", icon: Settings, allowedRoles: ["admin", "member"] },
+    { href: "/organisation", label: "Projects", icon: FolderOpen, allowedRoles: ["admin", "member"] },
+    { href: "/organisation/visualizations", label: "Visualizations", icon: Sparkles, allowedRoles: ["admin", "member"] },
+    { href: "/organisation/product-library", label: "Product Library", icon: Package, allowedRoles: ["admin", "member"] },
+    { href: "/organisation/team", label: "Team", icon: Users, allowedRoles: ["admin", "member"] },
+    { href: "/organisation/contacts", label: "Contacts", icon: Contact, allowedRoles: ["admin", "member"] },
+    { href: "/organisation/reports", label: "Reports", icon: BarChart3, allowedRoles: ["admin", "member"] },
+    { href: "/organisation/settings", label: "Settings", icon: Settings, allowedRoles: ["admin", "member"] },
   ];
 
   // Filter navigation items based on user role

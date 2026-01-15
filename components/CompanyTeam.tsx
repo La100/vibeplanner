@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useParams } from "next/navigation";
 import { useOrganization } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
 
@@ -55,10 +54,12 @@ type PendingInvitation = {
 };
 
 export default function CompanyTeam() {
-  const params = useParams<{ slug: string }>();
   const { organization, isLoaded } = useOrganization();
 
-  const team = useQuery(api.teams.getTeamBySlug, params.slug ? { slug: params.slug } : "skip");
+  const team = useQuery(
+    api.teams.getTeamByClerkOrg,
+    organization?.id ? { clerkOrgId: organization.id } : "skip"
+  );
   const teamMembers = useQuery(api.teams.getTeamMembers, team ? { teamId: team._id } : "skip");
   const currentUserMember = useQuery(api.teams.getCurrentUserTeamMember, team ? { teamId: team._id } : "skip");
   const pendingInvitations = useQuery(api.teams.getPendingInvitations, team ? { teamId: team._id } : "skip");
@@ -281,7 +282,7 @@ export default function CompanyTeam() {
                         <div
                           key={project._id}
                           className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
-                          onClick={() => window.location.href = `/${team.slug}/${project.slug}`}
+                          onClick={() => window.location.href = `/organisation/projects/${project.slug}`}
                         >
                           <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">

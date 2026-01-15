@@ -12,7 +12,6 @@ import type * as activityLog from "../activityLog.js";
 import type * as adminFunctions from "../adminFunctions.js";
 import type * as ai_actions from "../ai/actions.js";
 import type * as ai_agent from "../ai/agent.js";
-import type * as ai_chat from "../ai/chat.js";
 import type * as ai_config from "../ai/config.js";
 import type * as ai_confirmedActions from "../ai/confirmedActions.js";
 import type * as ai_confirmedActions_contacts from "../ai/confirmedActions/contacts.js";
@@ -90,7 +89,6 @@ declare const fullApi: ApiFromModules<{
   adminFunctions: typeof adminFunctions;
   "ai/actions": typeof ai_actions;
   "ai/agent": typeof ai_agent;
-  "ai/chat": typeof ai_chat;
   "ai/config": typeof ai_config;
   "ai/confirmedActions": typeof ai_confirmedActions;
   "ai/confirmedActions/contacts": typeof ai_confirmedActions_contacts;

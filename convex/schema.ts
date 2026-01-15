@@ -151,6 +151,8 @@ export default defineSchema({
       estimations: v.optional(v.object({ visible: v.boolean() })),
       settings: v.optional(v.object({ visible: v.boolean() })),
     })),
+    // Custom AI assistant prompt override
+    customAiPrompt: v.optional(v.string()),
   })
     .index("by_team", ["teamId"])
     .index("by_team_and_slug", ["teamId", "slug"])

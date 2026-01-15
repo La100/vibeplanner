@@ -239,7 +239,7 @@ export default function CustomerProjectMatrix({ teamId }: CustomerProjectMatrixP
                             className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
                             onClick={() => {
                               // Navigate to project settings
-                              window.open(`/${team.slug}/${project.projectSlug}/settings`, '_blank');
+                              window.open(`/organisation/projects/${project.projectSlug}/settings`, '_blank');
                             }}
                             title="Open project settings"
                           >

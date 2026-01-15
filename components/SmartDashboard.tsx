@@ -1,7 +1,7 @@
 "use client";
 
 import { useOrganizationList } from "@clerk/nextjs";
-import { useEffect } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 
@@ -11,12 +11,16 @@ export function SmartDashboard() {
     userMemberships: { infinite: true },
   });
 
-  const organizations = userMemberships?.data?.map(membership => ({
-    id: membership.organization.id,
-    name: membership.organization.name,
-    slug: membership.organization.slug,
-    role: membership.role
-  })) || [];
+  const organizations = useMemo(
+    () =>
+      userMemberships?.data?.map((membership) => ({
+        id: membership.organization.id,
+        name: membership.organization.name,
+        role: membership.role,
+      })) || [],
+    [userMemberships?.data]
+  );
+  const hasRedirectedRef = useRef(false);
 
   // Check for pending invitation ticket in URL and force reload after delay
   useEffect(() => {
@@ -44,22 +48,32 @@ export function SmartDashboard() {
 
   // Auto-redirect based on organization status
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded || hasRedirectedRef.current) return;
 
     if (organizations.length >= 1) {
       // Has organization - redirect to it
       const org = organizations[0];
       console.log("Redirecting to organization:", org);
-      setActive?.({ organization: org.id }).then(() => {
-        console.log("Organization set, pushing to:", `/${org.slug}`);
-        router.push(`/${org.slug}`);
-      });
+      (async () => {
+        try {
+          if (setActive) {
+            await setActive({ organization: org.id });
+          }
+        } catch (error) {
+          console.error("Failed to set active organization, continuing redirect", error);
+        } finally {
+          console.log("Pushing to: /organisation");
+          router.push("/organisation");
+          hasRedirectedRef.current = true;
+        }
+      })();
     } else {
-      // No organization - redirect to onboarding
-      console.log("No organization found, redirecting to onboarding");
-      router.push("/onboarding");
+      // No organization - redirect to organisation
+      console.log("No organization found, redirecting to organisation");
+      router.push("/organisation");
+      hasRedirectedRef.current = true;
     }
-  }, [isLoaded, organizations.length, setActive, router, organizations]);
+  }, [isLoaded, organizations, setActive, router]);
 
   // Check if there's a pending invitation ticket
   const hasInvitationTicket = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('__clerk_ticket');
@@ -91,7 +105,7 @@ export function SmartDashboard() {
     );
   }
 
-  // Always show loading while redirecting (either to org or onboarding)
+  // Always show loading while redirecting (either to org or organisation)
   return (
     <div className="flex items-center justify-center py-8">
       <div className="text-center space-y-4">
@@ -99,7 +113,7 @@ export function SmartDashboard() {
         <p className="text-muted-foreground">
           {organizations.length >= 1
             ? "Redirecting to your organization..."
-            : "Redirecting to onboarding..."}
+            : "Redirecting to organisation..."}
         </p>
       </div>
     </div>

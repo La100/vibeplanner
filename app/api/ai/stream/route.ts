@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
-import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { auth } from "@clerk/nextjs/server";
+import type { FunctionReference } from "convex/server";
 
 /**
  * AI Chat endpoint - simple request/response (no streaming)
@@ -39,26 +39,30 @@ export async function POST(request: NextRequest) {
       ? threadId
       : `thread-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-    // Call simple chat action - waits for full response
-    // Using type assertion to avoid "Type instantiation is excessively deep" error from Convex types
+    // Call streaming chat action
     type SendMessageResult = {
       success: boolean;
-      threadId?: string;
-      response?: string;
+      threadId: string;
+      agentThreadId?: string;
       error?: string;
-      tokenUsage?: { totalTokens: number; estimatedCostUSD: number };
     };
+
+    // Use makeFunctionReference to avoid type instantiation issues
+    const functionRef = {
+      _name: "ai/streaming:startStreamingChat"
+    } as unknown as FunctionReference<"action">;
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const convexAny = convex as any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const apiAny = api as any;
-    const result: SendMessageResult = await convexAny.action(apiAny.ai.chat.sendMessage, {
-      message,
-      projectId: projectId as Id<"projects">,
-      userClerkId,
-      threadId: actualThreadId,
-      fileId: fileId as Id<"files"> | undefined,
-    });
+    const result: SendMessageResult = await (convex as any).action(
+      functionRef,
+      {
+        message,
+        projectId: projectId as Id<"projects">,
+        userClerkId,
+        threadId: actualThreadId,
+        fileId: fileId as Id<"files"> | undefined,
+      }
+    );
 
     if (!result.success) {
       return NextResponse.json(
@@ -70,8 +74,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       threadId: result.threadId,
-      response: result.response,
-      tokenUsage: result.tokenUsage,
+      agentThreadId: result.agentThreadId,
     });
   } catch (error) {
     console.error("Error in AI chat endpoint:", error);

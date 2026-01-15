@@ -28,7 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-import { useParams } from "next/navigation";
+import { useOrganization } from "@clerk/nextjs";
 
 type Team = {
   _id: Id<"teams">;
@@ -534,12 +534,15 @@ function OverviewTab({ team, projects }: { team: Team; projects: Project[] }) {
 }
 
 function MembersTab() {
-  const params = useParams<{ slug: string }>();
-  const team = useQuery(api.teams.getTeamBySlug, params.slug ? { slug: params.slug } : "skip");
+  const { organization } = useOrganization();
+  const team = useQuery(
+    api.teams.getTeamByClerkOrg,
+    organization?.id ? { clerkOrgId: organization.id } : "skip"
+  );
 
   const handleGoToTeamManagement = () => {
     if (team) {
-      window.location.href = `/${team.slug}/team`;
+      window.location.href = "/organisation/team";
     }
   };
 

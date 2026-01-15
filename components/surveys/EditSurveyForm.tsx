@@ -45,7 +45,7 @@ interface EditSurveyFormProps {
 
 export function EditSurveyForm({ survey }: EditSurveyFormProps) {
   const router = useRouter();
-  const { team, project } = useProject();
+  const { project } = useProject();
   const updateSurvey = useMutation(api.surveys.updateSurvey);
   const addQuestion = useMutation(api.surveys.addQuestion);
   const updateQuestion = useMutation(api.surveys.updateQuestion);
@@ -128,7 +128,7 @@ export function EditSurveyForm({ survey }: EditSurveyFormProps) {
       }
 
       toast.success("Survey has been updated");
-      router.push(`/${team?.slug}/${project.slug}/surveys`);
+      router.push(`/organisation/projects/${project.slug}/surveys`);
     } catch (error) {
       toast.error("Error updating survey");
       console.error(error);
@@ -143,7 +143,7 @@ export function EditSurveyForm({ survey }: EditSurveyFormProps) {
       try {
         await deleteSurvey({ surveyId: survey._id });
         toast.success("Survey has been deleted");
-        router.push(`/${team?.slug}/${project.slug}/surveys`);
+        router.push(`/organisation/projects/${project.slug}/surveys`);
       } catch (error) {
         toast.error("Error deleting survey");
         console.error(error);

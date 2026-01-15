@@ -293,6 +293,29 @@ export const getProjectBySlug = query({
   },
 });
 
+export const getProjectBySlugInClerkOrg = query({
+  args: {
+    clerkOrgId: v.string(),
+    projectSlug: v.string(),
+  },
+  async handler(ctx, args) {
+    const team = await ctx.db
+      .query("teams")
+      .withIndex("by_clerk_org", q => q.eq("clerkOrgId", args.clerkOrgId))
+      .unique();
+    if (!team) return null;
+
+    const project = await ctx.db
+      .query("projects")
+      .withIndex("by_team_and_slug", (q) =>
+        q.eq("teamId", team._id).eq("slug", args.projectSlug)
+      )
+      .unique();
+
+    return project;
+  },
+});
+
 
 export const getProject = query({
   args: { projectId: v.id("projects") },
@@ -334,6 +357,7 @@ export const updateProject = mutation({
       v.literal("MXN"), v.literal("KRW"), v.literal("SGD"), v.literal("HKD")
     )),
     taskStatusSettings: v.optional(v.any()), // Allow any object for simplification
+    customAiPrompt: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();

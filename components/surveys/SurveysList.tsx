@@ -12,7 +12,7 @@ interface SurveysListProps {
 }
 
 export function SurveysList({ projectSlug }: SurveysListProps) {
-  const { project, team } = useProject();
+  const { project } = useProject();
 
   const surveys = useQuery(api.surveys.getSurveysByProject, {
     projectId: project._id,
@@ -46,7 +46,7 @@ export function SurveysList({ projectSlug }: SurveysListProps) {
           <p className="text-gray-600">Manage surveys for project {project.name}</p>
         </div>
         {canEdit && (
-          <Link href={`/${team?.slug}/${projectSlug}/surveys/new`}>
+          <Link href={`/organisation/projects/${projectSlug}/surveys/new`}>
             <Button>
               <Plus className="mr-2 h-4 w-4" />
               New Survey
@@ -65,7 +65,7 @@ export function SurveysList({ projectSlug }: SurveysListProps) {
           </CardHeader>
           <CardContent>
             {canEdit && (
-              <Link href={`/${team?.slug}/${projectSlug}/surveys/new`}>
+              <Link href={`/organisation/projects/${projectSlug}/surveys/new`}>
                 <Button>
                   <Plus className="mr-2 h-4 w-4" />
                   Create First Survey
@@ -90,13 +90,13 @@ export function SurveysList({ projectSlug }: SurveysListProps) {
                 <div className="mt-4 flex gap-2 flex-wrap">
                   {canEdit ? (
                     <>
-                      <Link href={`/${team?.slug}/${projectSlug}/surveys/${survey._id}/edit`}>
+                      <Link href={`/organisation/projects/${projectSlug}/surveys/${survey._id}/edit`}>
                         <Button variant="outline" size="sm">
                           <Edit className="mr-1 h-3 w-3" />
                           Edit
                         </Button>
                       </Link>
-                      <Link href={`/${team?.slug}/${projectSlug}/surveys/${survey._id}/responses`}>
+                      <Link href={`/organisation/projects/${projectSlug}/surveys/${survey._id}/responses`}>
                         <Button variant="outline" size="sm">
                           <BarChart3 className="mr-1 h-3 w-3" />
                           Responses
@@ -106,14 +106,14 @@ export function SurveysList({ projectSlug }: SurveysListProps) {
                   ) : (
                     <>
                       {!hasUserResponded(survey._id) ? (
-                        <Link href={`/${team?.slug}/${projectSlug}/surveys/${survey._id}`}>
+                        <Link href={`/organisation/projects/${projectSlug}/surveys/${survey._id}`}>
                           <Button variant="outline" size="sm">
                             <FileText className="mr-1 h-3 w-3" />
                             Respond
                           </Button>
                         </Link>
                       ) : (
-                        <Link href={`/${team?.slug}/${projectSlug}/surveys/${survey._id}/responses`}>
+                        <Link href={`/organisation/projects/${projectSlug}/surveys/${survey._id}/responses`}>
                           <Button variant="outline" size="sm">
                             <BarChart3 className="mr-1 h-3 w-3" />
                             My Response

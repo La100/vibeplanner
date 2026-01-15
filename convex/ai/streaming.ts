@@ -96,7 +96,8 @@ export const internalDoStreaming = internalAction({
 
       // Build system instructions
       console.log("📝 Building system instructions...");
-      const systemPrompt = defaultPrompt;
+      // Use custom AI prompt from project if available, otherwise use default
+      const systemPrompt = projectForTeam?.customAiPrompt || defaultPrompt;
       const teamMembers = await ctx.runQuery(internal.teams.getTeamMembersWithUserDetails, {
         projectId: args.projectId,
       });
@@ -106,7 +107,8 @@ export const internalDoStreaming = internalAction({
         systemPrompt,
         currentDateTime,
         currentDate,
-        teamMembersContext
+        teamMembersContext,
+        args.userClerkId
       );
 
       // Prepare user message

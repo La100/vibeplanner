@@ -33,27 +33,27 @@ import {
 } from "lucide-react";
 
 function ProjectSidebarContent() {
-  const params = useParams<{ slug: string; projectSlug: string }>();
+  const params = useParams<{ projectSlug: string }>();
   const router = useRouter();
   const { setOpenMobile } = useSidebar();
   const { project, team, permissions: sidebarPermissions } = useProject();
 
   const allNavItems = [
-    { href: `/${params.slug}/${params.projectSlug}`, label: "Overview", icon: LayoutDashboard, key: "overview" },
-    { href: `/${params.slug}/${params.projectSlug}/tasks`, label: "Tasks", icon: CheckSquare, key: "tasks" },
-    { href: `/${params.slug}/${params.projectSlug}/moodboard`, label: "Moodboard", icon: Image, key: "moodboard" },
-    { href: `/${params.slug}/${params.projectSlug}/notes`, label: "Notes", icon: StickyNote, key: "notes" },
-    { href: `/${params.slug}/${params.projectSlug}/contacts`, label: "Contacts", icon: Contact, key: "contacts" },
-    { href: `/${params.slug}/${params.projectSlug}/surveys`, label: "Surveys", icon: ClipboardList, key: "surveys" },
-    { href: `/${params.slug}/${params.projectSlug}/calendar`, label: "Google Calendar", icon: Calendar, key: "calendar" },
-    { href: `/${params.slug}/${params.projectSlug}/files`, label: "Files", icon: Files, key: "files" },
-    { href: `/${params.slug}/${params.projectSlug}/shopping-list`, label: "Materials", icon: ShoppingCart, key: "shopping_list" },
-    { href: `/${params.slug}/${params.projectSlug}/labor`, label: "Labor", icon: Hammer, key: "labor" },
-    { href: `/${params.slug}/${params.projectSlug}/estimations`, label: "Estimations", icon: Calculator, key: "estimations" },
+    { href: `/organisation/projects/${params.projectSlug}`, label: "Overview", icon: LayoutDashboard, key: "overview" },
+    { href: `/organisation/projects/${params.projectSlug}/tasks`, label: "Tasks", icon: CheckSquare, key: "tasks" },
+    { href: `/organisation/projects/${params.projectSlug}/moodboard`, label: "Moodboard", icon: Image, key: "moodboard" },
+    { href: `/organisation/projects/${params.projectSlug}/notes`, label: "Notes", icon: StickyNote, key: "notes" },
+    { href: `/organisation/projects/${params.projectSlug}/contacts`, label: "Contacts", icon: Contact, key: "contacts" },
+    { href: `/organisation/projects/${params.projectSlug}/surveys`, label: "Surveys", icon: ClipboardList, key: "surveys" },
+    { href: `/organisation/projects/${params.projectSlug}/calendar`, label: "Google Calendar", icon: Calendar, key: "calendar" },
+    { href: `/organisation/projects/${params.projectSlug}/files`, label: "Files", icon: Files, key: "files" },
+    { href: `/organisation/projects/${params.projectSlug}/shopping-list`, label: "Materials", icon: ShoppingCart, key: "shopping_list" },
+    { href: `/organisation/projects/${params.projectSlug}/labor`, label: "Labor", icon: Hammer, key: "labor" },
+    { href: `/organisation/projects/${params.projectSlug}/estimations`, label: "Estimations", icon: Calculator, key: "estimations" },
   ];
 
-  const aiItem = { href: `/${params.slug}/${params.projectSlug}/ai`, label: "AI Assistant", icon: Sparkles, key: "ai" };
-  const settingsItem = { href: `/${params.slug}/${params.projectSlug}/settings`, label: "Settings", icon: Settings, key: "settings" };
+  const aiItem = { href: `/organisation/projects/${params.projectSlug}/ai`, label: "AI Assistant", icon: Sparkles, key: "ai" };
+  const settingsItem = { href: `/organisation/projects/${params.projectSlug}/settings`, label: "Settings", icon: Settings, key: "settings" };
 
   const navItems = sidebarPermissions?.permissions
     ? allNavItems.filter((item) => sidebarPermissions.permissions?.[item.key as keyof typeof sidebarPermissions.permissions]?.visible !== false)
@@ -75,9 +75,9 @@ function ProjectSidebarContent() {
       <SidebarHeader className="border-b border-sidebar-border">
         <div className="flex flex-col gap-0.5 py-4 px-4">
           <Link
-            href={`/${params.slug}`}
+            href="/organisation"
             onClick={handleLinkClick}
-            onMouseEnter={() => handleLinkHover(`/${params.slug}`)}
+            onMouseEnter={() => handleLinkHover("/organisation")}
             className="flex items-center gap-2 group mb-3 text-sidebar-foreground/70"
           >
             <ArrowLeft className="h-4 w-4 text-sidebar-foreground/50" />

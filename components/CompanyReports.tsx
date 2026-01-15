@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useParams } from "next/navigation";
 import { useOrganization } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -14,13 +13,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function CompanyReports() {
-  const params = useParams<{ slug: string }>();
   const { organization, isLoaded } = useOrganization();
   const [timeRange, setTimeRange] = useState<string>("30d");
   
   // Check if team exists first
-  const team = useQuery(api.teams.getTeamBySlug, 
-    params.slug ? { slug: params.slug } : "skip"
+  const team = useQuery(api.teams.getTeamByClerkOrg, 
+    organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
   
   // Get projects for this organization
