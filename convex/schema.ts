@@ -909,4 +909,20 @@ export default defineSchema({
     .index("by_team", ["teamId"])
     .index("by_google_event_id", ["googleEventId"])
     .index("by_project_and_time", ["projectId", "startTime"]),
+
+  // Google Calendar Source Links - maps internal items to Google events
+  googleCalendarLinks: defineTable({
+    sourceType: v.union(v.literal("task"), v.literal("shopping")),
+    sourceId: v.string(),
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    clerkUserId: v.string(),
+    googleEventId: v.string(),
+    lastSyncedAt: v.number(),
+  })
+    .index("by_source_and_user", ["sourceType", "sourceId", "clerkUserId"])
+    .index("by_google_event_id", ["googleEventId"])
+    .index("by_project", ["projectId"])
+    .index("by_team", ["teamId"])
+    .index("by_user", ["clerkUserId"]),
 });

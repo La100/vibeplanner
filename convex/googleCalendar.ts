@@ -5,6 +5,8 @@ import { action, internalAction } from "./_generated/server";
 import { internal, api } from "./_generated/api";
 import { google } from "googleapis";
 
+const internalAny = internal as any;
+
 // OAuth2 client configuration
 const getOAuth2Client = () => {
   return new google.auth.OAuth2(
@@ -12,6 +14,61 @@ const getOAuth2Client = () => {
     process.env.GOOGLE_CLIENT_SECRET,
     process.env.GOOGLE_REDIRECT_URI
   );
+};
+
+const isAllDayTimestamp = (timestamp: number) => {
+  const date = new Date(timestamp);
+  return (
+    date.getUTCHours() === 0 &&
+    date.getUTCMinutes() === 0 &&
+    date.getUTCSeconds() === 0
+  );
+};
+
+const toDateString = (timestamp: number) => {
+  return new Date(timestamp).toISOString().split("T")[0];
+};
+
+const addDays = (timestamp: number, days: number) => {
+  return timestamp + days * 24 * 60 * 60 * 1000;
+};
+
+const getAuthorizedClient = async (ctx: any, clerkUserId: string, teamId: string) => {
+  const tokenData = await ctx.runQuery(internalAny.googleCalendarDb.getTokenData, {
+    clerkUserId,
+    teamId,
+  });
+
+  if (!tokenData || !tokenData.isConnected) {
+    return null;
+  }
+
+  const oauth2Client = getOAuth2Client();
+  oauth2Client.setCredentials({
+    access_token: tokenData.accessToken,
+    refresh_token: tokenData.refreshToken,
+  });
+
+  if (tokenData.expiresAt < Date.now()) {
+    try {
+      const { credentials } = await oauth2Client.refreshAccessToken();
+      await ctx.runMutation(internalAny.googleCalendarDb.storeTokens, {
+        clerkUserId,
+        teamId,
+        accessToken: credentials.access_token!,
+        refreshToken: credentials.refresh_token || tokenData.refreshToken,
+        expiresAt: credentials.expiry_date || Date.now() + 3600000,
+        email: tokenData.email,
+        calendarId: tokenData.calendarId,
+      });
+      oauth2Client.setCredentials(credentials);
+    } catch (error) {
+      console.error("Error refreshing Google Calendar token:", error);
+      return null;
+    }
+  }
+
+  return oauth2Client;
 };
 
 // ====== ACTIONS (Google API calls) ======
@@ -418,5 +475,220 @@ export const deleteGoogleEvent = action({
       console.error("Error deleting event:", error);
       throw new Error("Failed to delete Google Calendar event");
     }
+  },
+});
+
+// ====== INTERNAL ACTIONS (Task/Shopping sync) ======
+
+export const syncTaskEvent = internalAction({
+  args: {
+    taskId: v.id("tasks"),
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    clerkUserId: v.string(),
+    title: v.string(),
+    description: v.optional(v.string()),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const oauth2Client = await getAuthorizedClient(ctx, args.clerkUserId, args.teamId);
+    if (!oauth2Client) return { skipped: true, reason: "not_connected" };
+
+    const startTs = args.startDate ?? args.endDate;
+    const endTs = args.endDate ?? args.startDate;
+    if (!startTs || !endTs) {
+      await ctx.runAction(internalAny.googleCalendar.deleteGoogleEventForSource, {
+        sourceType: "task",
+        sourceId: args.taskId,
+        clerkUserId: args.clerkUserId,
+        teamId: args.teamId,
+      });
+      return { skipped: true, reason: "missing_dates" };
+    }
+
+    const allDay = isAllDayTimestamp(startTs) && isAllDayTimestamp(endTs);
+    const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+    const existingLink = await ctx.runQuery(internalAny.googleCalendarLinks.getLinkBySource, {
+      sourceType: "task",
+      sourceId: args.taskId,
+      clerkUserId: args.clerkUserId,
+    });
+
+    const requestBody: any = {
+      summary: args.title,
+      description: args.description,
+    };
+
+    if (allDay) {
+      requestBody.start = { date: toDateString(startTs) };
+      requestBody.end = { date: toDateString(addDays(endTs, 1)) };
+    } else {
+      requestBody.start = { dateTime: new Date(startTs).toISOString() };
+      requestBody.end = { dateTime: new Date(endTs).toISOString() };
+    }
+
+    try {
+      if (existingLink) {
+        const response = await calendar.events.update({
+          calendarId: "primary",
+          eventId: existingLink.googleEventId,
+          requestBody,
+        });
+
+        await ctx.runMutation(internalAny.googleCalendarLinks.upsertLink, {
+          sourceType: "task",
+          sourceId: args.taskId,
+          projectId: args.projectId,
+          teamId: args.teamId,
+          clerkUserId: args.clerkUserId,
+          googleEventId: response.data.id!,
+        });
+
+        return { success: true, eventId: response.data.id };
+      }
+
+      const response = await calendar.events.insert({
+        calendarId: "primary",
+        requestBody,
+      });
+
+      await ctx.runMutation(internalAny.googleCalendarLinks.upsertLink, {
+        sourceType: "task",
+        sourceId: args.taskId,
+        projectId: args.projectId,
+        teamId: args.teamId,
+        clerkUserId: args.clerkUserId,
+        googleEventId: response.data.id!,
+      });
+
+      return { success: true, eventId: response.data.id };
+    } catch (error) {
+      console.error("Error syncing task to Google Calendar:", error);
+      return { success: false };
+    }
+  },
+});
+
+export const syncShoppingItemEvent = internalAction({
+  args: {
+    itemId: v.id("shoppingListItems"),
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    clerkUserId: v.string(),
+    name: v.string(),
+    notes: v.optional(v.string()),
+    buyBefore: v.optional(v.number()),
+    quantity: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const oauth2Client = await getAuthorizedClient(ctx, args.clerkUserId, args.teamId);
+    if (!oauth2Client) return { skipped: true, reason: "not_connected" };
+
+    if (!args.buyBefore) {
+      await ctx.runAction(internalAny.googleCalendar.deleteGoogleEventForSource, {
+        sourceType: "shopping",
+        sourceId: args.itemId,
+        clerkUserId: args.clerkUserId,
+        teamId: args.teamId,
+      });
+      return { skipped: true, reason: "missing_date" };
+    }
+
+    const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+    const existingLink = await ctx.runQuery(internalAny.googleCalendarLinks.getLinkBySource, {
+      sourceType: "shopping",
+      sourceId: args.itemId,
+      clerkUserId: args.clerkUserId,
+    });
+
+    const requestBody: any = {
+      summary: `Shopping: ${args.name}`,
+      description: args.notes
+        ? `Quantity: ${args.quantity}\n${args.notes}`
+        : `Quantity: ${args.quantity}`,
+      start: { date: toDateString(args.buyBefore) },
+      end: { date: toDateString(addDays(args.buyBefore, 1)) },
+    };
+
+    try {
+      if (existingLink) {
+        const response = await calendar.events.update({
+          calendarId: "primary",
+          eventId: existingLink.googleEventId,
+          requestBody,
+        });
+
+        await ctx.runMutation(internalAny.googleCalendarLinks.upsertLink, {
+          sourceType: "shopping",
+          sourceId: args.itemId,
+          projectId: args.projectId,
+          teamId: args.teamId,
+          clerkUserId: args.clerkUserId,
+          googleEventId: response.data.id!,
+        });
+
+        return { success: true, eventId: response.data.id };
+      }
+
+      const response = await calendar.events.insert({
+        calendarId: "primary",
+        requestBody,
+      });
+
+      await ctx.runMutation(internalAny.googleCalendarLinks.upsertLink, {
+        sourceType: "shopping",
+        sourceId: args.itemId,
+        projectId: args.projectId,
+        teamId: args.teamId,
+        clerkUserId: args.clerkUserId,
+        googleEventId: response.data.id!,
+      });
+
+      return { success: true, eventId: response.data.id };
+    } catch (error) {
+      console.error("Error syncing shopping item to Google Calendar:", error);
+      return { success: false };
+    }
+  },
+});
+
+export const deleteGoogleEventForSource = internalAction({
+  args: {
+    sourceType: v.union(v.literal("task"), v.literal("shopping")),
+    sourceId: v.string(),
+    clerkUserId: v.string(),
+    teamId: v.id("teams"),
+  },
+  handler: async (ctx, args) => {
+    const oauth2Client = await getAuthorizedClient(ctx, args.clerkUserId, args.teamId);
+    if (!oauth2Client) return { skipped: true, reason: "not_connected" };
+
+    const existingLink = await ctx.runQuery(internalAny.googleCalendarLinks.getLinkBySource, {
+      sourceType: args.sourceType,
+      sourceId: args.sourceId,
+      clerkUserId: args.clerkUserId,
+    });
+
+    if (!existingLink) return { skipped: true, reason: "no_link" };
+
+    const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+
+    try {
+      await calendar.events.delete({
+        calendarId: "primary",
+        eventId: existingLink.googleEventId,
+      });
+    } catch (error) {
+      console.error("Error deleting Google Calendar event:", error);
+    }
+
+    await ctx.runMutation(internalAny.googleCalendarLinks.deleteLink, {
+      sourceType: args.sourceType,
+      sourceId: args.sourceId,
+      clerkUserId: args.clerkUserId,
+    });
+
+    return { success: true };
   },
 });

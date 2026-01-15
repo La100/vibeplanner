@@ -3,6 +3,8 @@ import { api, internal } from "./_generated/api";
 import { query, mutation, internalMutation, internalQuery, action } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 
+const internalAny = internal as any;
+
 // Utility function to check project read access
 const hasProjectAccess = async (ctx: any, projectId: Id<"projects">, requireWriteAccess = false): Promise<boolean> => {
     const identity = await ctx.auth.getUserIdentity();
@@ -406,6 +408,18 @@ export const createTask = mutation({
       entityType: "task",
     });
 
+    const targetUserId = args.assignedTo ?? identity.subject;
+    await ctx.scheduler.runAfter(0, internalAny.googleCalendar.syncTaskEvent, {
+      taskId,
+      projectId: args.projectId,
+      teamId: args.teamId,
+      clerkUserId: targetUserId,
+      title: args.title,
+      description: args.description,
+      startDate: args.startDate,
+      endDate: args.endDate,
+    });
+
     return taskId;
   },
 });
@@ -433,6 +447,10 @@ export const updateTask = mutation({
     
     const { taskId, ...updates } = args;
     const updatePayload = { ...updates, updatedAt: Date.now() };
+    const assignedToProvided = Object.prototype.hasOwnProperty.call(updates, "assignedTo");
+    const nextAssignedTo = assignedToProvided ? (updates.assignedTo ?? null) : (task.assignedTo ?? null);
+    const prevAssignedTo = task.assignedTo ?? null;
+    const targetUserId = nextAssignedTo ?? task.createdBy;
 
     await ctx.db.patch(taskId, updatePayload as Partial<Doc<"tasks">>);
 
@@ -445,6 +463,35 @@ export const updateTask = mutation({
       entityId: args.taskId,
       entityType: "task",
     });
+
+    await ctx.scheduler.runAfter(0, internalAny.googleCalendar.syncTaskEvent, {
+      taskId: args.taskId,
+      projectId: task.projectId,
+      teamId: task.teamId,
+      clerkUserId: targetUserId,
+      title: updates.title ?? task.title,
+      description: updates.description ?? task.description,
+      startDate: updates.startDate ?? task.startDate,
+      endDate: updates.endDate ?? task.endDate,
+    });
+
+    if (prevAssignedTo && prevAssignedTo !== nextAssignedTo) {
+      await ctx.scheduler.runAfter(0, internalAny.googleCalendar.deleteGoogleEventForSource, {
+        sourceType: "task",
+        sourceId: args.taskId,
+        clerkUserId: prevAssignedTo,
+        teamId: task.teamId,
+      });
+    }
+
+    if (!prevAssignedTo && nextAssignedTo && task.createdBy !== nextAssignedTo) {
+      await ctx.scheduler.runAfter(0, internalAny.googleCalendar.deleteGoogleEventForSource, {
+        sourceType: "task",
+        sourceId: args.taskId,
+        clerkUserId: task.createdBy,
+        teamId: task.teamId,
+      });
+    }
   },
 });
 
@@ -490,6 +537,14 @@ export const deleteTask = mutation({
       entityType: "task",
     });
     await ctx.db.delete(args.taskId);
+
+    const targetUserId = task.assignedTo ?? task.createdBy;
+    await ctx.scheduler.runAfter(0, internalAny.googleCalendar.deleteGoogleEventForSource, {
+      sourceType: "task",
+      sourceId: args.taskId,
+      clerkUserId: targetUserId,
+      teamId: task.teamId,
+    });
   },
 });
 

@@ -34,6 +34,7 @@ interface ChatInputProps {
   onRemoveFile: (index: number) => void;
   onAttachmentClick: () => void;
   onPasteFiles?: (files: File[]) => void;
+  showAttachments?: boolean;
 }
 
 export function ChatInput({
@@ -50,6 +51,7 @@ export function ChatInput({
   onRemoveFile,
   onAttachmentClick,
   onPasteFiles,
+  showAttachments = true,
 }: ChatInputProps) {
   const previewUrlsRef = useRef<Record<string, string>>({});
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
@@ -140,7 +142,7 @@ export function ChatInput({
         "flex flex-col gap-4"
       )}>
         <AnimatePresence>
-          {selectedFiles.length > 0 && (
+          {showAttachments && selectedFiles.length > 0 && (
              <motion.div 
                initial={{ opacity: 0, height: 0 }}
                animate={{ opacity: 1, height: "auto" }}
@@ -204,25 +206,29 @@ export function ChatInput({
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              onChange={onFileSelect}
-              accept={ACCEPTED_FILE_TYPES}
-              className="hidden"
-              multiple
-            />
-            
-            <Button
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 rounded-xl text-muted-foreground hover:text-foreground transition-colors bg-background/70 border border-border/60 shadow-sm hover:bg-background"
-                onClick={onAttachmentClick}
-                disabled={isLoading || isUploading}
-                title="Attach files"
-              >
-                <Paperclip className="h-4 w-4" />
-              </Button>
+            {showAttachments && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  onChange={onFileSelect}
+                  accept={ACCEPTED_FILE_TYPES}
+                  className="hidden"
+                  multiple
+                />
+                
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-10 w-10 rounded-xl text-muted-foreground hover:text-foreground transition-colors bg-background/70 border border-border/60 shadow-sm hover:bg-background"
+                    onClick={onAttachmentClick}
+                    disabled={isLoading || isUploading}
+                    title="Attach files"
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </Button>
+              </>
+            )}
           </div>
 
           <Button

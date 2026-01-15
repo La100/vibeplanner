@@ -58,6 +58,7 @@ import type * as customers from "../customers.js";
 import type * as files from "../files.js";
 import type * as googleCalendar from "../googleCalendar.js";
 import type * as googleCalendarDb from "../googleCalendarDb.js";
+import type * as googleCalendarLinks from "../googleCalendarLinks.js";
 import type * as http from "../http.js";
 import type * as labor from "../labor.js";
 import type * as myFunctions from "../myFunctions.js";
@@ -135,6 +136,7 @@ declare const fullApi: ApiFromModules<{
   files: typeof files;
   googleCalendar: typeof googleCalendar;
   googleCalendarDb: typeof googleCalendarDb;
+  googleCalendarLinks: typeof googleCalendarLinks;
   http: typeof http;
   labor: typeof labor;
   myFunctions: typeof myFunctions;

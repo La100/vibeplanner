@@ -1,6 +1,9 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
+
+const internalAny = internal as any;
 
 // Utility function to check project access
 const hasProjectAccess = async (ctx: any, projectId: Id<"projects">, requireWriteAccess = false): Promise<boolean> => {
@@ -340,6 +343,18 @@ export const updateTaskDates = mutation({
       endDate: args.endDate 
     });
 
+    const targetUserId = task.assignedTo ?? task.createdBy;
+    await ctx.scheduler.runAfter(0, internalAny.googleCalendar.syncTaskEvent, {
+      taskId: args.taskId,
+      projectId: task.projectId,
+      teamId: task.teamId,
+      clerkUserId: targetUserId,
+      title: task.title,
+      description: task.description,
+      startDate: args.startDate ?? task.startDate,
+      endDate: args.endDate ?? task.endDate,
+    });
+
     return { success: true };
   },
 });
@@ -360,6 +375,18 @@ export const updateShoppingItemBuyBefore = mutation({
     if (!hasAccess) throw new Error("Permission denied");
 
     await ctx.db.patch(args.itemId, { buyBefore: args.buyBefore });
+
+    const targetUserId = item.assignedTo ?? item.createdBy;
+    await ctx.scheduler.runAfter(0, internalAny.googleCalendar.syncShoppingItemEvent, {
+      itemId: args.itemId,
+      projectId: item.projectId,
+      teamId: item.teamId,
+      clerkUserId: targetUserId,
+      name: item.name,
+      notes: item.notes,
+      buyBefore: args.buyBefore ?? item.buyBefore,
+      quantity: item.quantity,
+    });
 
     return { success: true };
   },

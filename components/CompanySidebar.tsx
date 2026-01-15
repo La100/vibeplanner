@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Suspense } from "react";
 import { useQuery } from "convex/react";
-import { useOrganization, useOrganizationList } from "@clerk/nextjs";
+import { useClerk, useOrganization, useOrganizationList, useUser } from "@clerk/nextjs";
 import { apiAny } from "@/lib/convexApiAny";
 import {
   Sidebar,
@@ -19,6 +19,13 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Settings,
   Users,
   FolderOpen,
@@ -26,6 +33,10 @@ import {
   Contact,
   Package,
   Sparkles,
+  LifeBuoy,
+  LogOut,
+  Settings2,
+  ChevronDown,
 } from "lucide-react";
 
 function CompanySidebarContent() {
@@ -34,7 +45,9 @@ function CompanySidebarContent() {
   useOrganizationList({
     userMemberships: true,
   });
+  const { signOut, openUserProfile } = useClerk();
   const { organization } = useOrganization();
+  const { user } = useUser();
 
   const team = useQuery(
     apiAny.teams.getTeamByClerkOrg,
@@ -55,8 +68,17 @@ function CompanySidebarContent() {
     { href: "/organisation/team", label: "Team", icon: Users, allowedRoles: ["admin", "member"] },
     { href: "/organisation/contacts", label: "Contacts", icon: Contact, allowedRoles: ["admin", "member"] },
     { href: "/organisation/reports", label: "Reports", icon: BarChart3, allowedRoles: ["admin", "member"] },
-    { href: "/organisation/settings", label: "Settings", icon: Settings, allowedRoles: ["admin", "member"] },
   ];
+  const footerItems = [
+    { href: "/organisation/settings", label: "Settings", icon: Settings },
+    { href: "/help", label: "Help", icon: LifeBuoy },
+  ];
+
+  const userInitial =
+    user?.fullName?.charAt(0) ||
+    user?.firstName?.charAt(0) ||
+    user?.primaryEmailAddress?.emailAddress?.charAt(0) ||
+    "U";
 
   // Filter navigation items based on user role
   const navItems = allNavItems.filter(
@@ -102,7 +124,7 @@ function CompanySidebarContent() {
         </div>
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarContent className="flex flex-col">
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu className="space-y-1">
@@ -122,6 +144,81 @@ function CompanySidebarContent() {
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup className="mt-auto border-t border-sidebar-border">
+          <SidebarGroupContent className="pt-2">
+            <SidebarMenu>
+              {footerItems.map((item) => (
+                <SidebarMenuItem key={item.href}>
+                  <SidebarMenuButton asChild className="h-10 justify-start gap-3 rounded-lg px-3 text-sm font-medium tracking-tight text-sidebar-foreground">
+                    <Link
+                      href={item.href}
+                      onClick={handleLinkClick}
+                      onMouseEnter={() => handleLinkHover(item.href)}
+                      className="flex flex-1 items-center gap-3"
+                    >
+                      <item.icon className="h-4 w-4 text-sidebar-foreground/70" />
+                      <span className="truncate">{item.label}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+          <SidebarGroupContent className="px-2 pb-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-sidebar-accent/50"
+                >
+                  {user?.imageUrl ? (
+                    <div className="relative h-9 w-9 overflow-hidden rounded-full border border-sidebar-border/50">
+                      <Image
+                        src={user.imageUrl}
+                        alt={user.fullName || user.firstName || "User"}
+                        fill
+                        className="object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold">
+                      {userInitial.toUpperCase()}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-sidebar-foreground truncate">
+                      {user?.fullName || user?.firstName || "Account"}
+                    </p>
+                    <p className="text-xs text-sidebar-foreground/60 truncate">
+                      {user?.primaryEmailAddress?.emailAddress || ""}
+                    </p>
+                  </div>
+                  <ChevronDown className="h-4 w-4 text-sidebar-foreground/60" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <div className="px-3 py-2">
+                  <p className="text-sm font-semibold text-foreground">
+                    {user?.fullName || user?.firstName || "Account"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {user?.primaryEmailAddress?.emailAddress || ""}
+                  </p>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => openUserProfile?.()}>
+                  <Settings2 className="mr-2 h-4 w-4" />
+                  Manage account
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => signOut()}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
