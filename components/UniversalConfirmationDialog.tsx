@@ -34,7 +34,7 @@ import {
 import { DatePicker } from "@/components/ui/date-picker";
 import { Calendar, User, DollarSign, Tag, Package, Home } from "lucide-react";
 import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { useProject } from '@/components/providers/ProjectProvider';
 
 const taskFormSchema = z.object({
@@ -192,7 +192,7 @@ export function UniversalConfirmationDialog({
 
   // Get team members for assignment dropdown
   const teamMembers = useQuery(
-    api.teams.getTeamMembers,
+    apiAny.teams.getTeamMembers,
     project ? { teamId: project.teamId } : "skip"
   );
 

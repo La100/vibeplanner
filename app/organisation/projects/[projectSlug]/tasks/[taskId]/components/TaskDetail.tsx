@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 import { useOrganization, useUser } from "@clerk/nextjs";
 
@@ -43,27 +43,27 @@ export default function TaskDetail() {
   const [titleValue, setTitleValue] = useState('');
   const [newComment, setNewComment] = useState('');
 
-  const task = useQuery(api.tasks.getTask, 
+  const task = useQuery(apiAny.tasks.getTask, 
     params.taskId ? { taskId: params.taskId as Id<"tasks"> } : "skip"
   );
   
-  const comments = useQuery(api.comments.getCommentsForTask,
+  const comments = useQuery(apiAny.comments.getCommentsForTask,
     task ? { taskId: task._id } : "skip"
   );
 
-  const files = useQuery(api.files.getFilesForTask, task ? { taskId: task._id } : "skip");
+  const files = useQuery(apiAny.files.getFilesForTask, task ? { taskId: task._id } : "skip");
 
   const project = useQuery(
-    api.projects.getProjectBySlugInClerkOrg,
+    apiAny.projects.getProjectBySlugInClerkOrg,
     organization?.id
       ? { clerkOrgId: organization.id, projectSlug: params.projectSlug }
       : "skip"
   );
 
-  const generateUploadUrl = useMutation(api.files.generateUploadUrlWithCustomKey);
-  const addFile = useMutation(api.files.addFile);
-  const updateTask = useMutation(api.tasks.updateTask);
-  const addComment = useMutation(api.comments.addComment);
+  const generateUploadUrl = useMutation(apiAny.files.generateUploadUrlWithCustomKey);
+  const addFile = useMutation(apiAny.files.addFile);
+  const updateTask = useMutation(apiAny.tasks.updateTask);
+  const addComment = useMutation(apiAny.comments.addComment);
   
   if (!task || !project || !user) {
     return (

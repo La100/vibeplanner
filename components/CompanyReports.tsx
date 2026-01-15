@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useOrganization } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 
 import { Download, Calendar, DollarSign, BarChart3, TrendingUp, Clock, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,22 +17,22 @@ export default function CompanyReports() {
   const [timeRange, setTimeRange] = useState<string>("30d");
   
   // Check if team exists first
-  const team = useQuery(api.teams.getTeamByClerkOrg, 
+  const team = useQuery(apiAny.teams.getTeamByClerkOrg, 
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
   
   // Get projects for this organization
-  const projects = useQuery(api.projects.listProjectsByClerkOrg, 
+  const projects = useQuery(apiAny.projects.listProjectsByClerkOrg, 
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
   
   // Get team tasks for overview
-  const teamTasks = useQuery(api.tasks.listTeamTasks,
+  const teamTasks = useQuery(apiAny.tasks.listTeamTasks,
     team && team._id ? { teamId: team._id } : "skip"
   );
 
   // Get shopping list items for financial data
-  const shoppingItems = useQuery(api.shopping.getShoppingListItemsByTeam,
+  const shoppingItems = useQuery(apiAny.shopping.getShoppingListItemsByTeam,
     team && team._id ? { teamId: team._id } : "skip"
   );
 
@@ -66,17 +66,17 @@ export default function CompanyReports() {
   }).length || 0;
 
   // Group projects by status
-  const projectsByStatus = projects?.reduce((acc, project) => {
+  const projectsByStatus = (projects?.reduce((acc, project) => {
     const status = project.status || 'unknown';
     acc[status] = (acc[status] || 0) + 1;
     return acc;
-  }, {} as Record<string, number>) || {};
+  }, {} as Record<string, number>) || {}) as Record<string, number>;
 
   // Group tasks by status
-  const tasksByStatus = teamTasks?.reduce((acc, task) => {
+  const tasksByStatus = (teamTasks?.reduce((acc, task) => {
     acc[task.status] = (acc[task.status] || 0) + 1;
     return acc;
-  }, {} as Record<string, number>) || {};
+  }, {} as Record<string, number>) || {}) as Record<string, number>;
 
   return (
     <div className="flex-1 p-6 space-y-6">

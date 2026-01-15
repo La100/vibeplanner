@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 import { useRouter } from "next/navigation";
 import { useProject } from "@/components/providers/ProjectProvider";
@@ -37,8 +37,8 @@ export function SurveyForm({ projectSlug }: SurveyFormProps) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const createSurvey = useMutation(api.surveys.createSurvey);
-  const addQuestion = useMutation(api.surveys.addQuestion);
+  const createSurvey = useMutation(apiAny.surveys.createSurvey);
+  const addQuestion = useMutation(apiAny.surveys.addQuestion);
 
   const addNewQuestion = () => {
     const newQuestion: Question = {

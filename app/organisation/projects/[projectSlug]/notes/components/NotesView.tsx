@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 import { useProject } from "@/components/providers/ProjectProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -195,13 +195,13 @@ export default function NotesView() {
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [viewingNote, setViewingNote] = useState<Note | null>(null);
 
-  const notes = useQuery(api.notes.getProjectNotes, { 
+  const notes = useQuery(apiAny.notes.getProjectNotes, { 
     projectId: project._id 
   });
 
-  const createNote = useMutation(api.notes.createNote);
-  const updateNote = useMutation(api.notes.updateNote);
-  const deleteNote = useMutation(api.notes.deleteNote);
+  const createNote = useMutation(apiAny.notes.createNote);
+  const updateNote = useMutation(apiAny.notes.updateNote);
+  const deleteNote = useMutation(apiAny.notes.deleteNote);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 

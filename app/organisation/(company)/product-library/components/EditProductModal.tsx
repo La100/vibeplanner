@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,7 @@ interface EditProductModalProps {
 }
 
 export function EditProductModal({ product, onClose }: EditProductModalProps) {
-  const updateProduct = useMutation(api.productLibrary.updateProduct);
+  const updateProduct = useMutation(apiAny.productLibrary.updateProduct);
   
   const [formData, setFormData] = useState({
     name: "",

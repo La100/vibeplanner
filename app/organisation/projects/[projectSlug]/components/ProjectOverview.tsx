@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { useProject } from "@/components/providers/ProjectProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -50,15 +50,15 @@ function ProjectOverviewSkeleton() {
 function ProjectOverviewContent() {
   const { project } = useProject();
   
-  const hasAccess = useQuery(api.projects.checkUserProjectAccess, {
+  const hasAccess = useQuery(apiAny.projects.checkUserProjectAccess, {
     projectId: project._id,
   });
   
-  const tasks = useQuery(api.tasks.listProjectTasks, 
+  const tasks = useQuery(apiAny.tasks.listProjectTasks, 
     hasAccess ? { projectId: project._id } : "skip"
   );
 
-  const shoppingListItems = useQuery(api.shopping.getShoppingListItemsByProject,
+  const shoppingListItems = useQuery(apiAny.shopping.getShoppingListItemsByProject,
     hasAccess ? { projectId: project._id } : "skip"
   );
 

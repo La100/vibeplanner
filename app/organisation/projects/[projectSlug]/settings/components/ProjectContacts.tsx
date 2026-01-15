@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { useOrganization } from "@clerk/nextjs";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 import {
   Card,
@@ -60,23 +60,23 @@ export default function ProjectContacts({ project }: ProjectContactsProps) {
 
   // Get all team contacts
   const team = useQuery(
-    api.teams.getTeamByClerkOrg,
+    apiAny.teams.getTeamByClerkOrg,
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
 
   const teamContacts = useQuery(
-    api.contacts.getContacts,
+    apiAny.contacts.getContacts,
     team?.slug ? { teamSlug: team.slug } : "skip"
   );
   
   // Get project contacts
-  const projectContacts = useQuery(api.contacts.getProjectContacts, {
+  const projectContacts = useQuery(apiAny.contacts.getProjectContacts, {
     projectId: project._id,
   });
 
   // Mutations
-  const assignContact = useMutation(api.contacts.assignContactToProject);
-  const removeContact = useMutation(api.contacts.removeContactFromProject);
+  const assignContact = useMutation(apiAny.contacts.assignContactToProject);
+  const removeContact = useMutation(apiAny.contacts.removeContactFromProject);
 
   const handleAssignContact = async () => {
     if (!selectedContactId) {

@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { toast } from "sonner";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { ChatHistoryEntry, SessionTokens } from "./types";
@@ -16,6 +16,8 @@ import {
   useUIMessages,
   type UIMessage,
 } from "@convex-dev/agent/react";
+
+type UIMessagesResult = ReturnType<typeof useUIMessages>["results"];
 
 interface UseAIChatProps {
   projectId: Id<"projects"> | undefined;
@@ -55,7 +57,7 @@ interface UseAIChatReturn {
   mobileSelectValue: string;
   
   // UIMessages from streaming
-  uiMessages: UIMessage[];
+  uiMessages: UIMessagesResult;
   streamingStatus: "LoadingFirstPage" | "CanLoadMore" | "Exhausted";
   loadMoreMessages: (numItems: number) => void;
   messageMetadataByIndex: Map<number, {
@@ -124,7 +126,7 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
   // Only call when we have a threadId to avoid issues
   // ===========================================
   const streamingHookResult = useUIMessages(
-    api.ai.streamingQueries.listThreadMessages,
+    apiAny.ai.streamingQueries.listThreadMessages,
     threadId ? { threadId } : "skip",
     { initialNumItems: 50, stream: true }
   );
@@ -136,36 +138,36 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
 
   // Streaming mutation with optimistic updates
   const initiateStreamingMutation = useMutation(
-    api.ai.streamingQueries.initiateStreaming
+    apiAny.ai.streamingQueries.initiateStreaming
   ).withOptimisticUpdate(
-    optimisticallySendMessage(api.ai.streamingQueries.listThreadMessages)
+    optimisticallySendMessage(apiAny.ai.streamingQueries.listThreadMessages)
   );
 
   // Abort streaming mutation
-  const abortStreamMutation = useMutation(api.ai.streamingQueries.abortStream);
+  const abortStreamMutation = useMutation(apiAny.ai.streamingQueries.abortStream);
 
   // ===========================================
   // Legacy queries for thread list and persisted messages
   // ===========================================
   const userThreads = useQuery(
-    api.ai.threads.listThreadsForUser,
+    apiAny.ai.threads.listThreadsForUser,
     projectId && userClerkId
       ? { projectId, userClerkId }
       : "skip"
   );
   
   const persistedMessages = useQuery(
-    api.ai.threads.listThreadMessages,
+    apiAny.ai.threads.listThreadMessages,
     projectId && threadId && userClerkId
       ? { threadId, projectId, userClerkId }
       : "skip"
   );
 
   // Mutations
-  const clearThread = useMutation(api.ai.threads.clearThreadForUser);
-  const clearPreviousThreads = useMutation(api.ai.threads.clearPreviousThreadsForUser);
+  const clearThread = useMutation(apiAny.ai.threads.clearThreadForUser);
+  const clearPreviousThreads = useMutation(apiAny.ai.threads.clearPreviousThreadsForUser);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const createThread = useMutation(api.ai.threads.getOrCreateThreadPublic);
+  const createThread = useMutation(apiAny.ai.threads.getOrCreateThreadPublic);
 
   // Computed values
   const threadList = userThreads ?? [];

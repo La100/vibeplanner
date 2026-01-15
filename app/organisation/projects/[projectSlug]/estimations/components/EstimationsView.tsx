@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation } from 'convex/react';
-import { api } from '@/convex/_generated/api';
+import { apiAny } from '@/lib/convexApiAny';
 import { Doc, Id } from '@/convex/_generated/dataModel';
 import { useProject } from '@/components/providers/ProjectProvider';
 import { toast } from 'sonner';
@@ -57,11 +57,11 @@ export function EstimationsViewSkeleton() {
 export default function EstimationsView() {
   const { project } = useProject();
 
-  const estimations = useQuery(api.costEstimations.listCostEstimations, { projectId: project._id });
-  const stats = useQuery(api.costEstimations.getEstimationStats, { projectId: project._id });
+  const estimations = useQuery(apiAny.costEstimations.listCostEstimations, { projectId: project._id });
+  const stats = useQuery(apiAny.costEstimations.getEstimationStats, { projectId: project._id });
 
-  const deleteEstimation = useMutation(api.costEstimations.deleteCostEstimation);
-  const updateStatus = useMutation(api.costEstimations.updateEstimationStatus);
+  const deleteEstimation = useMutation(apiAny.costEstimations.deleteCostEstimation);
+  const updateStatus = useMutation(apiAny.costEstimations.updateEstimationStatus);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [previewEstimationId, setPreviewEstimationId] = useState<Id<"costEstimations"> | null>(null);
@@ -310,5 +310,4 @@ export default function EstimationsView() {
     </div>
   );
 }
-
 

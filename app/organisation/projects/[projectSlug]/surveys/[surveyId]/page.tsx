@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { useRouter } from "next/navigation";
 import { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
@@ -42,24 +42,24 @@ export default function SurveyResponsePage({ params }: SurveyResponsePageProps) 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentResponseId, setCurrentResponseId] = useState<Id<"surveyResponses"> | null>(null);
 
-  const survey = useQuery(api.surveys.getSurvey, 
+  const survey = useQuery(apiAny.surveys.getSurvey, 
     routeParams ? { surveyId: routeParams.surveyId } : "skip"
   );
-  const userResponse = useQuery(api.surveys.getUserSurveyResponse, 
+  const userResponse = useQuery(apiAny.surveys.getUserSurveyResponse, 
     routeParams ? { surveyId: routeParams.surveyId } : "skip"
   );
-  const project = useQuery(api.projects.getProject, 
+  const project = useQuery(apiAny.projects.getProject, 
     survey?.projectId ? { projectId: survey.projectId } : "skip"
   );
-  const team = useQuery(api.teams.getTeam, 
+  const team = useQuery(apiAny.teams.getTeam, 
     project?.teamId ? { teamId: project.teamId } : "skip"
   );
   
-  const startResponse = useMutation(api.surveys.startSurveyResponse);
-  const saveAnswer = useMutation(api.surveys.saveAnswer);
-  const submitResponse = useMutation(api.surveys.submitSurveyResponse);
-  const generateUploadUrl = useMutation(api.files.generateUploadUrlWithCustomKey);
-  const addFile = useMutation(api.files.addFile);
+  const startResponse = useMutation(apiAny.surveys.startSurveyResponse);
+  const saveAnswer = useMutation(apiAny.surveys.saveAnswer);
+  const submitResponse = useMutation(apiAny.surveys.submitSurveyResponse);
+  const generateUploadUrl = useMutation(apiAny.files.generateUploadUrlWithCustomKey);
+  const addFile = useMutation(apiAny.files.addFile);
 
   useEffect(() => {
     if (userResponse && !userResponse.isComplete) {

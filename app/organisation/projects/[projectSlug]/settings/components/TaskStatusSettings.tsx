@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,7 +39,7 @@ interface TaskStatusSettingsProps {
 }
 
 export default function TaskStatusSettings({ projectId, initialSettings }: TaskStatusSettingsProps) {
-  const updateSettings = useMutation(api.projects.updateProjectTaskStatusSettings);
+  const updateSettings = useMutation(apiAny.projects.updateProjectTaskStatusSettings);
 
   const form = useForm<TaskStatusSettingsFormValues>({
     resolver: zodResolver(taskStatusSettingsSchema),

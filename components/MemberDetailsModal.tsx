@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Id } from "@/convex/_generated/dataModel";
 import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 
 import {
   Dialog,
@@ -73,8 +73,8 @@ export default function MemberDetailsModal({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isUpdatingRole, setIsUpdatingRole] = useState(false);
 
-  const changeTeamMemberRole = useMutation(api.teams.changeTeamMemberRole);
-  const removeTeamMember = useMutation(api.teams.removeTeamMember);
+  const changeTeamMemberRole = useMutation(apiAny.teams.changeTeamMemberRole);
+  const removeTeamMember = useMutation(apiAny.teams.removeTeamMember);
 
   if (!member) return null;
 

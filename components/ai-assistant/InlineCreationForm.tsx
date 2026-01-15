@@ -17,7 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { PendingContentItem } from "@/components/AIConfirmationGrid";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { useProject } from "@/components/providers/ProjectProvider";
 
 interface InlineCreationFormProps {
@@ -40,10 +40,16 @@ export function InlineCreationForm({
 }: InlineCreationFormProps) {
     // Common state
     const data = item.data as Record<string, unknown>;
+    const title = typeof data.title === "string" ? data.title : undefined;
+    const name = typeof data.name === "string" ? data.name : undefined;
+    const description = typeof data.description === "string" ? data.description : undefined;
+    const content = typeof data.content === "string" ? data.content : undefined;
+    const displayTitle = title || name || "Untitled";
+    const displayDescription = description || content;
     const [askPreference, setAskPreference] = useState("always");
     const { project } = useProject();
     const teamMembers = useQuery(
-        api.teams.getTeamMembers,
+        apiAny.teams.getTeamMembers,
         project ? { teamId: project.teamId } : "skip"
     );
 
@@ -79,11 +85,11 @@ export function InlineCreationForm({
                 {operation === 'delete' ? (
                     <div className="space-y-3">
                         <div className="text-base font-medium">
-                            {String(data.title || data.name || "Untitled")}
+                            {displayTitle}
                         </div>
-                        {(data.description || data.content) && (
+                        {displayDescription && (
                             <div className="text-sm text-muted-foreground">
-                                {String(data.description || data.content)}
+                                {displayDescription}
                             </div>
                         )}
                     </div>

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useProject } from "@/components/providers/ProjectProvider";
 import { useMutation, useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Button } from "@/components/ui/button";
 import { Plus, Edit3, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -137,14 +137,14 @@ function MoodboardRow({ row, onUpdateTitle }: {
   const [isUploading, setIsUploading] = useState(false);
 
   // Get images for this specific section
-  const sectionImages = useQuery(api.files.getMoodboardImagesBySection, {
+  const sectionImages = useQuery(apiAny.files.getMoodboardImagesBySection, {
     projectId: project._id,
     section: row.id
   });
 
-  const generateUploadUrl = useMutation(api.files.generateUploadUrlWithCustomKey);
-  const addFile = useMutation(api.files.addFile);
-  const deleteFileByStorageId = useMutation(api.files.deleteFileByStorageId);
+  const generateUploadUrl = useMutation(apiAny.files.generateUploadUrlWithCustomKey);
+  const addFile = useMutation(apiAny.files.addFile);
+  const deleteFileByStorageId = useMutation(apiAny.files.deleteFileByStorageId);
 
   const handleTitleSave = (newTitle: string) => {
     onUpdateTitle(row.id, newTitle);

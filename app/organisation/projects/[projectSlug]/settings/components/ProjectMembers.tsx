@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,12 +30,12 @@ interface TeamMember {
 
 export default function ProjectMembers({ project }: ProjectMembersProps) {
   // Get all team members
-  const teamMembers = useQuery(api.teams.getTeamMembers, {
+  const teamMembers = useQuery(apiAny.teams.getTeamMembers, {
     teamId: project.teamId,
   });
   
   // Get current user's role
-  const currentUserMember = useQuery(api.teams.getCurrentUserTeamMember, {
+  const currentUserMember = useQuery(apiAny.teams.getCurrentUserTeamMember, {
     teamId: project.teamId,
   });
 
@@ -136,8 +136,8 @@ function MemberRow({
   projectId: Id<"projects">;
   teamId: Id<"teams">;
 }) {
-  const removeTeamMember = useMutation(api.teams.removeTeamMember);
-  const inviteCustomerToProject = useMutation(api.teams.inviteCustomerToProject);
+  const removeTeamMember = useMutation(apiAny.teams.removeTeamMember);
+  const inviteCustomerToProject = useMutation(apiAny.teams.inviteCustomerToProject);
 
   const getRoleColor = (role: string) => {
     switch (role.toLowerCase()) {

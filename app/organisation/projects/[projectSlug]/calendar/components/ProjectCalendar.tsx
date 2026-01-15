@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { useProject } from "@/components/providers/ProjectProvider";
 import { GoogleCalendar } from "@/components/google-calendar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -31,7 +31,7 @@ export function ProjectCalendarSkeleton() {
 export default function ProjectCalendar() {
   const { project } = useProject();
 
-  const hasAccess = useQuery(api.projects.checkUserProjectAccess, {
+  const hasAccess = useQuery(apiAny.projects.checkUserProjectAccess, {
     projectId: project._id,
   });
 

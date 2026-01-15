@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -86,14 +86,14 @@ const AIAssistantSmart = () => {
   } | null>(null);
 
   // Check if team has AI access
-  const aiAccess = useQuery(api.stripe.checkTeamAIAccess, team?._id ? { teamId: team._id } : "skip");
+  const aiAccess = useQuery(apiAny.stripe.checkTeamAIAccess, team?._id ? { teamId: team._id } : "skip");
 
   // File input ref (shared between upload hook and component)
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Mutations for file upload (passed to useAIChat)
-  const generateUploadUrl = useMutation(api.files.generateUploadUrlWithCustomKey);
-  const addFile = useMutation(api.files.addFile);
+  const generateUploadUrl = useMutation(apiAny.files.generateUploadUrlWithCustomKey);
+  const addFile = useMutation(apiAny.files.addFile);
 
   // ==================== HOOKS ====================
 

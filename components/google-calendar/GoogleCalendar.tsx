@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 import { useProject } from "@/components/providers/ProjectProvider";
 import {
@@ -92,11 +92,11 @@ export function GoogleCalendar({ className }: GoogleCalendarProps) {
   });
 
   // Convex queries and mutations
-  const connectionStatus = useQuery(api.googleCalendarDb.getConnectionStatus, 
+  const connectionStatus = useQuery(apiAny.googleCalendarDb.getConnectionStatus, 
     team?._id ? { teamId: team._id } : "skip"
   );
 
-  const calendarEvents = useQuery(api.googleCalendarDb.getProjectEvents, 
+  const calendarEvents = useQuery(apiAny.googleCalendarDb.getProjectEvents, 
     project?._id ? {
       projectId: project._id,
       startDate: startOfMonth(subMonths(currentDate, 1)).getTime(),
@@ -104,11 +104,11 @@ export function GoogleCalendar({ className }: GoogleCalendarProps) {
     } : "skip"
   );
 
-  const getAuthUrl = useAction(api.googleCalendar.getAuthUrl);
-  const syncEvents = useAction(api.googleCalendar.syncEvents);
-  const createEvent = useAction(api.googleCalendar.createEvent);
-  const deleteEvent = useAction(api.googleCalendar.deleteGoogleEvent);
-  const disconnect = useMutation(api.googleCalendarDb.disconnect);
+  const getAuthUrl = useAction(apiAny.googleCalendar.getAuthUrl);
+  const syncEvents = useAction(apiAny.googleCalendar.syncEvents);
+  const createEvent = useAction(apiAny.googleCalendar.createEvent);
+  const deleteEvent = useAction(apiAny.googleCalendar.deleteGoogleEvent);
+  const disconnect = useMutation(apiAny.googleCalendarDb.disconnect);
 
   // Calendar navigation
   const goToNextMonth = () => setCurrentDate(addMonths(currentDate, 1));

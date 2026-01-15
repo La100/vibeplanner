@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { toast } from "sonner";
 import type { Id } from "@/convex/_generated/dataModel";
 import type {
@@ -82,53 +82,53 @@ export const usePendingItems = ({
 
   // Queries
   const pendingFunctionCalls = useQuery(
-    api.ai.threads.listPendingItems,
+    apiAny.ai.threads.listPendingItems,
     threadId ? { threadId } : "skip"
   );
 
   const shoppingSections = useQuery(
-    api.shopping.getShoppingListSections,
+    apiAny.shopping.getShoppingListSections,
     projectId ? { projectId } : "skip"
   );
 
   const laborSections = useQuery(
-    api.labor.getLaborSections,
+    apiAny.labor.getLaborSections,
     projectId ? { projectId } : "skip"
   );
 
   // Mutations
-  const markFunctionCallsAsConfirmed = useMutation(api.ai.threads.markFunctionCallsAsConfirmed);
-  const deleteTask = useMutation(api.tasks.deleteTask);
-  const deleteNote = useMutation(api.notes.deleteNote);
-  const deleteShoppingItem = useMutation(api.shopping.deleteShoppingListItem);
-  const createShoppingSection = useMutation(api.shopping.createShoppingListSection);
-  const updateShoppingSection = useMutation(api.shopping.updateShoppingListSection);
-  const deleteShoppingSection = useMutation(api.shopping.deleteShoppingListSection);
-  const deleteSurvey = useMutation(api.surveys.deleteSurvey);
-  const deleteContact = useMutation(api.contacts.deleteContact);
-  const deleteLaborItem = useMutation(api.labor.deleteLaborItem);
-  const createLaborSection = useMutation(api.labor.createLaborSection);
-  const updateLaborSection = useMutation(api.labor.updateLaborSection);
-  const deleteLaborSection = useMutation(api.labor.deleteLaborSection);
+  const markFunctionCallsAsConfirmed = useMutation(apiAny.ai.threads.markFunctionCallsAsConfirmed);
+  const deleteTask = useMutation(apiAny.tasks.deleteTask);
+  const deleteNote = useMutation(apiAny.notes.deleteNote);
+  const deleteShoppingItem = useMutation(apiAny.shopping.deleteShoppingListItem);
+  const createShoppingSection = useMutation(apiAny.shopping.createShoppingListSection);
+  const updateShoppingSection = useMutation(apiAny.shopping.updateShoppingListSection);
+  const deleteShoppingSection = useMutation(apiAny.shopping.deleteShoppingListSection);
+  const deleteSurvey = useMutation(apiAny.surveys.deleteSurvey);
+  const deleteContact = useMutation(apiAny.contacts.deleteContact);
+  const deleteLaborItem = useMutation(apiAny.labor.deleteLaborItem);
+  const createLaborSection = useMutation(apiAny.labor.createLaborSection);
+  const updateLaborSection = useMutation(apiAny.labor.updateLaborSection);
+  const deleteLaborSection = useMutation(apiAny.labor.deleteLaborSection);
 
   // Actions
-  const createConfirmedTask = useAction(api.ai.confirmedActions.createConfirmedTask);
-  const createConfirmedNote = useAction(api.ai.confirmedActions.createConfirmedNote);
-  const createConfirmedShoppingItem = useAction(api.ai.confirmedActions.createConfirmedShoppingItem);
-  const createConfirmedSurvey = useAction(api.ai.confirmedActions.createConfirmedSurvey);
-  const createConfirmedContact = useAction(api.ai.confirmedActions.createConfirmedContact);
-  const editConfirmedTask = useAction(api.ai.confirmedActions.editConfirmedTask);
-  const editConfirmedNote = useAction(api.ai.confirmedActions.editConfirmedNote);
-  const editConfirmedShoppingItem = useAction(api.ai.confirmedActions.editConfirmedShoppingItem);
-  const editConfirmedSurvey = useAction(api.ai.confirmedActions.editConfirmedSurvey);
-  const bulkEditConfirmedTasks = useAction(api.ai.actions.bulkEditConfirmedTasks);
-  const createConfirmedLaborItem = useAction(api.ai.confirmedActions.createConfirmedLaborItem);
-  const editConfirmedLaborItem = useAction(api.ai.confirmedActions.editConfirmedLaborItem);
+  const createConfirmedTask = useAction(apiAny.ai.confirmedActions.createConfirmedTask);
+  const createConfirmedNote = useAction(apiAny.ai.confirmedActions.createConfirmedNote);
+  const createConfirmedShoppingItem = useAction(apiAny.ai.confirmedActions.createConfirmedShoppingItem);
+  const createConfirmedSurvey = useAction(apiAny.ai.confirmedActions.createConfirmedSurvey);
+  const createConfirmedContact = useAction(apiAny.ai.confirmedActions.createConfirmedContact);
+  const editConfirmedTask = useAction(apiAny.ai.confirmedActions.editConfirmedTask);
+  const editConfirmedNote = useAction(apiAny.ai.confirmedActions.editConfirmedNote);
+  const editConfirmedShoppingItem = useAction(apiAny.ai.confirmedActions.editConfirmedShoppingItem);
+  const editConfirmedSurvey = useAction(apiAny.ai.confirmedActions.editConfirmedSurvey);
+  const bulkEditConfirmedTasks = useAction(apiAny.ai.actions.bulkEditConfirmedTasks);
+  const createConfirmedLaborItem = useAction(apiAny.ai.confirmedActions.createConfirmedLaborItem);
+  const editConfirmedLaborItem = useAction(apiAny.ai.confirmedActions.editConfirmedLaborItem);
 
   // Load pending items from DB
   useEffect(() => {
     if (pendingFunctionCalls && pendingFunctionCalls.length > 0) {
-      const pendingItemsFromDB = pendingFunctionCalls.map<PendingItem | null>((call) => {
+      const pendingItemsFromDB = pendingFunctionCalls.map((call) => {
         try {
           const parsed = JSON.parse(call.arguments);
           const parsedTypeValue = typeof parsed?.type === "string" ? parsed.type : undefined;
@@ -154,10 +154,12 @@ export const usePendingItems = ({
           console.error("Failed to parse pending item:", e);
           return null;
         }
-      }).filter((i): i is PendingItem => i !== null);
+      }) as Array<PendingItem | null>;
 
-      if (pendingItemsFromDB.length > 0) {
-        const expanded = expandBulkEditItems(normalizePendingItems(pendingItemsFromDB));
+      const normalizedPendingItems = pendingItemsFromDB.filter((i): i is PendingItem => i !== null);
+
+      if (normalizedPendingItems.length > 0) {
+        const expanded = expandBulkEditItems(normalizePendingItems(normalizedPendingItems));
         const withClientIds = expanded.map((item, index) => ({
           ...item,
           clientId: item.clientId ?? `${item.functionCall?.callId ?? "pending"}-${index}`,
@@ -1311,7 +1313,6 @@ export const usePendingItems = ({
 };
 
 export default usePendingItems;
-
 
 
 

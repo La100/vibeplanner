@@ -2,7 +2,7 @@
 
 import { useParams } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 import { useProject } from "@/components/providers/ProjectProvider";
 import { Card } from "@/components/ui/card";
@@ -72,6 +72,23 @@ type KanbanTask = {
   assignedToName: string | undefined;
   assignedToImageUrl: string | undefined;
   tags: string[] | undefined;
+  commentCount: number;
+};
+
+type TaskWithDetails = {
+  _id: Id<"tasks">;
+  title: string;
+  description?: string;
+  content?: string;
+  priority?: TaskPriority;
+  startDate?: number;
+  endDate?: number;
+  cost?: number;
+  status: TaskStatusLiterals;
+  assignedTo?: string | null;
+  assignedToName?: string;
+  assignedToImageUrl?: string;
+  tags?: string[];
   commentCount: number;
 };
 
@@ -181,11 +198,11 @@ export default function TasksView() {
 
   const { project } = useProject();
   
-  const teamMembers = useQuery(api.teams.getTeamMembers, {
+  const teamMembers = useQuery(apiAny.teams.getTeamMembers, {
     teamId: project.teamId,
-  });
+  }) as TeamMemberWithUser[] | undefined;
 
-  const tasks = useQuery(api.tasks.listProjectTasks, {
+  const tasks = useQuery(apiAny.tasks.listProjectTasks, {
     projectId: project._id,
     filters: {
       ...filters,
@@ -193,7 +210,7 @@ export default function TasksView() {
     },
     sortBy: sorting.sortBy,
     sortOrder: sorting.sortOrder
-  });
+  }) as TaskWithDetails[] | undefined;
 
   const [preservedTasks, setPreservedTasks] = useState<typeof tasks>(undefined);
 
@@ -205,11 +222,11 @@ export default function TasksView() {
 
   const tasksToDisplay = tasks ?? preservedTasks;
 
-  const hasAccess = useQuery(api.projects.checkUserProjectAccess, 
+  const hasAccess = useQuery(apiAny.projects.checkUserProjectAccess, 
     project ? { projectId: project._id } : "skip"
   );
   
-  const updateTaskStatus = useMutation(api.tasks.updateTaskStatus);
+  const updateTaskStatus = useMutation(apiAny.tasks.updateTaskStatus);
   
   const statusOptions = useMemo(() => 
     project.taskStatusSettings 

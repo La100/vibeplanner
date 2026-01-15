@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { useUser } from "@clerk/nextjs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ interface AddProductModalProps {
 
 export function AddProductModal({ onClose, teamId }: AddProductModalProps) {
   const { user } = useUser();
-  const createProduct = useMutation(api.productLibrary.createProduct);
+  const createProduct = useMutation(apiAny.productLibrary.createProduct);
   
   const [formData, setFormData] = useState({
     name: "",

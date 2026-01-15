@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { useProject } from "@/components/providers/ProjectProvider";
 import {
   GanttProvider,
@@ -81,7 +81,7 @@ export default function ProjectGantt() {
   const [selectedTask, setSelectedTask] = useState<CalendarEvent | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  const tasks = useQuery(api.tasks.listProjectTasks, {
+  const tasks = useQuery(apiAny.tasks.listProjectTasks, {
     projectId: project._id,
   });
 

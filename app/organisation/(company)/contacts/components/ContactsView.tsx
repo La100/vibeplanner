@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuery } from "convex/react";
 import { useOrganization } from "@clerk/nextjs";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -32,7 +32,7 @@ import {
 import { Plus, Search, Mail, Phone, MapPin } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ContactForm } from "./ContactForm";
-import { Id } from "@/convex/_generated/dataModel";
+import { Doc, Id } from "@/convex/_generated/dataModel";
 
 export function ContactsView() {
   const { organization } = useOrganization();
@@ -42,12 +42,12 @@ export function ContactsView() {
   const [editingContact, setEditingContact] = useState<Id<"contacts"> | null>(null);
 
   const team = useQuery(
-    api.teams.getTeamByClerkOrg,
+    apiAny.teams.getTeamByClerkOrg,
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
 
   const contacts = useQuery(
-    api.contacts.getContacts,
+    apiAny.contacts.getContacts,
     team?.slug
       ? {
           teamSlug: team.slug,
@@ -55,7 +55,7 @@ export function ContactsView() {
           type: typeFilter === "all" ? undefined : typeFilter as "contractor" | "supplier" | "subcontractor" | "other",
         }
       : "skip"
-  );
+  ) as Doc<"contacts">[] | undefined;
 
 
 

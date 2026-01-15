@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { preloadQuery } from "convex/nextjs";
 import { SurveyForm } from "@/components/surveys/SurveyForm";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +17,7 @@ export default async function NewSurveyPage({ params }: NewSurveyPageProps) {
   const { orgId } = await auth();
 
   const preloadedProject = orgId
-    ? preloadQuery(api.projects.getProjectBySlugInClerkOrg, {
+    ? preloadQuery(apiAny.projects.getProjectBySlugInClerkOrg, {
         clerkOrgId: orgId,
         projectSlug,
       })

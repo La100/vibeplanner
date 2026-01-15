@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { useOrganization } from "@clerk/nextjs";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,14 +42,14 @@ export function ContactForm({ contactId, onSuccess, onCancel }: ContactFormProps
 
 
   const contact = useQuery(
-    api.contacts.getContact,
+    apiAny.contacts.getContact,
     contactId ? { contactId } : "skip"
   );
 
-  const createContact = useMutation(api.contacts.createContact);
-  const updateContact = useMutation(api.contacts.updateContact);
+  const createContact = useMutation(apiAny.contacts.createContact);
+  const updateContact = useMutation(apiAny.contacts.updateContact);
   const team = useQuery(
-    api.teams.getTeamByClerkOrg,
+    apiAny.teams.getTeamByClerkOrg,
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
 

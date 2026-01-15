@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useMutation, useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { useUser } from "@clerk/nextjs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ interface AddToShoppingListModalProps {
 
 export function AddToShoppingListModal({ product, teamId, onClose }: AddToShoppingListModalProps) {
   const { user } = useUser();
-  const addToShoppingList = useMutation(api.productLibrary.addToShoppingList);
+  const addToShoppingList = useMutation(apiAny.productLibrary.addToShoppingList);
   
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [quantity, setQuantity] = useState("1");
@@ -37,13 +37,13 @@ export function AddToShoppingListModal({ product, teamId, onClose }: AddToShoppi
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Get team projects
-  const projects = useQuery(api.projects.getProjectsByTeam, {
+  const projects = useQuery(apiAny.projects.getProjectsByTeam, {
     teamId
   });
 
   // Get shopping list sections for selected project
   const sections = useQuery(
-    api.shopping.getShoppingListSections, 
+    apiAny.shopping.getShoppingListSections, 
     selectedProjectId ? { 
       projectId: selectedProjectId as Id<"projects"> 
     } : "skip"

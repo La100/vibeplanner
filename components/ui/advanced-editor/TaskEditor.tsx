@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { useMutation } from 'convex/react';
-import { api } from '@/convex/_generated/api';
+import { apiAny } from '@/lib/convexApiAny';
 import { Id } from '@/convex/_generated/dataModel';
 import AdvancedEditor from './index';
 
@@ -17,7 +17,7 @@ export default function TaskEditor({
   initialContent = '', 
   placeholder = "Opisz szczegóły zadania..." 
 }: TaskEditorProps) {
-  const updateTask = useMutation(api.tasks.updateTask);
+  const updateTask = useMutation(apiAny.tasks.updateTask);
 
   const handleSave = useCallback(async (content: string) => {
     try {

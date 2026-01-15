@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAction, useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardDescription } from "@/components/ui/card";
@@ -53,8 +53,8 @@ const AI_FEATURES = [
 export function AISubscriptionWall({ teamId }: AISubscriptionWallProps) {
   const [loading, setLoading] = useState(false);
   
-  const subscription = useQuery(api.stripe.getTeamSubscription, { teamId });
-  const createCheckoutSession = useAction(api.stripeActions.createCheckoutSession);
+  const subscription = useQuery(apiAny.stripe.getTeamSubscription, { teamId });
+  const createCheckoutSession = useAction(apiAny.stripeActions.createCheckoutSession);
 
   const handleSubscribe = async () => {
     const priceId = process.env.NEXT_PUBLIC_STRIPE_AI_PRICE_ID;

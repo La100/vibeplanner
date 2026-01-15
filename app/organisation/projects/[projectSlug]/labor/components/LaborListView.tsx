@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useQuery, useMutation } from 'convex/react';
-import { api } from '@/convex/_generated/api';
+import { apiAny } from '@/lib/convexApiAny';
 import { Doc, Id } from '@/convex/_generated/dataModel';
 import { useProject } from '@/components/providers/ProjectProvider';
 import { toast } from 'sonner';
@@ -12,6 +12,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { LaborListHeader } from './LaborListHeader';
 import { LaborSectionManager } from './LaborSectionManager';
 import { AddLaborItemForm } from './AddLaborItemForm';
+import type { TeamMember } from '@/lib/teamMember';
 import { LaborListSection } from './LaborListSection';
 
 type LaborItem = Doc<"laborItems">;
@@ -66,15 +67,15 @@ export default function LaborListView() {
 
   const { project } = useProject();
 
-  const items = useQuery(api.labor.listLaborItems, { projectId: project._id });
-  const sections = useQuery(api.labor.listLaborSections, { projectId: project._id });
-  const teamMembers = useQuery(api.teams.getTeamMembers, { teamId: project.teamId });
+  const items = useQuery(apiAny.labor.listLaborItems, { projectId: project._id }) as LaborItem[] | undefined;
+  const sections = useQuery(apiAny.labor.listLaborSections, { projectId: project._id }) as Doc<"laborSections">[] | undefined;
+  const teamMembers = useQuery(apiAny.teams.getTeamMembers, { teamId: project.teamId }) as TeamMember[] | undefined;
 
-  const createItem = useMutation(api.labor.createLaborItem);
-  const updateItem = useMutation(api.labor.updateLaborItem);
-  const deleteItem = useMutation(api.labor.deleteLaborItem);
-  const createSection = useMutation(api.labor.createLaborSection);
-  const deleteSection = useMutation(api.labor.deleteLaborSection);
+  const createItem = useMutation(apiAny.labor.createLaborItem);
+  const updateItem = useMutation(apiAny.labor.updateLaborItem);
+  const deleteItem = useMutation(apiAny.labor.deleteLaborItem);
+  const createSection = useMutation(apiAny.labor.createLaborSection);
+  const deleteSection = useMutation(apiAny.labor.deleteLaborSection);
 
   if (items === undefined || sections === undefined) {
     return null;
@@ -250,5 +251,3 @@ export default function LaborListView() {
     </TooltipProvider>
   );
 }
-
-

@@ -2,7 +2,7 @@
 
 import { useParams } from "next/navigation";
 import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 import { EditSurveyForm } from "@/components/surveys/EditSurveyForm";
 
@@ -10,7 +10,7 @@ export default function EditSurveyPage() {
   const params = useParams();
   const surveyId = params.surveyId as Id<"surveys">;
 
-  const survey = useQuery(api.surveys.getSurvey, { surveyId });
+  const survey = useQuery(apiAny.surveys.getSurvey, { surveyId });
 
   if (!survey) {
     return <div>Ładowanie...</div>;

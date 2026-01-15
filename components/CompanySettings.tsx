@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { OrganizationProfile, useOrganization } from "@clerk/nextjs";
 import { useQuery, useMutation, useAction } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 
@@ -37,23 +37,23 @@ export default function CompanySettings() {
   
   // Loading actual data from backend
   const teamData = useQuery(
-    api.teams.getTeamSettingsByClerkOrg, 
+    apiAny.teams.getTeamSettingsByClerkOrg, 
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
   
   const teamId = teamData?.teamId;
   
-  const aiAccess = useQuery(api.stripe.checkTeamAIAccess, teamId ? { teamId } : "skip");
-  const subscription = useQuery(api.stripe.getTeamSubscription, teamId ? { teamId } : "skip");
-  const usageBreakdown = useQuery(api.ai.usage.getTeamUsageBreakdown, teamId ? { teamId } : "skip");
-  const storageUsage = useQuery(api.files.getTeamStorageUsage, teamId ? { teamId } : "skip");
-  const resourceUsage = useQuery(api.teams.getTeamResourceUsage, teamId ? { teamId } : "skip");
+  const aiAccess = useQuery(apiAny.stripe.checkTeamAIAccess, teamId ? { teamId } : "skip");
+  const subscription = useQuery(apiAny.stripe.getTeamSubscription, teamId ? { teamId } : "skip");
+  const usageBreakdown = useQuery(apiAny.ai.usage.getTeamUsageBreakdown, teamId ? { teamId } : "skip");
+  const storageUsage = useQuery(apiAny.files.getTeamStorageUsage, teamId ? { teamId } : "skip");
+  const resourceUsage = useQuery(apiAny.teams.getTeamResourceUsage, teamId ? { teamId } : "skip");
   
-  const updateTeamSettings = useMutation(api.teams.updateTeamSettings);
-  const ensureBillingWindow = useMutation(api.stripe.ensureBillingWindow);
-  const createBillingPortalSession = useAction(api.stripeActions.createBillingPortalSession);
-  const ensureSubscriptionSynced = useAction(api.stripeActions.ensureSubscriptionSynced);
-  const teamPayments = useQuery(api.stripe.getTeamPayments, teamId ? { teamId } : "skip");
+  const updateTeamSettings = useMutation(apiAny.teams.updateTeamSettings);
+  const ensureBillingWindow = useMutation(apiAny.stripe.ensureBillingWindow);
+  const createBillingPortalSession = useAction(apiAny.stripeActions.createBillingPortalSession);
+  const ensureSubscriptionSynced = useAction(apiAny.stripeActions.ensureSubscriptionSynced);
+  const teamPayments = useQuery(apiAny.stripe.getTeamPayments, teamId ? { teamId } : "skip");
   
   // Local state for team settings
   const [teamSettings, setTeamSettings] = useState<{

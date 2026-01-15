@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import {
   Avatar,
   AvatarFallback,
@@ -57,20 +57,20 @@ export default function CompanyTeam() {
   const { organization, isLoaded } = useOrganization();
 
   const team = useQuery(
-    api.teams.getTeamByClerkOrg,
+    apiAny.teams.getTeamByClerkOrg,
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
-  const teamMembers = useQuery(api.teams.getTeamMembers, team ? { teamId: team._id } : "skip");
-  const currentUserMember = useQuery(api.teams.getCurrentUserTeamMember, team ? { teamId: team._id } : "skip");
-  const pendingInvitations = useQuery(api.teams.getPendingInvitations, team ? { teamId: team._id } : "skip");
-  const teamProjects = useQuery(api.projects.listProjectsByTeam, team ? { teamId: team._id } : "skip");
+  const teamMembers = useQuery(apiAny.teams.getTeamMembers, team ? { teamId: team._id } : "skip");
+  const currentUserMember = useQuery(apiAny.teams.getCurrentUserTeamMember, team ? { teamId: team._id } : "skip");
+  const pendingInvitations = useQuery(apiAny.teams.getPendingInvitations, team ? { teamId: team._id } : "skip");
+  const teamProjects = useQuery(apiAny.projects.listProjectsByTeam, team ? { teamId: team._id } : "skip");
 
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
 
-  const revokeInvitation = useMutation(api.teams.revokeInvitation);
+  const revokeInvitation = useMutation(apiAny.teams.revokeInvitation);
 
   const handleRevoke = async (invitationId: Id<"invitations">) => {
     try {

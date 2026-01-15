@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { api } from '@/convex/_generated/api';
 import { ConvexHttpClient } from 'convex/browser';
 import { Id } from '@/convex/_generated/dataModel';
+import { apiAny } from '@/lib/convexApiAny';
 
 // Helper function to get the token from the request
 function getTokenFromRequest(req: Request): string | null {
@@ -60,9 +60,6 @@ export async function GET(req: Request) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const convexAny = convex as any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const apiAny = api as any;
-
     if (teamId && projectId) {
       // Pobierz sekcje dla projektu
       console.log("📞 Calling getShoppingListSections");
@@ -121,8 +118,6 @@ export async function POST(req: Request) {
     // Używamy nowej, bardziej szczegółowej mutacji
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const convexAny = convex as any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const apiAny = api as any;
     const newItem = await convexAny.mutation(apiAny.clipper.addShoppingListItem, body);
 
     return NextResponse.json(newItem);

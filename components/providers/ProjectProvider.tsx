@@ -2,7 +2,7 @@
 
 import { createContext, useContext, ReactNode } from "react";
 import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Doc } from "@/convex/_generated/dataModel";
 import { useParams } from "next/navigation";
 import { Building } from "lucide-react";
@@ -36,17 +36,17 @@ export function ProjectProvider({ children }: {
   
   // Simple regular query approach
   const project = useQuery(
-    api.projects.getProjectBySlugInClerkOrg,
+    apiAny.projects.getProjectBySlugInClerkOrg,
     organization?.id && params.projectSlug
       ? { clerkOrgId: organization.id, projectSlug: params.projectSlug }
       : "skip"
   );
   
-  const team = useQuery(api.teams.getTeam, 
+  const team = useQuery(apiAny.teams.getTeam, 
     project ? { teamId: project.teamId } : "skip"
   );
   
-  const permissions = useQuery(api.projects.getProjectSidebarPermissions, 
+  const permissions = useQuery(apiAny.projects.getProjectSidebarPermissions, 
     project ? { projectId: project._id } : "skip"
   );
 

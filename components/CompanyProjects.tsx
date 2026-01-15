@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useOrganization } from "@clerk/nextjs";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 
 import { Plus, FolderOpen, MapPin, DollarSign, Building2, Search, AlertTriangle, Sparkles, Play, Clock, Pause, CheckCircle2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,22 +24,22 @@ export default function CompanyProjects() {
   const [searchQuery, setSearchQuery] = useState("");
 
   // Check if team exists first
-  const team = useQuery(api.teams.getTeamByClerkOrg, 
+  const team = useQuery(apiAny.teams.getTeamByClerkOrg, 
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
   
   // Get projects for this organization
-  const projects = useQuery(api.projects.listProjectsByClerkOrg, 
+  const projects = useQuery(apiAny.projects.listProjectsByClerkOrg, 
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
   
   // Get team tasks for overview
-  const teamTasks = useQuery(api.tasks.listTeamTasks, 
+  const teamTasks = useQuery(apiAny.tasks.listTeamTasks, 
     team && team._id ? { teamId: team._id } : "skip"
   );
   
-  const createProject = useMutation(api.projects.createProjectInOrg);
-  const checkLimits = useQuery(api.stripe.checkTeamLimits, 
+  const createProject = useMutation(apiAny.projects.createProjectInOrg);
+  const checkLimits = useQuery(apiAny.stripe.checkTeamLimits, 
     team?._id ? { 
       teamId: team._id, 
       action: "create_project" 

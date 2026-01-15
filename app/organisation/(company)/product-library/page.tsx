@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useQuery } from "convex/react";
 import { useOrganization } from "@clerk/nextjs";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +24,7 @@ import { formatCurrency } from "@/lib/utils";
 export default function ProductLibraryPage() {
   const { organization } = useOrganization();
   const team = useQuery(
-    api.teams.getTeamByClerkOrg,
+    apiAny.teams.getTeamByClerkOrg,
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
   const [searchTerm, setSearchTerm] = useState("");
@@ -36,15 +36,15 @@ export default function ProductLibraryPage() {
   const [showAddToProjectModal, setShowAddToProjectModal] = useState<{ _id: string; name: string; brand?: string; imageUrl?: string; } | null>(null);
 
   // Queries
-  const products = useQuery(api.productLibrary.getAllProducts, 
+  const products = useQuery(apiAny.productLibrary.getAllProducts, 
     team ? { teamId: team._id } : "skip"
   );
   
-  const categories = useQuery(api.productLibrary.getCategories, 
+  const categories = useQuery(apiAny.productLibrary.getCategories, 
     team ? { teamId: team._id } : "skip"
   );
   
-  const suppliers = useQuery(api.productLibrary.getSuppliers, 
+  const suppliers = useQuery(apiAny.productLibrary.getSuppliers, 
     team ? { teamId: team._id } : "skip"
   );
 

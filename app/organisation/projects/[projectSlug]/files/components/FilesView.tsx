@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 import { useProject } from "@/components/providers/ProjectProvider";
 import { Card, CardContent } from "@/components/ui/card";
@@ -76,25 +76,25 @@ export default function FilesView() {
 
   const { project } = useProject();
 
-  const content = useQuery(api.files.getProjectContent, {
+  const content = useQuery(apiAny.files.getProjectContent, {
     projectId: project._id, 
     folderId: currentFolderId 
   });
 
   const currentFolder = useQuery(
-    api.files.getFolder,
+    apiAny.files.getFolder,
     currentFolderId ? { folderId: currentFolderId } : "skip"
   );
 
-  const hasAccess = useQuery(api.projects.checkUserProjectAccess, {
+  const hasAccess = useQuery(apiAny.projects.checkUserProjectAccess, {
     projectId: project._id,
   });
 
-  const generateUploadUrl = useMutation(api.files.generateUploadUrlWithCustomKey);
-  const addFile = useMutation(api.files.addFile);
-  const createFolder = useMutation(api.files.createFolder);
-  const deleteFile = useMutation(api.files.deleteFile);
-  const deleteFolder = useMutation(api.files.deleteFolder);
+  const generateUploadUrl = useMutation(apiAny.files.generateUploadUrlWithCustomKey);
+  const addFile = useMutation(apiAny.files.addFile);
+  const createFolder = useMutation(apiAny.files.createFolder);
+  const deleteFile = useMutation(apiAny.files.deleteFile);
+  const deleteFolder = useMutation(apiAny.files.deleteFolder);
 
   // Navigation functions
   const navigateToFolder = (folderId: Id<"folders"> | undefined, folderName: string) => {

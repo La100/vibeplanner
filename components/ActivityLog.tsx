@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -127,7 +127,7 @@ const getStatusBadgeColor = (status: string) => {
 };
 
 export default function ActivityLog({ taskId }: ActivityLogProps) {
-  const activities = useQuery(api.activityLog.getForTask, { taskId });
+  const activities = useQuery(apiAny.activityLog.getForTask, { taskId });
 
   if (!activities) {
     return (

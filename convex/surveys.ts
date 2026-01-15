@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 
 // ====== SURVEY MANAGEMENT ======
 
@@ -927,7 +927,10 @@ export const getSurveyResponsesForIndexing = internalQuery({
       .withIndex("by_project", q => q.eq("projectId", args.projectId))
       .collect();
 
-    const responses = [];
+    const responses: Array<Doc<"surveyResponses"> & {
+      surveyTitle: string;
+      answers: Array<Doc<"surveyAnswers"> & { questionText: string }>;
+    }> = [];
     
     for (const survey of surveys) {
       const surveyResponses = await ctx.db
@@ -942,7 +945,7 @@ export const getSurveyResponsesForIndexing = internalQuery({
           .withIndex("by_response", q => q.eq("responseId", response._id))
           .collect();
 
-        const answersWithQuestions = [];
+        const answersWithQuestions: Array<Doc<"surveyAnswers"> & { questionText: string }> = [];
         for (const answer of answers) {
           const question = await ctx.db.get(answer.questionId);
           if (question) {
@@ -993,4 +996,3 @@ export const deleteSurveyQuestion = mutation({
     await ctx.db.delete(args.questionId);
   },
 });
-

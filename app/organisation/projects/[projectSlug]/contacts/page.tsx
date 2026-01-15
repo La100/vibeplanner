@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { useProject } from "@/components/providers/ProjectProvider";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,12 +40,12 @@ export default function ContactsPage() {
 
   
   // Get project contacts
-  const projectContacts = useQuery(api.contacts.getProjectContacts, {
+  const projectContacts = useQuery(apiAny.contacts.getProjectContacts, {
     projectId: project._id,
   });
 
   // Mutations
-  const removeContact = useMutation(api.contacts.removeContactFromProject);
+  const removeContact = useMutation(apiAny.contacts.removeContactFromProject);
 
   const handleRemoveContact = async (contactId: Id<"contacts">) => {
     try {

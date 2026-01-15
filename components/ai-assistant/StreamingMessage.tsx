@@ -12,7 +12,7 @@ import React, { memo } from "react";
 import { z } from "zod";
 import type { UIMessage } from "@convex-dev/agent/react";
 import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import type { Id } from "@/convex/_generated/dataModel";
 import { FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -119,7 +119,7 @@ function UserAttachmentPreview({
   }>;
 }) {
   const file = useQuery(
-    api.files.getFileWithURL,
+    apiAny.files.getFileWithURL,
     metadata?.fileId ? { fileId: metadata.fileId as Id<"files"> } : "skip"
   );
 

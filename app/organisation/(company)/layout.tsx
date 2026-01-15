@@ -2,7 +2,7 @@
 
 import { useRouter, usePathname } from "next/navigation";
 import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { useEffect } from "react";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { CompanySidebar } from "@/components/CompanySidebar";
@@ -18,7 +18,7 @@ export default function CompanyLayout({
   const { organization } = useOrganization();
 
   const userRole = useQuery(
-    api.teams.getCurrentUserRoleInClerkOrg,
+    apiAny.teams.getCurrentUserRoleInClerkOrg,
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
 

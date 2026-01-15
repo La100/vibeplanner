@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -92,8 +92,8 @@ const sidebarSections: PermissionSection[] = [
 ];
 
 export default function SidebarPermissions({ projectId }: SidebarPermissionsProps) {
-  const project = useQuery(api.projects.getProject, { projectId });
-  const updatePermissions = useMutation(api.projects.updateProjectSidebarPermissions);
+  const project = useQuery(apiAny.projects.getProject, { projectId });
+  const updatePermissions = useMutation(apiAny.projects.updateProjectSidebarPermissions);
   
   const [permissions, setPermissions] = useState<Record<string, { visible: boolean }>>({});
   const [hasChanges, setHasChanges] = useState(false);

@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from 'convex/react';
-import { api } from '@/convex/_generated/api';
+import { apiAny } from '@/lib/convexApiAny';
 import { Id } from '@/convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,7 +30,7 @@ export function EstimationPreviewDialog({
   currencySymbol
 }: EstimationPreviewDialogProps) {
   const { team } = useProject();
-  const estimation = useQuery(api.costEstimations.getCostEstimationWithItems, { estimationId });
+  const estimation = useQuery(apiAny.costEstimations.getCostEstimationWithItems, { estimationId });
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -439,5 +439,4 @@ export function EstimationPreviewDialog({
     </Dialog>
   );
 }
-
 

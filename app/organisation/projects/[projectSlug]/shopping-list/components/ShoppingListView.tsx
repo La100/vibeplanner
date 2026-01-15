@@ -2,8 +2,9 @@
 
 import { useState, useTransition } from 'react';
 import { useQuery, useMutation } from 'convex/react';
-import { api } from '@/convex/_generated/api';
+import { apiAny } from '@/lib/convexApiAny';
 import { Doc, Id } from '@/convex/_generated/dataModel';
+import type { TeamMember } from '@/lib/teamMember';
 import { useProject } from '@/components/providers/ProjectProvider';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -86,16 +87,16 @@ export default function ShoppingListView() {
 
   const { project } = useProject();
 
-  const items = useQuery(api.shopping.listShoppingListItems, { projectId: project._id });
-  const sections = useQuery(api.shopping.listShoppingListSections, { projectId: project._id });
-  const teamMembers = useQuery(api.teams.getTeamMembers, { teamId: project.teamId });
-  const team = useQuery(api.teams.getTeamById, { teamId: project.teamId });
+  const items = useQuery(apiAny.shopping.listShoppingListItems, { projectId: project._id }) as ShoppingListItem[] | undefined;
+  const sections = useQuery(apiAny.shopping.listShoppingListSections, { projectId: project._id }) as Doc<"shoppingListSections">[] | undefined;
+  const teamMembers = useQuery(apiAny.teams.getTeamMembers, { teamId: project.teamId }) as TeamMember[] | undefined;
+  const team = useQuery(apiAny.teams.getTeamById, { teamId: project.teamId }) as Doc<"teams"> | undefined;
 
-  const createItem = useMutation(api.shopping.createShoppingListItem);
-  const updateItem = useMutation(api.shopping.updateShoppingListItem);
-  const deleteItem = useMutation(api.shopping.deleteShoppingListItem);
-  const createSection = useMutation(api.shopping.createShoppingListSection);
-  const deleteSection = useMutation(api.shopping.deleteShoppingListSection);
+  const createItem = useMutation(apiAny.shopping.createShoppingListItem);
+  const updateItem = useMutation(apiAny.shopping.updateShoppingListItem);
+  const deleteItem = useMutation(apiAny.shopping.deleteShoppingListItem);
+  const createSection = useMutation(apiAny.shopping.createShoppingListSection);
+  const deleteSection = useMutation(apiAny.shopping.deleteShoppingListSection);
 
 
   // Export state
@@ -616,4 +617,3 @@ export default function ShoppingListView() {
     </TooltipProvider>
   );
 }
-

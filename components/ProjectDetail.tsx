@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { api } from "../convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "../convex/_generated/dataModel";
 import { 
   Calendar, 
@@ -32,11 +32,11 @@ export default function ProjectDetail({ projectId, onBack }: ProjectDetailProps)
   const [showNewTaskForm, setShowNewTaskForm] = useState(false);
   const [taskFilter, setTaskFilter] = useState<"all" | "todo" | "in_progress" | "done">("all");
 
-  const project = useQuery(api.projects.getProject, { projectId });
-  const tasks = useQuery(api.tasks.listProjectTasks, { projectId });
+  const project = useQuery(apiAny.projects.getProject, { projectId });
+  const tasks = useQuery(apiAny.tasks.listProjectTasks, { projectId });
   
-  const createTask = useMutation(api.tasks.createTask);
-  const updateTaskStatus = useMutation(api.tasks.updateTaskStatus);
+  const createTask = useMutation(apiAny.tasks.createTask);
+  const updateTaskStatus = useMutation(apiAny.tasks.updateTaskStatus);
 
   const [newTask, setNewTask] = useState({
     title: "",

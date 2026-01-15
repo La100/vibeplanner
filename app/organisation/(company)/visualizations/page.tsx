@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useOrganization } from "@clerk/nextjs";
 import { useQuery, useAction, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -43,24 +43,24 @@ export default function VisualizationsPage() {
   } | null>(null);
 
   const team = useQuery(
-    api.teams.getTeamByClerkOrg,
+    apiAny.teams.getTeamByClerkOrg,
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
-  const aiAccess = useQuery(api.stripe.checkTeamAIAccess, team?._id ? { teamId: team._id } : "skip");
+  const aiAccess = useQuery(apiAny.stripe.checkTeamAIAccess, team?._id ? { teamId: team._id } : "skip");
 
   // Session queries
   const sessions = useQuery(
-    api.ai.visualizationSessions.listSessions,
+    apiAny.ai.visualizationSessions.listSessions,
     team?._id ? { teamId: team._id } : "skip"
   );
 
   const currentSession = useQuery(
-    api.ai.visualizationSessions.getSession,
+    apiAny.ai.visualizationSessions.getSession,
     currentSessionId ? { sessionId: currentSessionId } : "skip"
   );
 
   const sessionMessages = useQuery(
-    api.ai.visualizationSessions.getSessionMessages,
+    apiAny.ai.visualizationSessions.getSessionMessages,
     currentSessionId ? { sessionId: currentSessionId } : "skip"
   );
 
@@ -69,12 +69,12 @@ export default function VisualizationsPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Actions and mutations
-  const generateVisualization = useAction(api.ai.imageGen.generation.generateVisualization);
-  const getUploadUrl = useAction(api.ai.imageGen.generation.getUploadUrl);
-  const createSession = useMutation(api.ai.visualizationSessions.createSession);
-  const addUserMessage = useMutation(api.ai.visualizationSessions.addUserMessage);
+  const generateVisualization = useAction(apiAny.ai.imageGen.generation.generateVisualization);
+  const getUploadUrl = useAction(apiAny.ai.imageGen.generation.getUploadUrl);
+  const createSession = useMutation(apiAny.ai.visualizationSessions.createSession);
+  const addUserMessage = useMutation(apiAny.ai.visualizationSessions.addUserMessage);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const deleteSession = useMutation(api.ai.visualizationSessions.deleteSession);
+  const deleteSession = useMutation(apiAny.ai.visualizationSessions.deleteSession);
 
   // Map sessions to ThreadListItem format for ChatSidebar
   const threadList: ThreadListItem[] = useMemo(() => {

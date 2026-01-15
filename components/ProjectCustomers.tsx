@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -35,18 +35,18 @@ export default function ProjectCustomers({ projectId }: ProjectCustomersProps) {
   const [isInviting, setIsInviting] = useState(false);
 
   // Get project info
-  const project = useQuery(api.projects.getProject, { projectId });
+  const project = useQuery(apiAny.projects.getProject, { projectId });
   
   // Get customers for this project
-  const projectCustomers = useQuery(api.customers.getProjectCustomers, { projectId });
+  const projectCustomers = useQuery(apiAny.customers.getProjectCustomers, { projectId });
   
   
   // Check user permissions
-  const hasAccess = useQuery(api.projects.checkUserProjectAccess, { projectId });
+  const hasAccess = useQuery(apiAny.projects.checkUserProjectAccess, { projectId });
 
   // Mutations
-  const inviteCustomer = useMutation(api.teams.inviteCustomerToProject);
-  const removeCustomerAccess = useMutation(api.customers.removeCustomerAccess);
+  const inviteCustomer = useMutation(apiAny.teams.inviteCustomerToProject);
+  const removeCustomerAccess = useMutation(apiAny.customers.removeCustomerAccess);
 
   // Form setup
   const form = useForm<z.infer<typeof inviteFormSchema>>({

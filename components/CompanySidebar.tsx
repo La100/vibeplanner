@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Suspense } from "react";
 import { useQuery } from "convex/react";
 import { useOrganization, useOrganizationList } from "@clerk/nextjs";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import {
   Sidebar,
   SidebarContent,
@@ -37,13 +37,13 @@ function CompanySidebarContent() {
   const { organization } = useOrganization();
 
   const team = useQuery(
-    api.teams.getTeamByClerkOrg,
+    apiAny.teams.getTeamByClerkOrg,
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
 
   // Get current user role in team
   const userRole = useQuery(
-    api.teams.getCurrentUserRoleInClerkOrg,
+    apiAny.teams.getCurrentUserRoleInClerkOrg,
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
 

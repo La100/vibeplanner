@@ -333,7 +333,7 @@ export const createOrUpdateMembership = internalMutation({
         }
 
         // Check for any customer records with this email or clerkUserId that need activation
-        let customerRecord = null;
+        let customerRecord: Doc<"customers"> | null = null;
         let needsActivation = false;
 
         console.log(`[createOrUpdateMembership] Processing membership for email: ${args.userEmail}, clerkUserId: ${args.clerkUserId}, clerkOrgId: ${args.clerkOrgId}, role: ${args.role}`);
@@ -696,6 +696,5 @@ export const updateInvitationStatus = internalMutation({
 // =================================================================
 // ============== UI-FACING QUERIES & MUTATIONS ====================
 // =================================================================
-
 
 

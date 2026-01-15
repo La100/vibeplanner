@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { useProject } from "@/components/providers/ProjectProvider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,11 +14,11 @@ interface SurveysListProps {
 export function SurveysList({ projectSlug }: SurveysListProps) {
   const { project } = useProject();
 
-  const surveys = useQuery(api.surveys.getSurveysByProject, {
+  const surveys = useQuery(apiAny.surveys.getSurveysByProject, {
     projectId: project._id,
   });
 
-  const currentUserMember = useQuery(api.teams.getCurrentUserTeamMember, {
+  const currentUserMember = useQuery(apiAny.teams.getCurrentUserTeamMember, {
     teamId: project.teamId
   });
 
@@ -29,7 +29,7 @@ export function SurveysList({ projectSlug }: SurveysListProps) {
 
   // Get user's responses to check if they already responded
   const userResponses = useQuery(
-    api.surveys.getUserSurveyResponses, 
+    apiAny.surveys.getUserSurveyResponses, 
     isClient ? { projectId: project._id } : "skip"
   );
 

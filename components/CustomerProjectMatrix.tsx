@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,13 +40,13 @@ export default function CustomerProjectMatrix({ teamId }: CustomerProjectMatrixP
   const [searchTerm, setSearchTerm] = useState("");
 
   // Get all customers for this team
-  const allCustomers = useQuery(api.customers.listTeamCustomers, { teamId });
+  const allCustomers = useQuery(apiAny.customers.listTeamCustomers, { teamId });
   
   // Get all projects for this team
-  const teamProjects = useQuery(api.projects.listProjectsByTeam, { teamId });
+  const teamProjects = useQuery(apiAny.projects.listProjectsByTeam, { teamId });
 
   // Get team info for navigation
-  const team = useQuery(api.teams.getTeam, { teamId });
+  const team = useQuery(apiAny.teams.getTeam, { teamId });
 
   if (!allCustomers || !teamProjects || !team) {
     return <div>Loading customer overview...</div>;

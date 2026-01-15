@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -62,14 +62,14 @@ export default function ProjectMemberMatrix({ teamId }: ProjectMemberMatrixProps
   const [inviteProjectId, setInviteProjectId] = useState<string>("");
 
   // Queries
-  const teamMembers = useQuery(api.teams.getTeamMembers, { teamId });
-  const projects = useQuery(api.projects.listTeamProjects, { teamId });
-  const customers = useQuery(api.customers.listTeamCustomers, { teamId });
+  const teamMembers = useQuery(apiAny.teams.getTeamMembers, { teamId });
+  const projects = useQuery(apiAny.projects.listTeamProjects, { teamId });
+  const customers = useQuery(apiAny.customers.listTeamCustomers, { teamId });
 
   // Mutations
-  const inviteCustomer = useMutation(api.customers.inviteCustomerToProject);
-  const removeCustomerAccess = useMutation(api.customers.removeCustomerAccess);
-  const toggleCustomerStatus = useMutation(api.customers.toggleCustomerStatus);
+  const inviteCustomer = useMutation(apiAny.customers.inviteCustomerToProject);
+  const removeCustomerAccess = useMutation(apiAny.customers.removeCustomerAccess);
+  const toggleCustomerStatus = useMutation(apiAny.customers.toggleCustomerStatus);
 
   if (!teamMembers || !projects || !customers) {
     return <div className="p-6">Loading...</div>;

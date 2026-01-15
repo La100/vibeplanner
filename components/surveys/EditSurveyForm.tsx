@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 import { useRouter } from "next/navigation";
 import { useProject } from "@/components/providers/ProjectProvider";
@@ -46,13 +46,13 @@ interface EditSurveyFormProps {
 export function EditSurveyForm({ survey }: EditSurveyFormProps) {
   const router = useRouter();
   const { project } = useProject();
-  const updateSurvey = useMutation(api.surveys.updateSurvey);
-  const addQuestion = useMutation(api.surveys.addQuestion);
-  const updateQuestion = useMutation(api.surveys.updateQuestion);
+  const updateSurvey = useMutation(apiAny.surveys.updateSurvey);
+  const addQuestion = useMutation(apiAny.surveys.addQuestion);
+  const updateQuestion = useMutation(apiAny.surveys.updateQuestion);
   
-  const deleteSurvey = useMutation(api.surveys.deleteSurvey);
+  const deleteSurvey = useMutation(apiAny.surveys.deleteSurvey);
 
-  const surveyQuestions = useQuery(api.surveys.getSurvey, { surveyId: survey._id });
+  const surveyQuestions = useQuery(apiAny.surveys.getSurvey, { surveyId: survey._id });
 
   const [title, setTitle] = useState(survey.title);
   const [description, setDescription] = useState(survey.description || "");

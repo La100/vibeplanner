@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,7 @@ export function InviteMemberDialog({ teamId, children }: InviteMemberDialogProps
   const [role, setRole] = useState<InvitationRole>("member");
   const [isOpen, setIsOpen] = useState(false);
   
-  const inviteTeamMember = useMutation(api.teams.inviteTeamMember);
+  const inviteTeamMember = useMutation(apiAny.teams.inviteTeamMember);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

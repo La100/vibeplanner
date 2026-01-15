@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -103,22 +103,22 @@ function ProjectSettingsContent() {
   const [activeTab, setActiveTab] = useState<"general" | "members" | "permissions" | "taskstatus" | "ai" | "advanced">("general");
   
   const project = useQuery(
-    api.projects.getProjectBySlugInClerkOrg,
+    apiAny.projects.getProjectBySlugInClerkOrg,
     organization?.id
       ? { clerkOrgId: organization.id, projectSlug: params.projectSlug }
       : "skip"
   );
 
-  const hasAccess = useQuery(api.projects.checkUserProjectAccess, 
+  const hasAccess = useQuery(apiAny.projects.checkUserProjectAccess, 
     project ? { projectId: project._id } : "skip"
   );
 
-  const teamMember = useQuery(api.teams.getCurrentUserTeamMember, 
+  const teamMember = useQuery(apiAny.teams.getCurrentUserTeamMember, 
     project ? { teamId: project.teamId } : "skip"
   );
 
-  const updateProject = useMutation(api.projects.updateProject);
-  const deleteProject = useMutation(api.projects.deleteProject);
+  const updateProject = useMutation(apiAny.projects.updateProject);
+  const deleteProject = useMutation(apiAny.projects.deleteProject);
 
   const settingsForm = useForm<z.infer<typeof settingsFormSchema>>({
     resolver: zodResolver(settingsFormSchema),

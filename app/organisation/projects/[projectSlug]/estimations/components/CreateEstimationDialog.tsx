@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from 'convex/react';
-import { api } from '@/convex/_generated/api';
+import { apiAny } from '@/lib/convexApiAny';
 import { Id } from '@/convex/_generated/dataModel';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -57,11 +57,11 @@ export function CreateEstimationDialog({
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<Id<"shoppingListItems">[]>([]);
 
   // Queries
-  const laborItems = useQuery(api.labor.listLaborItems, { projectId });
-  const materialItems = useQuery(api.shopping.listShoppingListItems, { projectId });
-  const nextNumber = useQuery(api.costEstimations.getNextEstimationNumber, { projectId });
+  const laborItems = useQuery(apiAny.labor.listLaborItems, { projectId });
+  const materialItems = useQuery(apiAny.shopping.listShoppingListItems, { projectId });
+  const nextNumber = useQuery(apiAny.costEstimations.getNextEstimationNumber, { projectId });
 
-  const createEstimation = useMutation(api.costEstimations.createCostEstimation);
+  const createEstimation = useMutation(apiAny.costEstimations.createCostEstimation);
 
   // Reset form when dialog opens
   useEffect(() => {
@@ -502,5 +502,4 @@ export function CreateEstimationDialog({
     </Dialog>
   );
 }
-
 

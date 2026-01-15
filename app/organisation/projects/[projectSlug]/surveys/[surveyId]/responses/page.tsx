@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { useRouter } from "next/navigation";
 import { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
@@ -32,21 +32,21 @@ export default function SurveyResponsesPage({ params }: SurveyResponsesPageProps
     });
   }, [params]);
 
-  const survey = useQuery(api.surveys.getSurvey, 
+  const survey = useQuery(apiAny.surveys.getSurvey, 
     routeParams ? { surveyId: routeParams.surveyId } : "skip"
   );
-  const responses = useQuery(api.surveys.getSurveyResponses, 
+  const responses = useQuery(apiAny.surveys.getSurveyResponses, 
     routeParams ? { surveyId: routeParams.surveyId } : "skip"
   );
 
   // Get user info for each response
   const userIds = responses?.map(r => r.respondentId).filter(Boolean) || [];
-  const users = useQuery(api.users.getByClerkIds, 
+  const users = useQuery(apiAny.users.getByClerkIds, 
     userIds.length > 0 ? { clerkUserIds: userIds } : "skip"
   );
 
   // Get current user role to customize view
-  const currentUserMember = useQuery(api.teams.getCurrentUserTeamMember, 
+  const currentUserMember = useQuery(apiAny.teams.getCurrentUserTeamMember, 
     routeParams && survey && survey.teamId ? { teamId: survey.teamId } : "skip"
   );
 

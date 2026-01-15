@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useAction } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 
 import { Users, FolderOpen, HardDrive, Check, Sparkles, Brain, ExternalLink, Settings } from "lucide-react";
@@ -19,11 +19,11 @@ export function SubscriptionCard({ teamId }: SubscriptionCardProps) {
   const [loading, setLoading] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
 
-  const subscription = useQuery(api.stripe.getTeamSubscription, { teamId });
-  const storageUsage = useQuery(api.files.getTeamStorageUsage, { teamId });
-  const createCheckoutSession = useAction(api.stripeActions.createCheckoutSession);
-  const createBillingPortalSession = useAction(api.stripeActions.createBillingPortalSession);
-  const ensureSubscriptionSynced = useAction(api.stripeActions.ensureSubscriptionSynced);
+  const subscription = useQuery(apiAny.stripe.getTeamSubscription, { teamId });
+  const storageUsage = useQuery(apiAny.files.getTeamStorageUsage, { teamId });
+  const createCheckoutSession = useAction(apiAny.stripeActions.createCheckoutSession);
+  const createBillingPortalSession = useAction(apiAny.stripeActions.createBillingPortalSession);
+  const ensureSubscriptionSynced = useAction(apiAny.stripeActions.ensureSubscriptionSynced);
 
   // Auto-sync subscription from Stripe if needed (runs once on mount)
   useEffect(() => {

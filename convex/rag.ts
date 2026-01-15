@@ -1,4 +1,5 @@
 import { internalQuery } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { v } from "convex/values";
 
 // Internal queries: Pobierz dane do indeksowania
@@ -70,7 +71,7 @@ export const getProjectContacts = internalQuery({
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .collect();
 
-    const contacts = [];
+    const contacts: Doc<"contacts">[] = [];
     for (const pc of projectContacts) {
       const contact = await ctx.db.get(pc.contactId);
       if (contact) {

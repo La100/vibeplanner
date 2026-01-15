@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useMutation, useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { useUser } from "@clerk/nextjs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ interface AddToProjectModalProps {
 
 export function AddToProjectModal({ product, teamId, onClose }: AddToProjectModalProps) {
   const { user } = useUser();
-  const addToShoppingList = useMutation(api.productLibrary.addToShoppingList);
+  const addToShoppingList = useMutation(apiAny.productLibrary.addToShoppingList);
   
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [quantity, setQuantity] = useState("1");
@@ -37,15 +37,15 @@ export function AddToProjectModal({ product, teamId, onClose }: AddToProjectModa
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Get team projects via clerk org
-  const team = useQuery(api.teams.getTeamById, { teamId });
+  const team = useQuery(apiAny.teams.getTeamById, { teamId });
   const projects = useQuery(
-    api.projects.listProjectsByClerkOrg, 
+    apiAny.projects.listProjectsByClerkOrg, 
     team ? { clerkOrgId: team.clerkOrgId } : "skip"
   );
 
   // Get shopping list sections for selected project
   const sections = useQuery(
-    api.shopping.getShoppingListSections, 
+    apiAny.shopping.getShoppingListSections, 
     selectedProjectId ? { 
       projectId: selectedProjectId as Id<"projects"> 
     } : "skip"

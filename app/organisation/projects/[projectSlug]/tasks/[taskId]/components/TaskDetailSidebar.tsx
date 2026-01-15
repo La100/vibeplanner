@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useAction } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id, Doc } from "@/convex/_generated/dataModel";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,11 +76,11 @@ export default function TaskDetailSidebar({ task, project, onDelete }: TaskDetai
   const [aiMessage, setAiMessage] = useState("");
   const [isParsing, setIsParsing] = useState(false);
 
-  const updateTask = useMutation(api.tasks.updateTask);
-  const deleteTask = useMutation(api.tasks.deleteTask);
-  const generateTaskDetails = useAction(api.tasks.generateTaskDetailsFromPrompt);
+  const updateTask = useMutation(apiAny.tasks.updateTask);
+  const deleteTask = useMutation(apiAny.tasks.deleteTask);
+  const generateTaskDetails = useAction(apiAny.tasks.generateTaskDetailsFromPrompt);
   
-  const teamMembers = useQuery(api.teams.getTeamMembers, { teamId: task.teamId });
+  const teamMembers = useQuery(apiAny.teams.getTeamMembers, { teamId: task.teamId });
 
   const currencySymbol = project.currency === "EUR" ? "€" : project.currency === "PLN" ? "zł" : project.currency === "USD" ? "$" : "$";
 

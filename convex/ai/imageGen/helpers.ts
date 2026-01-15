@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../../_generated/server";
+import type { Id } from "../../_generated/dataModel";
 import { r2 } from "../../files";
 
 /**
@@ -91,7 +92,7 @@ export const createFileRecord = internalMutation({
     const identity = await ctx.auth.getUserIdentity();
     const uploadedBy = identity?.subject || "system";
 
-    let folderId = undefined;
+    let folderId: Id<"folders"> | undefined = undefined;
 
     // Only try to find/create folder if we are in a project
     if (args.projectId) {

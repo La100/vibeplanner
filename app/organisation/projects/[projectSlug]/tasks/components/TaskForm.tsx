@@ -8,7 +8,7 @@ import { z } from "zod";
 import {  Loader2, Wand2 } from "lucide-react";
 
 import { useAction, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Doc, Id } from "@/convex/_generated/dataModel";
 
 import { toast } from "sonner";
@@ -69,9 +69,9 @@ export default function TaskForm({ projectId, teamId, teamMembers, currency, tas
     const [endTime, setEndTime] = useState("");
     const [hasEndTime, setHasEndTime] = useState(false);
 
-    const updateTask = useMutation(api.tasks.updateTask);
-    const createTask = useMutation(api.tasks.createTask);
-    const generateTaskDetails = useAction(api.tasks.generateTaskDetailsFromPrompt);
+    const updateTask = useMutation(apiAny.tasks.updateTask);
+    const createTask = useMutation(apiAny.tasks.createTask);
+    const generateTaskDetails = useAction(apiAny.tasks.generateTaskDetailsFromPrompt);
 
     const form = useForm<TaskFormValues>({
       resolver: zodResolver(taskFormSchema),

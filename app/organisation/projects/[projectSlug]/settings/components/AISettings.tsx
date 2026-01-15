@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { useUser } from "@clerk/nextjs";
-import { api } from "@/convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -45,21 +45,21 @@ export default function AISettings({ projectId }: AISettingsProps) {
   const [isSaving, setIsSaving] = useState(false);
 
   // Get project data
-  const project = useQuery(api.projects.getProject, projectId ? { projectId } : "skip");
+  const project = useQuery(apiAny.projects.getProject, projectId ? { projectId } : "skip");
 
   // Get user threads for this project
   const userThreads = useQuery(
-    api.ai.threads.listThreadsForUser,
+    apiAny.ai.threads.listThreadsForUser,
     projectId && user?.id
       ? { projectId, userClerkId: user.id }
       : "skip"
   );
 
   // Mutation to clear all threads
-  const clearAllThreads = useMutation(api.ai.threads.clearAllThreadsForUser);
+  const clearAllThreads = useMutation(apiAny.ai.threads.clearAllThreadsForUser);
 
   // Mutation to update project settings
-  const updateProject = useMutation(api.projects.updateProject);
+  const updateProject = useMutation(apiAny.projects.updateProject);
 
   // Initialize custom prompt from project data
   useEffect(() => {

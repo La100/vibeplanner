@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { api } from "../convex/_generated/api";
+import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "../convex/_generated/dataModel";
 import { 
   Users, 
@@ -76,8 +76,8 @@ export default function TeamManager({ team, onBack, onProjectClick }: TeamManage
   const [activeTab, setActiveTab] = useState<"overview" | "projects" | "members">("projects");
   const [showNewProjectForm, setShowNewProjectForm] = useState(false);
 
-  const projects = useQuery(api.projects.listTeamProjects, { teamId: team._id });
-  const createProject = useMutation(api.projects.createProjectInOrg);
+  const projects = useQuery(apiAny.projects.listTeamProjects, { teamId: team._id });
+  const createProject = useMutation(apiAny.projects.createProjectInOrg);
 
   const [newProject, setNewProject] = useState({
     name: "",
@@ -536,7 +536,7 @@ function OverviewTab({ team, projects }: { team: Team; projects: Project[] }) {
 function MembersTab() {
   const { organization } = useOrganization();
   const team = useQuery(
-    api.teams.getTeamByClerkOrg,
+    apiAny.teams.getTeamByClerkOrg,
     organization?.id ? { clerkOrgId: organization.id } : "skip"
   );
 

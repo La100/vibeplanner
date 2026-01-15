@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation, internalMutation, internalQuery, internalAction } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 import { internal, api } from "./_generated/api";
 
 export const listUserTeams = query({
@@ -17,7 +17,7 @@ export const listUserTeams = query({
       .filter((q) => q.eq(q.field("isActive"), true))
       .collect();
 
-    const teams = [];
+    const teams: Doc<"teams">[] = [];
     for (const membership of userMemberships) {
       const team = await ctx.db.get(membership.teamId);
       if (team) {
@@ -616,7 +616,7 @@ export const getProjectMembers = query({
       .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
       .collect();
     
-    const result = [];
+    const result: Array<Record<string, unknown>> = [];
     const processedUserIds = new Set();
 
     // Process team members
@@ -652,7 +652,7 @@ export const getProjectMembers = query({
         
         // Sprawdź czy customer nie jest już w wynikach (z teamMembers)
         if (!customer.clerkUserId || !processedUserIds.has(customer.clerkUserId)) {
-          let user = null;
+          let user: Doc<"users"> | null = null;
           
           if (customer.clerkUserId) {
             user = await ctx.db

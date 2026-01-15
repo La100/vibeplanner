@@ -1,5 +1,5 @@
 import { internalQuery } from "../_generated/server";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { v } from "convex/values";
 
 type SurveyQuestionSnapshot = {
@@ -203,7 +203,7 @@ export const getProjectContextSnapshot = internalQuery({
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .collect();
 
-    const contactDocs = [];
+    const contactDocs: Doc<"contacts">[] = [];
     for (const pc of projectContacts) {
       const contact = await ctx.db.get(pc.contactId);
       if (contact) {

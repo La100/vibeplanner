@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Doc, Id } from '@/convex/_generated/dataModel';
+import type { TeamMember } from '@/lib/teamMember';
 
 // Common units for labor
 const LABOR_UNITS = [
@@ -18,21 +19,6 @@ const LABOR_UNITS = [
   { value: "item", label: "Per item" },
 ];
 
-type TeamMember = {
-  _id: Id<"teamMembers">;
-  _creationTime: number;
-  teamId: Id<"teams">;
-  clerkUserId: string;
-  clerkOrgId: string;
-  role: string;
-  permissions: string[];
-  name: string;
-  email: string;
-  imageUrl?: string;
-  joinedAt?: number;
-  projectIds?: Id<"projects">[];
-  isActive: boolean;
-};
 
 interface AddLaborItemFormProps {
   sections: Doc<"laborSections">[];
@@ -227,5 +213,3 @@ export function AddLaborItemForm({
     </div>
   );
 }
-
-
