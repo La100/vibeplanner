@@ -30,11 +30,8 @@ export function SmartDashboard() {
     const clerkTicket = params.get('__clerk_ticket');
 
     if (clerkTicket) {
-      console.log('[SmartDashboard] Invitation ticket detected, will reload after Clerk processes it...');
-
       // Give Clerk time to process the invitation (5 seconds)
       const timer = setTimeout(() => {
-        console.log('[SmartDashboard] Reloading page to check organization membership...');
         // Remove ticket from URL and reload
         const url = new URL(window.location.href);
         url.searchParams.delete('__clerk_ticket');
@@ -53,7 +50,6 @@ export function SmartDashboard() {
     if (organizations.length >= 1) {
       // Has organization - redirect to it
       const org = organizations[0];
-      console.log("Redirecting to organization:", org);
       (async () => {
         try {
           if (setActive) {
@@ -62,14 +58,12 @@ export function SmartDashboard() {
         } catch (error) {
           console.error("Failed to set active organization, continuing redirect", error);
         } finally {
-          console.log("Pushing to: /organisation");
           router.push("/organisation");
           hasRedirectedRef.current = true;
         }
       })();
     } else {
       // No organization - redirect to organisation
-      console.log("No organization found, redirecting to organisation");
       router.push("/organisation");
       hasRedirectedRef.current = true;
     }
