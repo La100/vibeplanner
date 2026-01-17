@@ -51,7 +51,7 @@ export function ChatSidebar({
   return (
     <aside
       className={cn(
-        "hidden shrink-0 flex-col bg-muted/20 border-l border-border/50 overflow-hidden transition-[width] duration-300 ease-out md:flex md:sticky md:self-start md:top-4 md:h-full",
+        "hidden shrink-0 flex-col bg-muted/20 border-r border-border/50 overflow-hidden transition-[width] duration-300 ease-out md:flex md:sticky md:self-start md:top-4 md:h-full",
         showHistory ? "w-80" : "w-0"
       )}
     >

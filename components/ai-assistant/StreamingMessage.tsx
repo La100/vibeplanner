@@ -18,6 +18,7 @@ import { FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MessageStepList, type MessagePart } from "./MessageSteps";
 import { InlineConfirmationList } from "./InlineConfirmation";
+import { ThinkingIndicator } from "./ThinkingIndicator";
 import type { PendingContentItem, PendingContentType } from "@/components/AIConfirmationGrid";
 
 // ==================== ZOD SCHEMAS FOR TOOL RESULT VALIDATION ====================
@@ -411,11 +412,7 @@ export const StreamingMessage = memo(function StreamingMessage({
       <div className="w-full max-w-4xl">
         {/* Show loading indicator when streaming just started with no content */}
         {isCurrentlyStreaming && messageParts.length === 0 ? (
-          <div className="flex items-center gap-3 pl-4 py-4">
-            <div className="h-3 w-3 rounded-full bg-foreground animate-pulse" />
-            <div className="h-3 w-3 rounded-full bg-foreground/60 animate-pulse" style={{ animationDelay: "150ms" }} />
-            <div className="h-3 w-3 rounded-full bg-foreground/30 animate-pulse" style={{ animationDelay: "300ms" }} />
-          </div>
+          <ThinkingIndicator />
         ) : showStepLayout ? (
           // Step-by-step view for assistant responses
           <div className="relative w-full">
@@ -449,13 +446,9 @@ export const StreamingMessage = memo(function StreamingMessage({
             hasConfirmations ? "rounded-2xl bg-muted/20 border border-border/50" : "rounded-3xl bg-transparent"
           )}>
             <div className={cn("relative z-10", hasConfirmations ? "p-6" : "p-4 sm:p-6")}>
-              {/* Show dots if text is just "Thinking..." or similar */}
+              {/* Show Thinking indicator if text is just "Thinking..." or similar */}
               {(message.text?.toLowerCase().includes("thinking") && message.text.length < 20) || !message.text ? (
-                <div className="flex items-center gap-3 py-2">
-                  <div className="h-3 w-3 rounded-full bg-foreground animate-pulse" />
-                  <div className="h-3 w-3 rounded-full bg-foreground/60 animate-pulse" style={{ animationDelay: "150ms" }} />
-                  <div className="h-3 w-3 rounded-full bg-foreground/30 animate-pulse" style={{ animationDelay: "300ms" }} />
-                </div>
+                <ThinkingIndicator />
               ) : (
                 <div className="prose prose-neutral dark:prose-invert max-w-none leading-relaxed text-base text-foreground/90">
                   <div

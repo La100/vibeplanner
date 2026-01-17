@@ -44,8 +44,10 @@ import { useFileUpload } from "@/components/ai-assistant/useFileUpload";
 import { QUICK_PROMPTS } from "@/components/ai-assistant/constants";
 import { WorkflowWizard } from "@/components/ai-assistant/WorkflowWizard";
 import { ChatSidebar, type ThreadListItem } from "@/components/ai-assistant/ChatSidebar";
-import { ChatInput } from "@/components/ai-assistant/ChatInput";
+import { ChatInputVercel } from "@/components/ai-assistant/ChatInputVercel";
 import { ChatMessageList } from "@/components/ai-assistant/ChatMessageList";
+import { SuggestedActions } from "@/components/ai-assistant/SuggestedActions";
+import { ThinkingIndicator } from "@/components/ai-assistant/ThinkingIndicator";
 import { getWorkflow, getWorkflowStep } from "@/convex/ai/workflows/loader";
 import { createWorkflowContextSection } from "@/convex/ai/helpers/workflowContextBuilder";
 
@@ -400,20 +402,41 @@ const AIAssistantSmart = () => {
   // ==================== RENDER HELPERS ====================
 
   const renderInputArea = () => (
-    <ChatInput
-      message={message}
-      setMessage={setMessage}
-      selectedFiles={selectedFiles}
-      isLoading={isLoading}
-      isUploading={isUploading}
-      inputRef={inputRef}
-      fileInputRef={fileInputRef}
-      onSendMessage={handleSendMessage}
-      onStopResponse={handleStopResponse}
-      onFileSelect={handleFileSelect}
-      onRemoveFile={handleRemoveFile}
-      onAttachmentClick={handleAttachmentClick}
-    />
+    <>
+      {/* Suggested actions - shown only on empty state */}
+      {shouldShowEmptyState && selectedFiles.length === 0 && (
+        <div className="mb-4">
+          <SuggestedActions
+            onSuggestionClick={handleQuickPromptClick}
+            suggestions={QUICK_PROMPTS.slice(0, 4)}
+          />
+        </div>
+      )}
+
+      <ChatInputVercel
+        message={message}
+        setMessage={setMessage}
+        selectedFiles={selectedFiles}
+        isLoading={isLoading}
+        isUploading={isUploading}
+        inputRef={inputRef}
+        fileInputRef={fileInputRef}
+        onSendMessage={handleSendMessage}
+        onStopResponse={handleStopResponse}
+        onFileSelect={handleFileSelect}
+        onRemoveFile={handleRemoveFile}
+        onAttachmentClick={handleAttachmentClick}
+        onPasteFiles={(files) => {
+          // Handle pasted files by simulating file input change
+          const event = {
+            target: {
+              files: files,
+            },
+          } as unknown as React.ChangeEvent<HTMLInputElement>;
+          handleFileSelect(event);
+        }}
+      />
+    </>
   );
 
   // ==================== MAIN RENDER ====================
@@ -506,14 +529,21 @@ const AIAssistantSmart = () => {
 
           {/* Mobile header */}
           <div className="flex items-center justify-between border-b border-border/60 px-4 py-2 md:hidden z-20 bg-background/50 backdrop-blur sticky top-0">
+            <Button onClick={handleNewChatClick} variant="ghost" size="icon" className="h-9 w-9 rounded-full -ml-2 text-muted-foreground hover:text-foreground">
+              <Plus className="h-5 w-5" />
+              <span className="sr-only">New chat</span>
+            </Button>
+
+            <span className="font-semibold text-sm">AI Assistant</span>
+
             <Sheet>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full -ml-2 text-muted-foreground hover:text-foreground">
+                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full -mr-2 text-muted-foreground hover:text-foreground">
                   <Menu className="h-5 w-5" />
                   <span className="sr-only">Toggle history</span>
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-[300px] sm:w-[350px] p-0">
+              <SheetContent side="right" className="w-[300px] sm:w-[350px] p-0">
                 <SheetHeader className="p-4 border-b border-border/50 text-left">
                   <SheetTitle className="flex items-center gap-2">
                     <MessageSquare className="h-4 w-4 text-primary" />
@@ -585,13 +615,6 @@ const AIAssistantSmart = () => {
                 </div>
               </SheetContent>
             </Sheet>
-
-            <span className="font-semibold text-sm">AI Assistant</span>
-
-            <Button onClick={handleNewChatClick} variant="ghost" size="icon" className="h-9 w-9 rounded-full -mr-2 text-muted-foreground hover:text-foreground">
-              <Plus className="h-5 w-5" />
-              <span className="sr-only">New chat</span>
-            </Button>
           </div>
 
           {/* Right side toolbar */}
@@ -620,147 +643,155 @@ const AIAssistantSmart = () => {
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-40">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-40 relative">
             {shouldShowChatLoading ? (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                 Loading conversation…
               </div>
-            ) : (
-              <div className={cn(
-                "mx-auto flex max-w-4xl flex-col space-y-4",
-                shouldShowEmptyState ? "min-h-full justify-center items-center gap-4 pt-6 pb-6" : "pt-6 pb-6"
-              )}>
-                {shouldShowEmptyState ? (
-                  <div className="flex flex-col items-center justify-center min-h-[60vh] w-full max-w-2xl mx-auto px-4">
-                      {aiAccess?.currentPlan === "free" && (
-                        <Badge variant="outline" className="mb-8 rounded-full px-4 py-1.5 border-amber-200 bg-amber-50 text-amber-700 gap-2 hover:bg-amber-100 transition-colors cursor-pointer shadow-sm">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                          Upgrade Plan
-                        </Badge>
-                      )}
-
-                      <h1 className="text-4xl md:text-5xl font-medium tracking-tight mb-3 text-center text-foreground font-display">
-                        Hey {user?.firstName || "User"}! 👋
-                      </h1>
-
-                      <p className="text-muted-foreground text-center mb-12 text-lg">
-                        How's it going? What can I help you with today?
-                      </p>
-
-                      {/* Spacer for input that will animate from bottom */}
-                      <div className="h-[140px] w-full max-w-2xl" />
-
-                      <div className="mt-8 w-full flex flex-col items-center max-w-4xl">
-                        <div className="flex items-center gap-4 mb-8">
-                          <Button
-                            variant="ghost"
-                            className="text-muted-foreground gap-2 hover:text-foreground transition-colors group"
-                            onClick={() => setShowTemplates(!showTemplates)}
-                          >
-                            <ChevronDown className={cn("h-4 w-4 transition-transform duration-300", showTemplates && "rotate-180")} />
-                            Templates
-                          </Button>
-                          <div className="w-px h-6 bg-border/50" />
-                          <Button
-                            variant="outline"
-                            className="gap-2 border-primary/30 hover:border-primary hover:bg-primary/5 transition-colors"
-                            onClick={() => setShowWorkflowWizard(true)}
-                          >
-                            <Workflow className="h-4 w-4 text-primary" />
-                            Renovation Workflow
-                          </Button>
-                        </div>
-
-                        <AnimatePresence>
-                          {showTemplates && (
-                            <motion.div
-                              initial={{ opacity: 0, height: 0, y: -20 }}
-                              animate={{ opacity: 1, height: "auto", y: 0 }}
-                              exit={{ opacity: 0, height: 0, y: -20 }}
-                              className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 overflow-hidden px-4 sm:px-0 pb-8"
-                            >
-                              {QUICK_PROMPTS.map((item) => (
-                                <button
-                                  key={item.label}
-                                  onClick={() => handleQuickPromptClick(item.prompt)}
-                                  className={cn(
-                                    "text-left p-4 rounded-xl border border-border/40 bg-card/40 hover:bg-card hover:border-primary/20 transition-all duration-200 group/item shadow-sm"
-                                  )}
-                                >
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <Sparkles className="h-3.5 w-3.5 text-primary/70 group-hover/item:text-primary transition-colors" />
-                                    <span className="font-medium text-sm text-foreground/80 group-hover/item:text-foreground">{item.label}</span>
-                                  </div>
-                                  <p className="text-xs text-muted-foreground line-clamp-2 group-hover/item:text-foreground/70">{item.prompt}</p>
-                                </button>
-                              ))}
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="w-full">
-                      <div className="flex flex-col gap-6">
-                        {pendingUserMessage && (
-                          <div className="flex flex-col gap-4 items-end">
-                            <div className="max-w-[85%]">
-                              <div className="bg-foreground text-background px-6 py-4 rounded-3xl shadow-lg">
-                                <p className="text-lg leading-relaxed whitespace-pre-wrap">
-                                  {pendingUserMessage}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                        {uiMessages.length === 0 && (isLoading || isStreaming) ? (
-                          <div className="flex items-center gap-3 pl-4 py-4">
-                            <div className="h-3 w-3 rounded-full bg-foreground animate-pulse" />
-                            <div className="h-3 w-3 rounded-full bg-foreground/60 animate-pulse" style={{ animationDelay: "150ms" }} />
-                            <div className="h-3 w-3 rounded-full bg-foreground/30 animate-pulse" style={{ animationDelay: "300ms" }} />
-                          </div>
-                        ) : uiMessages.length > 0 ? (
-                          <ChatMessageList
-                            uiMessages={uiMessages}
-                            messagesEndRef={messagesEndRef}
-                            messageMetadataByIndex={messageMetadataByIndex}
-                            localMessageAttachments={localMessageAttachments}
-                            pendingItems={pendingItems as PendingContentItem[]}
-                            isBulkProcessing={isBulkProcessing}
-                            onConfirmItem={handleConfirmItem}
-                            onRejectItem={handleRejectItem}
-                            onEditItem={(idx) => {
-                              handleEditItem(idx);
-                              setShowConfirmationGrid(false);
-                              setIsConfirmationDialogOpen(true);
-                              setCurrentItemIndex(idx);
-                            }}
-                            onConfirmAll={handleConfirmAll}
-                            onRejectAll={handleRejectAll}
-                            onUpdateItem={handleUpdatePendingItem}
-                          />
-                        ) : null}
-                      </div>
-                    </div>
+            ) : shouldShowEmptyState ? (
+              <div className="flex h-full items-center justify-center">
+                <div className="flex flex-col items-center justify-center w-full max-w-3xl mx-auto px-4">
+                  {/* Optional badge for free plan */}
+                  {aiAccess?.currentPlan === "free" && (
+                    <Badge variant="outline" className="mb-8 rounded-full px-4 py-1.5 border-amber-200 bg-amber-50 text-amber-700 gap-2 hover:bg-amber-100 transition-colors cursor-pointer shadow-sm">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                      Upgrade Plan
+                    </Badge>
                   )}
+
+                  {/* Welcome heading - Vercel style */}
+                  <motion.div
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5 }}
+                    className="text-center space-y-4 mb-12"
+                  >
+                    <h1 className="text-4xl md:text-5xl font-semibold tracking-tight text-foreground">
+                      Hello! How can I help you today?
+                    </h1>
+                  </motion.div>
+
+                  {/* Extra options - kept below for workflow access */}
+                  <div className="w-full flex flex-col items-center">
+                    <div className="flex items-center gap-4 mb-6">
+                      <Button
+                        variant="ghost"
+                        className="text-muted-foreground gap-2 hover:text-foreground transition-colors group"
+                        onClick={() => setShowTemplates(!showTemplates)}
+                      >
+                        <ChevronDown className={cn("h-4 w-4 transition-transform duration-300", showTemplates && "rotate-180")} />
+                        More templates
+                      </Button>
+                      <div className="w-px h-6 bg-border/50" />
+                      <Button
+                        variant="outline"
+                        className="gap-2 border-primary/30 hover:border-primary hover:bg-primary/5 transition-colors"
+                        onClick={() => setShowWorkflowWizard(true)}
+                      >
+                        <Workflow className="h-4 w-4 text-primary" />
+                        Renovation Workflow
+                      </Button>
+                    </div>
+
+                    <AnimatePresence>
+                      {showTemplates && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0, y: -20 }}
+                          animate={{ opacity: 1, height: "auto", y: 0 }}
+                          exit={{ opacity: 0, height: 0, y: -20 }}
+                          className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 overflow-hidden px-4 sm:px-0 pb-8"
+                        >
+                          {QUICK_PROMPTS.slice(4).map((item) => (
+                            <button
+                              key={item.label}
+                              onClick={() => handleQuickPromptClick(item.prompt)}
+                              className={cn(
+                                "text-left p-4 rounded-xl border border-border/40 bg-card/40 hover:bg-card hover:border-primary/20 transition-all duration-200 group/item shadow-sm"
+                              )}
+                            >
+                              <div className="flex items-center gap-2 mb-2">
+                                <Sparkles className="h-3.5 w-3.5 text-primary/70 group-hover/item:text-primary transition-colors" />
+                                <span className="font-medium text-sm text-foreground/80 group-hover/item:text-foreground">{item.label}</span>
+                              </div>
+                              <p className="text-xs text-muted-foreground line-clamp-2 group-hover/item:text-foreground/70">{item.prompt}</p>
+                            </button>
+                          ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="mx-auto max-w-4xl pt-6 pb-6">
+                <div className="flex flex-col gap-6">
+                  {/* Always show ChatMessageList if there are messages */}
+                  {uiMessages.length > 0 && (
+                    <ChatMessageList
+                      uiMessages={uiMessages}
+                      messagesEndRef={messagesEndRef}
+                      messageMetadataByIndex={messageMetadataByIndex}
+                      localMessageAttachments={localMessageAttachments}
+                      pendingItems={pendingItems as PendingContentItem[]}
+                      isBulkProcessing={isBulkProcessing}
+                      onConfirmItem={handleConfirmItem}
+                      onRejectItem={handleRejectItem}
+                      onEditItem={(idx) => {
+                        handleEditItem(idx);
+                        setShowConfirmationGrid(false);
+                        setIsConfirmationDialogOpen(true);
+                        setCurrentItemIndex(idx);
+                      }}
+                      onConfirmAll={handleConfirmAll}
+                      onRejectAll={handleRejectAll}
+                      onUpdateItem={handleUpdatePendingItem}
+                    />
+                  )}
+
+                  {/* Show pending message only if NOT in uiMessages yet */}
+                  {pendingUserMessage && uiMessages.length === 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="flex flex-col gap-4 items-end"
+                    >
+                      <div className="max-w-[85%]">
+                        <div className="bg-foreground text-background px-6 py-4 rounded-3xl shadow-lg">
+                          <p className="text-base leading-relaxed whitespace-pre-wrap">
+                            {pendingUserMessage}
+                          </p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* Show thinking indicator when waiting for response to start (submitted but not streaming yet) */}
+                  {isLoading && !isStreaming && <ThinkingIndicator />}
+                </div>
               </div>
             )}
           </div>
 
-          {/* Input Area - always rendered at bottom, offset animates for empty state */}
+          {/* Input Area - Vercel style with transition */}
           <motion.div
             initial={false}
             animate={{
-              y: shouldShowEmptyState ? "calc(-50vh + 140px)" : 0,
+              position: shouldShowEmptyState ? "absolute" : "sticky",
+              bottom: shouldShowEmptyState ? "50%" : 0,
+              transform: shouldShowEmptyState ? "translateY(50%)" : "translateY(0)",
             }}
             transition={{
               type: "spring",
-              stiffness: 350,
-              damping: 32,
+              stiffness: 300,
+              damping: 30,
             }}
-            className="absolute left-0 right-0 bottom-6 px-2 sm:px-6 z-50"
+            className={cn(
+              "left-0 right-0 z-10 mx-auto flex w-full gap-2 border-t-0 bg-background px-2 pb-3 md:px-4 md:pb-4",
+              shouldShowEmptyState ? "max-w-3xl" : "sticky"
+            )}
           >
-            <div className="max-w-3xl mx-auto">
+            <div className="w-full max-w-4xl mx-auto">
               {renderInputArea()}
             </div>
           </motion.div>
