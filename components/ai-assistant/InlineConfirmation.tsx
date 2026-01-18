@@ -541,7 +541,7 @@ export function InlineConfirmationList({
             }
           }}
         >
-          {visibleItems.map(({ item, index: originalIndex }, index) => (
+          {visibleItems.map(({ item, index: originalIndex }) => (
             <div
               key={originalIndex}
               className={cn(

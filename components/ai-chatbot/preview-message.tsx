@@ -70,6 +70,11 @@ function toPendingContentType(type: string): PendingContentType {
   return type as PendingContentType;
 }
 
+type UIMessagePart = NonNullable<UIMessage["parts"]>[number];
+
+const hasText = (part: UIMessagePart): part is UIMessagePart & { text: string } =>
+  typeof (part as { text?: unknown }).text === "string";
+
 function extractPendingItemsFromMessage(message: UIMessage): PendingContentItem[] {
   const items: PendingContentItem[] = [];
   if (!message.parts) return items;
@@ -265,14 +270,18 @@ const PurePreviewMessage = ({
   const isUser = message.role === "user";
   const textFromParts =
     message.parts?.find(
-      (part) => part.type === "text" && "text" in part && part.text
+      (part): part is UIMessagePart & { type: "text"; text: string } =>
+        part.type === "text" && hasText(part)
     )?.text ?? "";
   const messageText = message.text || textFromParts;
 
   const reasoningText = useMemo(() => {
     return (
       message.parts
-        ?.filter((part) => part.type === "reasoning" && "text" in part && part.text)
+        ?.filter(
+          (part): part is UIMessagePart & { text: string } =>
+            part.type === "reasoning" && hasText(part)
+        )
         .map((part) => part.text)
         .join("\n\n") ?? ""
     ).trim();

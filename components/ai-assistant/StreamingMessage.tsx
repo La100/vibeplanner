@@ -115,6 +115,11 @@ interface StreamingMessageProps {
   isProcessing?: boolean;
 }
 
+type UIMessagePart = NonNullable<UIMessage["parts"]>[number];
+
+const isTextPart = (part: UIMessagePart): part is UIMessagePart & { type: "text"; text: string } =>
+  part.type === "text" && typeof (part as { text?: unknown }).text === "string";
+
 function UserAttachmentPreview({
   metadata,
   localAttachments,
@@ -397,10 +402,7 @@ export const StreamingMessage = memo(function StreamingMessage({
 
   // User messages - simple bubble
   if (isUser) {
-    const textFromParts =
-      message.parts?.find(
-        (part) => part.type === "text" && "text" in part && part.text
-      )?.text ?? "";
+    const textFromParts = message.parts?.find(isTextPart)?.text ?? "";
     const userText = message.text || textFromParts;
 
     return (

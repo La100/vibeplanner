@@ -7,7 +7,6 @@ import {
   rectIntersection,
   useDraggable,
   useDroppable,
-  DragOverlay,
   MouseSensor,
   TouchSensor,
   useSensor,

@@ -147,8 +147,10 @@ const AIAssistantVercel = () => {
     });
   }, [threadId]);
 
-  const makeAttachmentLabel = (files: Array<{ filename?: string }>) => {
-    const names = files.map((file, index) => file.filename || `attachment-${index + 1}`);
+  const makeAttachmentLabel = (files: Array<{ filename?: string; name?: string }>) => {
+    const names = files.map(
+      (file, index) => file.filename || file.name || `attachment-${index + 1}`
+    );
     if (names.length === 0) return "";
     return `Attached: ${names.join(", ")}`;
   };

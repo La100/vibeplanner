@@ -112,7 +112,6 @@ const shouldKeepPendingItemsForFollowup = (message: string, items: PendingItem[]
 const AIAssistantSmart = () => {
   const { user } = useUser();
   const { project, team } = useProject();
-  const [showTemplates, setShowTemplates] = useState(false);
   const [pendingUserMessage, setPendingUserMessage] = useState<{
     text: string;
     attachments: Array<{
