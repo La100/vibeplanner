@@ -232,7 +232,15 @@ export type UseAIChatReturn = {
   sessionTokens: SessionTokens;
   threadId: string | null;
   setThreadId: (id: string | null) => void;
-  handleSendMessage: () => Promise<void>;
+  handleSendMessage: (
+    selectedFiles: File[],
+    uploadedFileIds: string[],
+    onUploadStart: () => void,
+    onUploadComplete: (fileIds: string[]) => void,
+    generateUploadUrl: (args: { projectId: Id<"projects">; fileName: string; origin: string }) => Promise<{ url: string; key: string }>,
+    addFile: (args: { projectId: Id<"projects">; fileKey: string; fileName: string; fileType: string; fileSize: number; origin: string }) => Promise<string>,
+    promptOverride?: string
+  ) => Promise<void>;
   handleStopResponse: () => void;
   handleClearChat: () => Promise<void>;
   handleNewChat: () => void;
@@ -278,7 +286,6 @@ export type QuickPrompt = {
   label: string;
   prompt: string;
 };
-
 
 
 

@@ -80,7 +80,8 @@ interface UseAIChatReturn {
     onUploadStart: () => void,
     onUploadComplete: (fileIds: string[]) => void,
     generateUploadUrl: (args: { projectId: Id<"projects">; fileName: string; origin: string }) => Promise<{ url: string; key: string }>,
-    addFile: (args: { projectId: Id<"projects">; fileKey: string; fileName: string; fileType: string; fileSize: number; origin: string }) => Promise<string>
+    addFile: (args: { projectId: Id<"projects">; fileKey: string; fileName: string; fileType: string; fileSize: number; origin: string }) => Promise<string>,
+    promptOverride?: string
   ) => Promise<void>;
   handleStopResponse: () => void;
   handleClearChat: () => Promise<void>;
@@ -105,11 +106,16 @@ function uiMessageToChatEntry(msg: UIMessage): ChatHistoryEntry {
 }
 
 export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChatReturn => {
+  const createThreadId = useCallback(() => {
+    return `thread-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  }, []);
+
   // State
   const [message, setMessage] = useState("");
   const [chatHistory, setChatHistory] = useState<ChatHistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [threadId, setThreadId] = useState<string | undefined>(undefined);
+  const [draftThreadId, setDraftThreadId] = useState<string | undefined>(undefined);
   const [initialThreadSelectionDone, setInitialThreadSelectionDone] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [currentMode, setCurrentMode] = useState<'full' | 'recent' | null>(null);
@@ -125,15 +131,30 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
   // STREAMING: Use useUIMessages from @convex-dev/agent/react
   // Only call when we have a threadId to avoid issues
   // ===========================================
+  useEffect(() => {
+    if (threadId) {
+      if (draftThreadId) {
+        setDraftThreadId(undefined);
+      }
+      return;
+    }
+
+    if (!draftThreadId) {
+      setDraftThreadId(createThreadId());
+    }
+  }, [threadId, draftThreadId, createThreadId]);
+
+  const activeThreadId = threadId ?? draftThreadId;
+
   const streamingHookResult = useUIMessages(
     apiAny.ai.streamingQueries.listThreadMessages,
-    threadId ? { threadId } : "skip",
+    activeThreadId ? { threadId: activeThreadId } : "skip",
     { initialNumItems: 50, stream: true }
   );
   
   // Extract results safely - only when threadId exists
-  const uiMessages = threadId ? streamingHookResult.results : undefined;
-  const streamingStatus = threadId ? streamingHookResult.status : "Exhausted";
+  const uiMessages = activeThreadId ? streamingHookResult.results : undefined;
+  const streamingStatus = activeThreadId ? streamingHookResult.status : "Exhausted";
   const loadMoreMessages = streamingHookResult.loadMore;
 
   // Streaming mutation with optimistic updates
@@ -364,6 +385,7 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
     }
     setInitialThreadSelectionDone(true);
     setThreadId(selectedThreadId);
+    setDraftThreadId(undefined);
     setChatHistory([]);
     setMessage("");
     setSessionTokens({ total: 0, cost: 0 });
@@ -372,6 +394,7 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
 
   const handleNewChat = useCallback(() => {
     setThreadId(undefined);
+    setDraftThreadId(undefined);
     setChatHistory([]);
     setMessage("");
     setSessionTokens({ total: 0, cost: 0 });
@@ -426,11 +449,13 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
     onUploadStart: () => void,
     onUploadComplete: (fileIds: string[]) => void,
     generateUploadUrl: (args: { projectId: Id<"projects">; fileName: string; origin: string }) => Promise<{ url: string; key: string }>,
-    addFile: (args: { projectId: Id<"projects">; fileKey: string; fileName: string; fileType: string; fileSize: number; origin: string }) => Promise<string>
+    addFile: (args: { projectId: Id<"projects">; fileKey: string; fileName: string; fileType: string; fileSize: number; origin: string }) => Promise<string>,
+    promptOverride?: string
   ) => {
+    const promptText = (promptOverride ?? message).trim();
     if (
       !projectId ||
-      (!message.trim() && selectedFiles.length === 0) ||
+      (!promptText && selectedFiles.length === 0) ||
       !userClerkId ||
       isLoading ||
       isStreaming ||
@@ -441,7 +466,7 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
 
     isSendingRef.current = true;
 
-    const userMessage = message.trim();
+    const userMessage = promptText;
     let currentThreadId = threadId;
     const hasFiles = selectedFiles.length > 0;
 
@@ -450,7 +475,7 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
     try {
       // Generate threadId if needed
       if (!currentThreadId) {
-        currentThreadId = `thread-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        currentThreadId = draftThreadId ?? createThreadId();
         setThreadId(currentThreadId);
       }
 
@@ -524,10 +549,11 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
       const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
       toast.error(`Failed to send message: ${errorMessage}`);
       setIsLoading(false);
+      throw error;
     } finally {
       isSendingRef.current = false;
     }
-  }, [projectId, userClerkId, message, threadId, initiateStreamingMutation, isLoading, isStreaming]);
+  }, [projectId, userClerkId, message, threadId, draftThreadId, createThreadId, initiateStreamingMutation, isLoading, isStreaming]);
 
   // Turn off isLoading when streaming finishes
   useEffect(() => {

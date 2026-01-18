@@ -7,7 +7,6 @@
  */
 
 import { RefObject } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import type { UIMessage } from "@convex-dev/agent/react";
 import { StreamingMessage } from "./StreamingMessage";
 import type { PendingContentItem } from "@/components/AIConfirmationGrid";
@@ -53,42 +52,36 @@ export function ChatMessageList({
   onUpdateItem,
 }: ChatMessageListProps) {
   return (
-    <>
-      <AnimatePresence initial={false}>
-        {uiMessages.map((msg, index) => {
-          // Pass confirmation handlers only to the last assistant message
-          const isLastAssistantMessage =
-            msg.role === "assistant" &&
-            (index === uiMessages.length - 1 ||
-              (index === uiMessages.length - 2 && uiMessages[uiMessages.length - 1]?.role === "user"));
+    <div className="flex flex-col gap-8 px-2 sm:px-4">
+      {uiMessages.map((msg, index) => {
+        // Pass confirmation handlers only to the last assistant message
+        const isLastAssistantMessage =
+          msg.role === "assistant" &&
+          (index === uiMessages.length - 1 ||
+            (index === uiMessages.length - 2 && uiMessages[uiMessages.length - 1]?.role === "user"));
+        const messageKey = msg.id ?? msg.key ?? `${msg.order}-${index}`;
 
-          return (
-            <motion.div
-              key={msg.key}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <StreamingMessage
-                message={msg}
-                showMode={true}
-                metadata={messageMetadataByIndex?.get(msg.order)}
-                localAttachments={localMessageAttachments?.[msg.key]}
-                pendingItems={isLastAssistantMessage ? pendingItems : undefined}
-                onConfirmItem={isLastAssistantMessage ? onConfirmItem : undefined}
-                onRejectItem={isLastAssistantMessage ? onRejectItem : undefined}
-                onEditItem={isLastAssistantMessage ? onEditItem : undefined}
-                onUpdateItem={isLastAssistantMessage ? onUpdateItem : undefined}
-                onConfirmAll={isLastAssistantMessage ? onConfirmAll : undefined}
-                onRejectAll={isLastAssistantMessage ? onRejectAll : undefined}
-                isProcessing={isLastAssistantMessage ? isBulkProcessing : undefined}
-              />
-            </motion.div>
-          );
-        })}
-      </AnimatePresence>
+        return (
+          <div key={messageKey}>
+            <StreamingMessage
+              message={msg}
+              showMode={true}
+              metadata={messageMetadataByIndex?.get(msg.order)}
+              localAttachments={localMessageAttachments?.[msg.key]}
+              pendingItems={isLastAssistantMessage ? pendingItems : undefined}
+              onConfirmItem={isLastAssistantMessage ? onConfirmItem : undefined}
+              onRejectItem={isLastAssistantMessage ? onRejectItem : undefined}
+              onEditItem={isLastAssistantMessage ? onEditItem : undefined}
+              onUpdateItem={isLastAssistantMessage ? onUpdateItem : undefined}
+              onConfirmAll={isLastAssistantMessage ? onConfirmAll : undefined}
+              onRejectAll={isLastAssistantMessage ? onRejectAll : undefined}
+              isProcessing={isLastAssistantMessage ? isBulkProcessing : undefined}
+            />
+          </div>
+        );
+      })}
       <div ref={messagesEndRef} className="h-4" />
-    </>
+    </div>
   );
 }
 

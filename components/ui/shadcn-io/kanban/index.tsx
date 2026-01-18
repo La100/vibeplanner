@@ -7,11 +7,23 @@ import {
   rectIntersection,
   useDraggable,
   useDroppable,
+  DragOverlay,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
 } from '@dnd-kit/core';
-import type { DragEndEvent } from '@dnd-kit/core';
+import { restrictToWindowEdges, restrictToFirstScrollableAncestor } from '@dnd-kit/modifiers';
+import type { DragEndEvent, Modifier } from '@dnd-kit/core';
 import type { ReactNode } from 'react';
 
 export type { DragEndEvent } from '@dnd-kit/core';
+
+// Combined modifier to prevent scrolling and restrict to viewport
+const restrictToViewport: Modifier = ({ transform, ...args }) => {
+  const restrictedTransform = restrictToWindowEdges({ transform, ...args });
+  return restrictToFirstScrollableAncestor({ transform: restrictedTransform, ...args });
+};
 
 export type Status = {
   id: string;
@@ -134,12 +146,35 @@ export const KanbanProvider = ({
   children,
   onDragEnd,
   className,
-}: KanbanProviderProps) => (
-  <DndContext collisionDetection={rectIntersection} onDragEnd={onDragEnd}>
-    <div
-      className={cn('grid w-full auto-cols-fr grid-flow-col gap-4', className)}
+}: KanbanProviderProps) => {
+  const mouseSensor = useSensor(MouseSensor, {
+    activationConstraint: {
+      distance: 10, // 10px movement required before drag starts
+    },
+  });
+
+  const touchSensor = useSensor(TouchSensor, {
+    activationConstraint: {
+      delay: 250,
+      tolerance: 5,
+    },
+  });
+
+  const sensors = useSensors(mouseSensor, touchSensor);
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={rectIntersection}
+      onDragEnd={onDragEnd}
+      modifiers={[restrictToViewport]}
+      autoScroll={false}
     >
-      {children}
-    </div>
-  </DndContext>
-);
+      <div
+        className={cn('grid w-full auto-cols-fr grid-flow-col gap-4', className)}
+      >
+        {children}
+      </div>
+    </DndContext>
+  );
+};

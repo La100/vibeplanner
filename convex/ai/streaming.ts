@@ -424,6 +424,91 @@ export const internalDoStreaming = internalAction({
           }
         }
         
+        const pendingCalls = await ctx.runQuery(api.ai.threads.listPendingItems, {
+          threadId: providedThreadId,
+        });
+
+        const lowerMessage = args.message.toLowerCase();
+        const hasUpdateKeyword = [
+          "assign",
+          "przypisz",
+          "do mnie",
+          "ustaw",
+          "termin",
+          "deadline",
+          "due",
+          "priorytet",
+          "priority",
+          "tag",
+        ].some((keyword) => lowerMessage.includes(keyword));
+        const hasCreateKeyword = [
+          "dodaj",
+          "utworz",
+          "stworz",
+          "create",
+          "add",
+          "nowy",
+          "kolejny",
+          "another",
+          "next",
+        ].some((keyword) => lowerMessage.includes(keyword));
+        const shouldReplacePending =
+          hasUpdateKeyword &&
+          !hasCreateKeyword &&
+          pendingCalls.length === 1 &&
+          functionCalls.length === 1;
+
+        if (shouldReplacePending) {
+          const pendingCall = pendingCalls[0];
+          const safeParse = (value?: string) => {
+            if (!value) return null;
+            try {
+              return JSON.parse(value);
+            } catch {
+              return null;
+            }
+          };
+          const pendingPayload = safeParse(pendingCall.arguments);
+          const nextPayload = safeParse(functionCalls[0].arguments);
+
+          const isPendingCreateTask =
+            pendingPayload?.type === "task" && pendingPayload?.operation === "create";
+
+          if (isPendingCreateTask && nextPayload?.type === "task") {
+            const pendingData = (pendingPayload?.data ?? {}) as Record<string, unknown>;
+            const nextData = (nextPayload?.data ?? {}) as Record<string, unknown>;
+            const mergedData = { ...pendingData, ...nextData } as Record<string, unknown>;
+            delete mergedData.taskId;
+
+            const mergedPayload = {
+              ...pendingPayload,
+              type: "task",
+              operation: "create",
+              data: mergedData,
+            };
+
+            functionCalls[0] = {
+              ...functionCalls[0],
+              functionName: "create_task",
+              arguments: JSON.stringify(mergedPayload),
+            };
+
+            const groupedResults = new Map<string, { callId: string; result: string | undefined }[]>();
+            const responseId = pendingCall.responseId;
+            groupedResults.set(responseId, [
+              { callId: pendingCall.callId, result: undefined },
+            ]);
+
+            for (const [responseId, results] of groupedResults.entries()) {
+              await ctx.runMutation(api.ai.threads.markFunctionCallsAsConfirmed, {
+                threadId: providedThreadId,
+                responseId,
+                results,
+              });
+            }
+          }
+        }
+
         // Save action function calls to database for confirmation UI
         if (functionCalls.length > 0) {
           const responseId = `resp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;

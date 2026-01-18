@@ -10,7 +10,6 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { PendingContentItem } from "@/components/AIConfirmationGrid";
 
 interface InlineTaskFormProps {
@@ -237,19 +236,7 @@ export function InlineTaskForm({
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between p-4 bg-muted/10 border-t border-border/40">
-                <div className="flex items-center gap-2">
-                    <Select defaultValue="always">
-                        <SelectTrigger className="w-[130px] h-8 text-xs border-0 bg-transparent shadow-none hover:bg-muted/50 focus:ring-0">
-                            <SelectValue placeholder="Ask me" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="always">Always ask</SelectItem>
-                            <SelectItem value="never">Don't ask</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-
+            <div className="flex items-center justify-end p-4 bg-muted/10 border-t border-border/40">
                 <div className="flex items-center gap-3">
                     <Button
                         variant="ghost"

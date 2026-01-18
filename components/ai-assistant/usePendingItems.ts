@@ -60,6 +60,7 @@ interface UsePendingItemsReturn {
   handleConfirmItem: (index: number) => Promise<void>;
   handleRejectItem: (index: number) => Promise<void>;
   handleRejectAll: () => Promise<void>;
+  handleAutoRejectPendingItems: () => Promise<number>;
   handleEditItem: (index: number) => void;
   handleUpdatePendingItem: (index: number, updates: Partial<PendingItem>) => void;
   resetPendingState: () => void;
@@ -187,7 +188,7 @@ export const usePendingItems = ({
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const scheduleResolvedRemoval = useCallback((clientId?: string) => {
-    // Intentionally left blank - resolved items should stay visible.
+    // Intentionally left blank - keep resolved items visible in the UI.
   }, []);
 
   // Helper functions
@@ -1260,6 +1261,57 @@ export const usePendingItems = ({
     resolvedIds.forEach((id) => scheduleResolvedRemoval(id));
   }, [pendingItems, threadId, markFunctionCallsAsConfirmed, setChatHistory, scheduleResolvedRemoval]);
 
+  const handleAutoRejectPendingItems = useCallback(async () => {
+    const itemsToReject = pendingItems.filter(
+      (item) => item.status !== "confirmed" && item.status !== "rejected"
+    );
+    if (itemsToReject.length === 0) return 0;
+
+    const resolvedIds = itemsToReject.map((item) => item.clientId).filter(Boolean) as string[];
+    setPendingItems((prev) =>
+      prev.map((item) =>
+        resolvedIds.includes(item.clientId ?? "") ? { ...item, status: "rejected" } : item
+      )
+    );
+    setShowConfirmationGrid(false);
+    setIsConfirmationDialogOpen(false);
+
+    if (threadId) {
+      const groupedResults = new Map<string, { callId: string; result: string | undefined }[]>();
+      for (const item of itemsToReject) {
+        if (item.functionCall && item.responseId) {
+          if (!groupedResults.has(item.responseId)) {
+            groupedResults.set(item.responseId, []);
+          }
+          groupedResults.get(item.responseId)!.push({
+            callId: item.functionCall.callId,
+            result: undefined,
+          });
+        }
+      }
+
+      for (const [responseId, results] of groupedResults.entries()) {
+        try {
+          await markFunctionCallsAsConfirmed({
+            threadId,
+            responseId,
+            results,
+          });
+        } catch (error) {
+          console.error("Failed to auto-reject function calls", error);
+        }
+      }
+    }
+
+    resolvedIds.forEach((id) => scheduleResolvedRemoval(id));
+    return itemsToReject.length;
+  }, [
+    pendingItems,
+    threadId,
+    markFunctionCallsAsConfirmed,
+    scheduleResolvedRemoval,
+  ]);
+
   const handleEditItem = useCallback((index: number) => {
     setEditingItemIndex(index);
     setShowConfirmationGrid(false);
@@ -1306,6 +1358,7 @@ export const usePendingItems = ({
     handleConfirmItem,
     handleRejectItem,
     handleRejectAll,
+    handleAutoRejectPendingItems,
     handleEditItem,
     handleUpdatePendingItem,
     resetPendingState,
@@ -1313,8 +1366,6 @@ export const usePendingItems = ({
 };
 
 export default usePendingItems;
-
-
 
 
 

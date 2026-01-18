@@ -24,7 +24,11 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
-import type { PendingContentItem, PendingContentType } from "@/components/AIConfirmationGrid";
+import type {
+  PendingApprovalState,
+  PendingContentItem,
+  PendingContentType,
+} from "@/components/AIConfirmationGrid";
 import { InlineCreationForm } from "./InlineCreationForm";
 
 // ============================================
@@ -105,6 +109,38 @@ function getOperation(item: PendingContentItem): string {
   return "create";
 }
 
+function getApprovalState(item: PendingContentItem): PendingApprovalState {
+  if (item.approvalState) {
+    return item.approvalState;
+  }
+  if (item.status === "confirmed") return "output-available";
+  if (item.status === "rejected") return "output-denied";
+  return "approval-requested";
+}
+
+function shouldRenderByState(state: PendingApprovalState): boolean {
+  return state !== "input-streaming" && state !== "input-available";
+}
+
+function getApprovalLabel(state: PendingApprovalState): string | null {
+  switch (state) {
+    case "approval-requested":
+      return "Awaiting approval";
+    case "approval-responded":
+      return "Responded";
+    case "output-available":
+      return "Approved";
+    case "output-denied":
+      return "Rejected";
+    case "output-error":
+      return "Failed";
+    case "input-streaming":
+    case "input-available":
+    default:
+      return null;
+  }
+}
+
 export const ConfirmationCard = memo(function ConfirmationCard({
   item,
   index,
@@ -142,7 +178,30 @@ export const ConfirmationCard = memo(function ConfirmationCard({
   const operation = getOperation(item);
   const operationInfo = OPERATION_LABELS[operation] || OPERATION_LABELS.create;
   const resolvedStatus = item.status;
-  const isResolved = resolvedStatus === "confirmed" || resolvedStatus === "rejected";
+  const approvalState = getApprovalState(item);
+  const approvalLabel = getApprovalLabel(approvalState);
+  const isResolved =
+    resolvedStatus === "confirmed" ||
+    resolvedStatus === "rejected" ||
+    approvalState === "approval-responded" ||
+    approvalState === "output-available" ||
+    approvalState === "output-denied" ||
+    approvalState === "output-error";
+  const isAwaitingApproval = approvalState === "approval-requested";
+  const resolvedLabel =
+    resolvedStatus === "confirmed" || approvalState === "output-available"
+      ? "Confirmed"
+      : resolvedStatus === "rejected" || approvalState === "output-denied"
+        ? "Rejected"
+        : approvalState === "output-error"
+          ? "Failed"
+          : approvalState === "approval-responded"
+            ? "Responded"
+            : null;
+
+  if (!shouldRenderByState(approvalState)) {
+    return null;
+  }
 
   const title = getTitle(item);
   const description = getDescription(item);
@@ -173,17 +232,33 @@ export const ConfirmationCard = memo(function ConfirmationCard({
             <Badge variant="secondary" className={cn("text-xs", operationInfo.color)}>
               {operationInfo.label}
             </Badge>
-            {isResolved && (
+            {approvalLabel && (
               <Badge
                 variant="secondary"
                 className={cn(
                   "text-xs",
-                  resolvedStatus === "confirmed"
-                    ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-                    : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                  approvalState === "output-available" && "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+                  approvalState === "output-denied" && "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+                  approvalState === "output-error" && "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+                  approvalState === "approval-requested" && "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
                 )}
               >
-                {resolvedStatus === "confirmed" ? "Confirmed" : "Rejected"}
+                {approvalLabel}
+              </Badge>
+            )}
+            {isResolved && resolvedLabel && (
+              <Badge
+                variant="secondary"
+                className={cn(
+                  "text-xs",
+                  resolvedLabel === "Confirmed"
+                    ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                    : resolvedLabel === "Failed" || resolvedLabel === "Rejected"
+                      ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                      : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                )}
+              >
+                {resolvedLabel}
               </Badge>
             )}
             <span className="text-xs text-muted-foreground capitalize">
@@ -247,11 +322,11 @@ export const ConfirmationCard = memo(function ConfirmationCard({
 
         <div className="flex-1" />
 
-        {isResolved ? (
+        {isResolved && resolvedLabel ? (
           <span className="text-xs text-muted-foreground">
-            {resolvedStatus === "confirmed" ? "Confirmed" : "Rejected"}
+            {resolvedLabel}
           </span>
-        ) : (
+        ) : isAwaitingApproval ? (
           <>
             <Button
               size="sm"
@@ -291,6 +366,8 @@ export const ConfirmationCard = memo(function ConfirmationCard({
               Confirm
             </Button>
           </>
+        ) : (
+          <span className="text-xs text-muted-foreground">Waiting for approval</span>
         )}
       </div>
     </div>
@@ -327,20 +404,26 @@ export function InlineConfirmationList({
   const [currentIndex, setCurrentIndex] = React.useState(0);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
-  if (items.length === 0) return null;
+  const visibleItems = items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => shouldRenderByState(getApprovalState(item)));
+
+  if (visibleItems.length === 0) return null;
 
   const isInlineFormOnly =
-    items.length === 1 &&
+    visibleItems.length === 1 &&
     Boolean(onUpdateItem) &&
-    !items[0].status &&
-    ["task", "note", "shopping", "contact"].includes(getCanonicalType(items[0].type));
+    !visibleItems[0].item.status &&
+    ["task", "note", "shopping", "contact"].includes(
+      getCanonicalType(visibleItems[0].item.type)
+    );
 
   if (isInlineFormOnly) {
     return (
       <div className="pt-2 pb-24 sm:pb-28">
         <ConfirmationCard
-          item={items[0]}
-          index={0}
+          item={visibleItems[0].item}
+          index={visibleItems[0].index}
           onConfirm={onConfirmItem}
           onReject={onRejectItem}
           onEdit={onEditItem}
@@ -351,14 +434,14 @@ export function InlineConfirmationList({
     );
   }
 
-  const showSlider = items.length > 1;
+  const showSlider = visibleItems.length > 1;
   const canGoBack = currentIndex > 0;
-  const canGoForward = currentIndex < items.length - 1;
+  const canGoForward = currentIndex < visibleItems.length - 1;
 
   const goToIndex = (index: number) => {
     setCurrentIndex(index);
     if (scrollRef.current) {
-      const cardWidth = scrollRef.current.scrollWidth / items.length;
+      const cardWidth = scrollRef.current.scrollWidth / visibleItems.length;
       scrollRef.current.scrollTo({
         left: cardWidth * index,
         behavior: "smooth",
@@ -372,19 +455,19 @@ export function InlineConfirmationList({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="font-medium text-sm">
-            {items.length} item{items.length !== 1 ? "s" : ""} to confirm
+            {visibleItems.length} item{visibleItems.length !== 1 ? "s" : ""} to confirm
           </span>
           {isProcessing && (
             <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
           )}
           {showSlider && (
             <span className="text-xs text-muted-foreground">
-              ({currentIndex + 1}/{items.length})
+              ({currentIndex + 1}/{visibleItems.length})
             </span>
           )}
         </div>
 
-        {items.length > 1 && onConfirmAll && onRejectAll && (
+        {visibleItems.length > 1 && onConfirmAll && onRejectAll && (
           <div className="flex gap-2">
             <Button
               size="sm"
@@ -451,16 +534,16 @@ export function InlineConfirmationList({
           )}
           onScroll={(e) => {
             const container = e.currentTarget;
-            const cardWidth = container.scrollWidth / items.length;
+            const cardWidth = container.scrollWidth / visibleItems.length;
             const newIndex = Math.round(container.scrollLeft / cardWidth);
             if (newIndex !== currentIndex) {
               setCurrentIndex(newIndex);
             }
           }}
         >
-          {items.map((item, index) => (
+          {visibleItems.map(({ item, index: originalIndex }, index) => (
             <div
-              key={index}
+              key={originalIndex}
               className={cn(
                 "flex-shrink-0 snap-center",
                 showSlider ? "w-[calc(100%-16px)]" : "w-full"
@@ -468,7 +551,7 @@ export function InlineConfirmationList({
             >
               <ConfirmationCard
                 item={item}
-                index={index}
+                index={originalIndex}
                 onConfirm={onConfirmItem}
                 onReject={onRejectItem}
                 onEdit={onEditItem}
@@ -483,7 +566,7 @@ export function InlineConfirmationList({
       {/* Dots indicator */}
       {showSlider && (
         <div className="flex justify-center gap-1.5">
-          {items.map((_, index) => (
+          {visibleItems.map((_, index) => (
             <button
               key={index}
               onClick={() => goToIndex(index)}

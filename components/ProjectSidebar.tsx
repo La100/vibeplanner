@@ -30,6 +30,7 @@ import {
   Image,
   Hammer,
   Calculator,
+  History,
 } from "lucide-react";
 
 function ProjectSidebarContent() {
@@ -40,6 +41,7 @@ function ProjectSidebarContent() {
 
   const allNavItems = [
     { href: `/organisation/projects/${params.projectSlug}`, label: "Overview", icon: LayoutDashboard, key: "overview" },
+    { href: `/organisation/projects/${params.projectSlug}/changelog`, label: "Changelog", icon: History, key: "changelog" },
     { href: `/organisation/projects/${params.projectSlug}/tasks`, label: "Tasks", icon: CheckSquare, key: "tasks" },
     { href: `/organisation/projects/${params.projectSlug}/moodboard`, label: "Moodboard", icon: Image, key: "moodboard" },
     { href: `/organisation/projects/${params.projectSlug}/notes`, label: "Notes", icon: StickyNote, key: "notes" },

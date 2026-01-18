@@ -19,16 +19,13 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useUser } from "@clerk/nextjs";
 import { useProject } from '@/components/providers/ProjectProvider';
+import { toast } from "sonner";
 import {
   Loader2,
   MessageSquare,
-  Sparkles,
   RefreshCcw,
   Plus,
-  ChevronDown,
-  Workflow
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Menu } from "lucide-react";
@@ -40,37 +37,106 @@ import { UniversalConfirmationDialog } from "@/components/UniversalConfirmationD
 // Import from reorganized modules
 import { useAIChat } from "@/components/ai-assistant/useAIChat";
 import { usePendingItems } from "@/components/ai-assistant/usePendingItems";
-import { useFileUpload } from "@/components/ai-assistant/useFileUpload";
-import { QUICK_PROMPTS } from "@/components/ai-assistant/constants";
+import {
+  ACCEPTED_FILE_TYPES,
+  MAX_FILE_SIZE_BYTES,
+} from "@/components/ai-assistant/constants";
+import type { PendingItem } from "@/components/ai-assistant/types";
 import { WorkflowWizard } from "@/components/ai-assistant/WorkflowWizard";
 import { ChatSidebar, type ThreadListItem } from "@/components/ai-assistant/ChatSidebar";
-import { ChatInputVercel } from "@/components/ai-assistant/ChatInputVercel";
-import { ChatMessageList } from "@/components/ai-assistant/ChatMessageList";
-import { SuggestedActions } from "@/components/ai-assistant/SuggestedActions";
-import { ThinkingIndicator } from "@/components/ai-assistant/ThinkingIndicator";
+import {
+  PromptInput,
+  PromptInputActionAddAttachments,
+  PromptInputActionMenu,
+  PromptInputActionMenuContent,
+  PromptInputActionMenuTrigger,
+  PromptInputAttachment,
+  PromptInputAttachments,
+  PromptInputBody,
+  PromptInputFooter,
+  PromptInputProvider,
+  PromptInputSubmit,
+  PromptInputTextarea,
+  PromptInputTools,
+  usePromptInputController,
+} from "@/components/ai-elements/prompt-input";
+import type { ChatStatus, FileUIPart } from "ai";
+import type { UIMessage } from "@convex-dev/agent/react";
 import { getWorkflow, getWorkflowStep } from "@/convex/ai/workflows/loader";
 import { createWorkflowContextSection } from "@/convex/ai/helpers/workflowContextBuilder";
+import { Messages } from "@/components/ai-chatbot/messages";
+
+const UPDATE_KEYWORDS = [
+  "assign",
+  "przypisz",
+  "do mnie",
+  "ustaw",
+  "termin",
+  "deadline",
+  "due",
+  "priorytet",
+  "priority",
+  "tag",
+];
+
+const CREATE_KEYWORDS = [
+  "dodaj",
+  "utworz",
+  "stworz",
+  "create",
+  "add",
+  "nowy",
+  "kolejny",
+  "another",
+  "next",
+];
+
+const isTaskCreatePending = (item: PendingItem): boolean => {
+  const type = item.type;
+  const operation = item.operation ?? (type === "create_task" ? "create" : undefined);
+  return (type === "task" || type === "create_task") && operation === "create";
+};
+
+const shouldKeepPendingItemsForFollowup = (message: string, items: PendingItem[]): boolean => {
+  if (!message) return false;
+  const unresolvedItems = items.filter((item) => !item.status);
+  if (unresolvedItems.length !== 1) return false;
+  if (!isTaskCreatePending(unresolvedItems[0])) return false;
+
+  const lower = message.toLowerCase();
+  const hasUpdateKeyword = UPDATE_KEYWORDS.some((keyword) => lower.includes(keyword));
+  const hasCreateKeyword = CREATE_KEYWORDS.some((keyword) => lower.includes(keyword));
+  return hasUpdateKeyword && !hasCreateKeyword;
+};
 
 const AIAssistantSmart = () => {
   const { user } = useUser();
   const { project, team } = useProject();
   const [showTemplates, setShowTemplates] = useState(false);
-  const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
-  const [hasSentMessage, setHasSentMessage] = useState(false);
-  const pendingUserMessageUserCountRef = useRef<number | null>(null);
+  const [pendingUserMessage, setPendingUserMessage] = useState<{
+    text: string;
+    attachments: Array<{
+      name: string;
+      size: number;
+      type: string;
+      previewUrl?: string;
+    }>;
+  } | null>(null);
+  const [localMessages, setLocalMessages] = useState<UIMessage[]>([]);
   const [localMessageAttachments, setLocalMessageAttachments] = useState<Record<string, Array<{
     name: string;
     size: number;
     type: string;
     previewUrl?: string;
   }>>>({});
+  const [isUploading, setIsUploading] = useState(false);
   const pendingAttachmentsRef = useRef<Array<{
     name: string;
     size: number;
     type: string;
     previewUrl?: string;
   }> | null>(null);
-  const attachmentUrlsRef = useRef<Set<string>>(new Set());
+  const pendingMessageCountRef = useRef<number | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -90,9 +156,6 @@ const AIAssistantSmart = () => {
   // Check if team has AI access
   const aiAccess = useQuery(apiAny.stripe.checkTeamAIAccess, team?._id ? { teamId: team._id } : "skip");
 
-  // File input ref (shared between upload hook and component)
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   // Mutations for file upload (passed to useAIChat)
   const generateUploadUrl = useMutation(apiAny.files.generateUploadUrlWithCustomKey);
   const addFile = useMutation(apiAny.files.addFile);
@@ -101,29 +164,22 @@ const AIAssistantSmart = () => {
 
   // Chat hook - manages messages, threads, and sending
   const {
-    message,
-    setMessage,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     chatHistory,
     setChatHistory,
     isLoading,
-    setIsLoading,
     threadId,
     showHistory,
     setShowHistory,
     threadList,
     isThreadListLoading,
     hasThreads,
-    showEmptyState,
     chatIsLoading,
-    messagesEndRef,
-    inputRef,
     handleSendMessage: sendMessageWithFile,
     handleStopResponse,
     handleClearChat,
     handleNewChat,
     handleThreadSelect: selectThread,
-    handleQuickPromptClick,
     // Streaming-related
     uiMessages,
     isStreaming,
@@ -132,16 +188,6 @@ const AIAssistantSmart = () => {
     projectId: project?._id,
     userClerkId: user?.id,
   });
-
-  // File upload hook
-  const {
-    selectedFiles,
-    setSelectedFiles,
-    uploadedFileIds,
-    isUploading,
-    handleFileSelect,
-    handleRemoveFile,
-  } = useFileUpload();
 
   // Pending items hook - manages AI suggestions and confirmations
   const {
@@ -163,6 +209,7 @@ const AIAssistantSmart = () => {
     handleConfirmItem,
     handleRejectItem,
     handleRejectAll,
+    handleAutoRejectPendingItems,
     handleEditItem,
     handleUpdatePendingItem,
     resetPendingState,
@@ -200,8 +247,7 @@ const AIAssistantSmart = () => {
     lastSessionParamRef.current = sessionParam;
     selectThread(sessionParam);
     resetPendingState();
-    setSelectedFiles([]);
-  }, [sessionParam, threadId, selectThread, resetPendingState, setSelectedFiles]);
+  }, [sessionParam, threadId, selectThread, resetPendingState]);
 
   useEffect(() => {
     if (!threadId) return;
@@ -212,24 +258,6 @@ const AIAssistantSmart = () => {
     lastSessionParamRef.current = threadId;
     updateSessionParam(threadId);
   }, [threadId, sessionParam, updateSessionParam]);
-
-  useEffect(() => {
-    if (!pendingUserMessage) {
-      pendingUserMessageUserCountRef.current = null;
-      return;
-    }
-    const userMessages = uiMessages.filter((msg) => msg.role === "user");
-    if (pendingUserMessageUserCountRef.current === null) {
-      pendingUserMessageUserCountRef.current = userMessages.length;
-      return;
-    }
-    if (userMessages.length <= pendingUserMessageUserCountRef.current) return;
-    const lastUserMessage = [...uiMessages].reverse().find((msg) => msg.role === "user");
-    if (!lastUserMessage?.text) return;
-    if (lastUserMessage.text.trim() === pendingUserMessage.trim()) {
-      setPendingUserMessage(null);
-    }
-  }, [uiMessages, pendingUserMessage]);
 
   useEffect(() => {
     if (!pendingAttachmentsRef.current || uiMessages.length === 0) return;
@@ -243,31 +271,30 @@ const AIAssistantSmart = () => {
   }, [uiMessages, localMessageAttachments]);
 
   useEffect(() => {
-    const urlsRef = attachmentUrlsRef.current;
-    return () => {
-      urlsRef.forEach((url) => URL.revokeObjectURL(url));
-      urlsRef.clear();
-    };
-  }, []);
-
-  useEffect(() => {
     setLocalMessageAttachments((prev) => {
       Object.values(prev).flat().forEach((attachment) => {
-        if (attachment.previewUrl) {
+        if (attachment.previewUrl?.startsWith("blob:")) {
           URL.revokeObjectURL(attachment.previewUrl);
-          attachmentUrlsRef.current.delete(attachment.previewUrl);
         }
       });
       return {};
     });
+    setPendingUserMessage(null);
+    pendingMessageCountRef.current = null;
+    setLocalMessages([]);
   }, [threadId]);
+
+  useEffect(() => {
+    if (!pendingUserMessage || pendingMessageCountRef.current === null) return;
+    if (uiMessages.length > pendingMessageCountRef.current) {
+      setPendingUserMessage(null);
+      pendingMessageCountRef.current = null;
+    }
+  }, [uiMessages.length, pendingUserMessage]);
 
   const handleThreadSelect = (selectedThreadId: string) => {
     selectThread(selectedThreadId);
     resetPendingState();
-    setSelectedFiles([]);
-    setPendingUserMessage(null);
-    setHasSentMessage(true);
   };
 
   const handleNewChatClick = () => {
@@ -275,9 +302,6 @@ const AIAssistantSmart = () => {
     suppressedSessionParamRef.current = sessionParam;
     handleNewChat();
     resetPendingState();
-    setSelectedFiles([]);
-    setPendingUserMessage(null);
-    setHasSentMessage(false);
     lastSessionParamRef.current = sessionParam;
     updateSessionParam(undefined);
   };
@@ -286,63 +310,127 @@ const AIAssistantSmart = () => {
     suppressSessionSyncRef.current = true;
     suppressedSessionParamRef.current = sessionParam;
     await handleClearChat();
-    setPendingUserMessage(null);
-    setHasSentMessage(false);
     lastSessionParamRef.current = sessionParam;
     updateSessionParam(undefined);
   };
 
-  const handleSendMessage = async () => {
-    const trimmedMessage = message.trim();
-    const fileLabel = selectedFiles.length > 0
-      ? `📎 Attached: ${selectedFiles.map((file) => file.name).join(", ")}`
-      : "";
-    if (selectedFiles.length > 0) {
-      const attachments = selectedFiles.map((file) => {
-        const isImage = file.type.startsWith("image/");
-        const previewUrl = isImage ? URL.createObjectURL(file) : undefined;
-        if (previewUrl) {
-          attachmentUrlsRef.current.add(previewUrl);
-        }
-        return {
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          previewUrl,
-        };
-      });
-      pendingAttachmentsRef.current = attachments;
-    } else {
-      pendingAttachmentsRef.current = null;
-    }
-    // Set both states immediately to prevent flashing
-    setPendingUserMessage(trimmedMessage || fileLabel || null);
-    pendingUserMessageUserCountRef.current = uiMessages.filter((msg) => msg.role === "user").length;
-    setHasSentMessage(true);
-    setIsLoading(true);
+  const convertPromptFiles = async (files: FileUIPart[]) => {
+    const uploadFiles: File[] = [];
+    const attachments: Array<{
+      name: string;
+      size: number;
+      type: string;
+      previewUrl?: string;
+    }> = [];
 
-    await sendMessageWithFile(
-      selectedFiles,
-      uploadedFileIds,
-      () => {}, // Loading already set above
-      () => {
-        setSelectedFiles([]);
-      },
-      async (args) => {
-        const result = await generateUploadUrl({
-          projectId: args.projectId,
-          fileName: args.fileName,
-          origin: args.origin as "general" | "ai",
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
+      if (!file.url) continue;
+
+      try {
+        const response = await fetch(file.url);
+        const blob = await response.blob();
+        const name = file.filename || `attachment-${index + 1}`;
+        const type = file.mediaType || blob.type || "application/octet-stream";
+        const converted = new File([blob], name, { type });
+        uploadFiles.push(converted);
+        attachments.push({
+          name: converted.name,
+          size: converted.size,
+          type: converted.type,
+          previewUrl: converted.type.startsWith("image/") ? file.url : undefined,
         });
-        return { url: result.url, key: result.key };
-      },
-      addFile as (args: { projectId: Id<"projects">; fileKey: string; fileName: string; fileType: string; fileSize: number; origin: string }) => Promise<string>
-    );
-    setSelectedFiles([]);
+      } catch {
+        continue;
+      }
+    }
+
+    return { uploadFiles, attachments };
   };
 
-  const handleAttachmentClick = () => {
-    fileInputRef.current?.click();
+  const handlePromptSubmit = async (payload: { text: string; files: FileUIPart[] }) => {
+    const trimmedMessage = payload.text.trim();
+    if (!trimmedMessage && payload.files.length === 0) {
+      return;
+    }
+
+    const shouldKeepPendingItems = shouldKeepPendingItemsForFollowup(trimmedMessage, pendingItems);
+    if (pendingItems.some((item) => !item.status) && !shouldKeepPendingItems) {
+      const rejectedCount = await handleAutoRejectPendingItems();
+      if (rejectedCount > 0) {
+        const messageText = `❌ Odrzucono ${rejectedCount} propozycj${rejectedCount === 1 ? "e" : "i"} automatycznie po wyslaniu nowej wiadomosci.`;
+        const timestamp = Date.now();
+        setLocalMessages((prev) => [
+          ...prev,
+          {
+            id: `local-auto-reject-${timestamp}`,
+            key: `local-auto-reject-${timestamp}`,
+            role: "assistant",
+            content: messageText,
+            text: messageText,
+            parts: [{ type: "text", text: messageText }],
+            order: (uiMessages?.length ?? 0) + prev.length,
+            stepOrder: (uiMessages?.length ?? 0) + prev.length,
+            status: "success",
+            _creationTime: timestamp,
+          } as UIMessage,
+        ]);
+      }
+    }
+
+    const optimisticFileNames = payload.files.map((file, index) => (
+      file.filename || `attachment-${index + 1}`
+    ));
+    const optimisticMessageText = trimmedMessage || (
+      optimisticFileNames.length > 0 ? `📎 Attached: ${optimisticFileNames.join(", ")}` : ""
+    );
+    if (optimisticMessageText) {
+      pendingMessageCountRef.current = uiMessages.length;
+      setPendingUserMessage({
+        text: optimisticMessageText,
+        attachments: payload.files.map((file, index) => ({
+          name: file.filename || `attachment-${index + 1}`,
+          size: 0,
+          type: file.mediaType || "application/octet-stream",
+          previewUrl: file.url,
+        })),
+      });
+    }
+
+    const { uploadFiles, attachments } = await convertPromptFiles(payload.files);
+    const fileLabel = uploadFiles.length > 0
+      ? `📎 Attached: ${uploadFiles.map((file) => file.name).join(", ")}`
+      : "";
+
+    if (!trimmedMessage && uploadFiles.length === 0) {
+      return;
+    }
+
+    pendingAttachmentsRef.current = attachments.length > 0 ? attachments : null;
+
+    try {
+      await sendMessageWithFile(
+        uploadFiles,
+        [],
+        () => setIsUploading(true),
+        () => setIsUploading(false),
+        async (args) => {
+          const result = await generateUploadUrl({
+            projectId: args.projectId,
+            fileName: args.fileName,
+            origin: args.origin as "general" | "ai",
+          });
+          return { url: result.url, key: result.key };
+        },
+        addFile as (args: { projectId: Id<"projects">; fileKey: string; fileName: string; fileType: string; fileSize: number; origin: string }) => Promise<string>,
+        trimmedMessage || fileLabel
+      );
+    } catch {
+      setPendingUserMessage(null);
+      pendingMessageCountRef.current = null;
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   // ==================== WORKFLOW HANDLERS ====================
@@ -367,18 +455,13 @@ const AIAssistantSmart = () => {
         workflowId,
         stepId,
         {},
-        hasFile || selectedFiles.length > 0
+        hasFile
       );
 
       // Create the message with workflow context prefix
       const workflowMessage = `[WORKFLOW: ${workflow.name} - ${step.name}]\n\n${step.prompt}`;
 
-      setMessage(workflowMessage);
-
-      // Trigger send
-      setTimeout(() => {
-        handleSendMessage();
-      }, 100);
+      await handlePromptSubmit({ text: workflowMessage, files: [] });
     }
 
     // Close wizard panel after starting (keeps workflow active)
@@ -401,48 +484,35 @@ const AIAssistantSmart = () => {
 
   // ==================== RENDER HELPERS ====================
 
-  const renderInputArea = () => (
-    <>
-      {/* Suggested actions - shown only on empty state */}
-      {shouldShowEmptyState && selectedFiles.length === 0 && (
-        <div className="mb-4">
-          <SuggestedActions
-            onSuggestionClick={handleQuickPromptClick}
-            suggestions={QUICK_PROMPTS.slice(0, 4)}
-          />
-        </div>
-      )}
+  const WorkflowWizardPanel = () => {
+    const controller = usePromptInputController();
 
-      <ChatInputVercel
-        message={message}
-        setMessage={setMessage}
-        selectedFiles={selectedFiles}
-        isLoading={isLoading}
-        isUploading={isUploading}
-        inputRef={inputRef}
-        fileInputRef={fileInputRef}
-        onSendMessage={handleSendMessage}
-        onStopResponse={handleStopResponse}
-        onFileSelect={handleFileSelect}
-        onRemoveFile={handleRemoveFile}
-        onAttachmentClick={handleAttachmentClick}
-        onPasteFiles={(files) => {
-          // Handle pasted files by simulating file input change
-          const event = {
-            target: {
-              files: files,
-            },
-          } as unknown as React.ChangeEvent<HTMLInputElement>;
-          handleFileSelect(event);
-        }}
-      />
-    </>
-  );
+    return (
+      <Sheet open={showWorkflowWizard} onOpenChange={setShowWorkflowWizard}>
+        <SheetContent side="right" className="w-full sm:w-[450px] p-0 overflow-hidden">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Renovation Workflow</SheetTitle>
+          </SheetHeader>
+          <WorkflowWizard
+            onStartWorkflow={handleStartWorkflow}
+            onStepChange={handleWorkflowStepChange}
+            onClose={handleCloseWorkflow}
+            uploadedFileIds={[]}
+            hasUploadedFile={controller.attachments.files.length > 0}
+            onFileUploadRequest={controller.attachments.openFileDialog}
+            isAIResponding={isLoading || isStreaming}
+          />
+        </SheetContent>
+      </Sheet>
+    );
+  };
+
+  const submitStatus = (isStreaming ? "streaming" : isLoading ? "submitted" : "ready") as ChatStatus;
+  const allMessages = [...(uiMessages ?? []), ...localMessages];
 
   // ==================== MAIN RENDER ====================
 
-  const shouldShowEmptyState = showEmptyState && !pendingUserMessage && !hasSentMessage && !isLoading && !isStreaming;
-  const shouldShowChatLoading = chatIsLoading && uiMessages.length === 0 && !pendingUserMessage;
+  const shouldShowChatLoading = chatIsLoading && uiMessages.length === 0;
 
   const isQuotaBlocked = !!(
     aiAccess &&
@@ -510,7 +580,7 @@ const AIAssistantSmart = () => {
   }
 
   return (
-    <>
+    <PromptInputProvider>
       <div className="relative flex flex-col h-[calc(100vh-4rem)] bg-background text-foreground overflow-hidden md:flex-row-reverse">
         {/* Sidebar with chat history (desktop) */}
         <ChatSidebar
@@ -643,158 +713,71 @@ const AIAssistantSmart = () => {
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-40 relative">
+          <div className="flex flex-1 min-h-0 flex-col">
             {shouldShowChatLoading ? (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                 Loading conversation…
               </div>
-            ) : shouldShowEmptyState ? (
-              <div className="flex h-full items-center justify-center">
-                <div className="flex flex-col items-center justify-center w-full max-w-3xl mx-auto px-4">
-                  {/* Optional badge for free plan */}
-                  {aiAccess?.currentPlan === "free" && (
-                    <Badge variant="outline" className="mb-8 rounded-full px-4 py-1.5 border-amber-200 bg-amber-50 text-amber-700 gap-2 hover:bg-amber-100 transition-colors cursor-pointer shadow-sm">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                      Upgrade Plan
-                    </Badge>
-                  )}
-
-                  {/* Welcome heading - Vercel style */}
-                  <motion.div
-                    initial={{ opacity: 0, y: -20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5 }}
-                    className="text-center space-y-4 mb-12"
-                  >
-                    <h1 className="text-4xl md:text-5xl font-semibold tracking-tight text-foreground">
-                      Hello! How can I help you today?
-                    </h1>
-                  </motion.div>
-
-                  {/* Extra options - kept below for workflow access */}
-                  <div className="w-full flex flex-col items-center">
-                    <div className="flex items-center gap-4 mb-6">
-                      <Button
-                        variant="ghost"
-                        className="text-muted-foreground gap-2 hover:text-foreground transition-colors group"
-                        onClick={() => setShowTemplates(!showTemplates)}
-                      >
-                        <ChevronDown className={cn("h-4 w-4 transition-transform duration-300", showTemplates && "rotate-180")} />
-                        More templates
-                      </Button>
-                      <div className="w-px h-6 bg-border/50" />
-                      <Button
-                        variant="outline"
-                        className="gap-2 border-primary/30 hover:border-primary hover:bg-primary/5 transition-colors"
-                        onClick={() => setShowWorkflowWizard(true)}
-                      >
-                        <Workflow className="h-4 w-4 text-primary" />
-                        Renovation Workflow
-                      </Button>
-                    </div>
-
-                    <AnimatePresence>
-                      {showTemplates && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0, y: -20 }}
-                          animate={{ opacity: 1, height: "auto", y: 0 }}
-                          exit={{ opacity: 0, height: 0, y: -20 }}
-                          className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 overflow-hidden px-4 sm:px-0 pb-8"
-                        >
-                          {QUICK_PROMPTS.slice(4).map((item) => (
-                            <button
-                              key={item.label}
-                              onClick={() => handleQuickPromptClick(item.prompt)}
-                              className={cn(
-                                "text-left p-4 rounded-xl border border-border/40 bg-card/40 hover:bg-card hover:border-primary/20 transition-all duration-200 group/item shadow-sm"
-                              )}
-                            >
-                              <div className="flex items-center gap-2 mb-2">
-                                <Sparkles className="h-3.5 w-3.5 text-primary/70 group-hover/item:text-primary transition-colors" />
-                                <span className="font-medium text-sm text-foreground/80 group-hover/item:text-foreground">{item.label}</span>
-                              </div>
-                              <p className="text-xs text-muted-foreground line-clamp-2 group-hover/item:text-foreground/70">{item.prompt}</p>
-                            </button>
-                          ))}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
-              </div>
             ) : (
-              <div className="mx-auto max-w-4xl pt-6 pb-6">
-                <div className="flex flex-col gap-6">
-                  {/* Always show ChatMessageList if there are messages */}
-                  {uiMessages.length > 0 && (
-                    <ChatMessageList
-                      uiMessages={uiMessages}
-                      messagesEndRef={messagesEndRef}
-                      messageMetadataByIndex={messageMetadataByIndex}
-                      localMessageAttachments={localMessageAttachments}
-                      pendingItems={pendingItems as PendingContentItem[]}
-                      isBulkProcessing={isBulkProcessing}
-                      onConfirmItem={handleConfirmItem}
-                      onRejectItem={handleRejectItem}
-                      onEditItem={(idx) => {
-                        handleEditItem(idx);
-                        setShowConfirmationGrid(false);
-                        setIsConfirmationDialogOpen(true);
-                        setCurrentItemIndex(idx);
-                      }}
-                      onConfirmAll={handleConfirmAll}
-                      onRejectAll={handleRejectAll}
-                      onUpdateItem={handleUpdatePendingItem}
+              <Messages
+                messages={allMessages}
+                status={submitStatus}
+                pendingUserMessage={pendingUserMessage}
+                pendingItems={pendingItems as PendingContentItem[]}
+                onConfirmItem={handleConfirmItem}
+                onRejectItem={handleRejectItem}
+                onEditItem={(idx) => {
+                  handleEditItem(idx);
+                  setShowConfirmationGrid(false);
+                  setIsConfirmationDialogOpen(true);
+                  setCurrentItemIndex(idx);
+                }}
+                onConfirmAll={handleConfirmAll}
+                onRejectAll={handleRejectAll}
+                onUpdateItem={handleUpdatePendingItem}
+                isProcessing={isBulkProcessing}
+                messageMetadataByIndex={messageMetadataByIndex}
+                localMessageAttachments={localMessageAttachments}
+              />
+            )}
+
+            <div className="sticky bottom-0 z-10 border-t border-border/60 bg-background px-4 pb-4 pt-3">
+              <div className="mx-auto w-full max-w-4xl">
+                <PromptInput
+                  accept={ACCEPTED_FILE_TYPES}
+                  multiple
+                  maxFiles={10}
+                  maxFileSize={MAX_FILE_SIZE_BYTES}
+                  onError={(err) => toast.error(err.message)}
+                  onSubmit={handlePromptSubmit}
+                >
+                  <PromptInputBody>
+                    <PromptInputAttachments>
+                      {(file) => <PromptInputAttachment data={file} />}
+                    </PromptInputAttachments>
+                    <PromptInputTextarea
+                      placeholder={isUploading ? "Uploading..." : "Send a message..."}
                     />
-                  )}
-
-                  {/* Show pending message only if NOT in uiMessages yet */}
-                  {pendingUserMessage && uiMessages.length === 0 && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.3 }}
-                      className="flex flex-col gap-4 items-end"
-                    >
-                      <div className="max-w-[85%]">
-                        <div className="bg-foreground text-background px-6 py-4 rounded-3xl shadow-lg">
-                          <p className="text-base leading-relaxed whitespace-pre-wrap">
-                            {pendingUserMessage}
-                          </p>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {/* Show thinking indicator when waiting for response to start (submitted but not streaming yet) */}
-                  {isLoading && !isStreaming && <ThinkingIndicator />}
-                </div>
+                  </PromptInputBody>
+                  <PromptInputFooter>
+                    <PromptInputTools>
+                      <PromptInputActionMenu>
+                        <PromptInputActionMenuTrigger />
+                        <PromptInputActionMenuContent>
+                          <PromptInputActionAddAttachments />
+                        </PromptInputActionMenuContent>
+                      </PromptInputActionMenu>
+                    </PromptInputTools>
+                    <PromptInputSubmit
+                      status={submitStatus}
+                      onStop={handleStopResponse}
+                      disabled={isUploading}
+                    />
+                  </PromptInputFooter>
+                </PromptInput>
               </div>
-            )}
-          </div>
-
-          {/* Input Area - Vercel style with transition */}
-          <motion.div
-            initial={false}
-            animate={{
-              position: shouldShowEmptyState ? "absolute" : "sticky",
-              bottom: shouldShowEmptyState ? "50%" : 0,
-              transform: shouldShowEmptyState ? "translateY(50%)" : "translateY(0)",
-            }}
-            transition={{
-              type: "spring",
-              stiffness: 300,
-              damping: 30,
-            }}
-            className={cn(
-              "left-0 right-0 z-10 mx-auto flex w-full gap-2 border-t-0 bg-background px-2 pb-3 md:px-4 md:pb-4",
-              shouldShowEmptyState ? "max-w-3xl" : "sticky"
-            )}
-          >
-            <div className="w-full max-w-4xl mx-auto">
-              {renderInputArea()}
             </div>
-          </motion.div>
+          </div>
         </div>
       </div>
 
@@ -814,24 +797,8 @@ const AIAssistantSmart = () => {
           />
         )}
 
-      {/* Workflow Wizard Sheet */}
-      <Sheet open={showWorkflowWizard} onOpenChange={setShowWorkflowWizard}>
-        <SheetContent side="right" className="w-full sm:w-[450px] p-0 overflow-hidden">
-          <SheetHeader className="sr-only">
-            <SheetTitle>Renovation Workflow</SheetTitle>
-          </SheetHeader>
-          <WorkflowWizard
-            onStartWorkflow={handleStartWorkflow}
-            onStepChange={handleWorkflowStepChange}
-            onClose={handleCloseWorkflow}
-            uploadedFileIds={uploadedFileIds}
-            hasUploadedFile={selectedFiles.length > 0 || uploadedFileIds.length > 0}
-            onFileUploadRequest={handleAttachmentClick}
-            isAIResponding={isLoading || isStreaming}
-          />
-        </SheetContent>
-      </Sheet>
-    </>
+      <WorkflowWizardPanel />
+    </PromptInputProvider>
   );
 };
 

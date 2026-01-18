@@ -27,6 +27,15 @@ export type PendingOperation =
   | "bulk_edit"
   | "bulk_create";
 
+export type PendingApprovalState =
+  | "input-streaming"
+  | "input-available"
+  | "approval-requested"
+  | "approval-responded"
+  | "output-available"
+  | "output-denied"
+  | "output-error";
+
 export interface PendingDisplay {
   title: string;
   description?: string;
@@ -39,6 +48,8 @@ export interface PendingDisplay {
 export interface PendingContentItem {
   type: PendingContentType;
   operation?: PendingOperation;
+  approvalState?: PendingApprovalState;
+  approvalReason?: string;
   data: Record<string, unknown>;
   status?: "confirmed" | "rejected";
   updates?: Record<string, unknown>;

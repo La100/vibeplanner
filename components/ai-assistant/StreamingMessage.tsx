@@ -16,10 +16,23 @@ import { apiAny } from "@/lib/convexApiAny";
 import type { Id } from "@/convex/_generated/dataModel";
 import { FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MessageStepList, type MessagePart } from "./MessageSteps";
+import type { MessagePart } from "./MessageSteps";
 import { InlineConfirmationList } from "./InlineConfirmation";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import type { PendingContentItem, PendingContentType } from "@/components/AIConfirmationGrid";
+import { Message, MessageContent } from "@/components/ai-elements/message";
+import {
+  ChainOfThought,
+  ChainOfThoughtContent,
+  ChainOfThoughtHeader,
+  ChainOfThoughtStep,
+} from "@/components/ai-elements/chain-of-thought";
+import {
+  Reasoning,
+  ReasoningContent,
+  ReasoningTrigger,
+} from "@/components/ai-elements/reasoning";
+import { getToolConfig } from "./ToolIcons";
 
 // ==================== ZOD SCHEMAS FOR TOOL RESULT VALIDATION ====================
 
@@ -384,43 +397,128 @@ export const StreamingMessage = memo(function StreamingMessage({
 
   // User messages - simple bubble
   if (isUser) {
+    const textFromParts =
+      message.parts?.find(
+        (part) => part.type === "text" && "text" in part && part.text
+      )?.text ?? "";
+    const userText = message.text || textFromParts;
+
     return (
-      <div className="flex flex-col gap-4 items-end">
-        <div className="max-w-[85%]">
-          <div className="bg-muted/30 text-foreground px-5 py-3.5 rounded-2xl border border-border/60 shadow-sm">
-            <UserAttachmentPreview metadata={metadata} localAttachments={localAttachments} />
-            <p className="text-base leading-relaxed whitespace-pre-wrap">
-              {message.text}
-            </p>
-          </div>
-        </div>
-      </div>
+      <Message from="user">
+        <MessageContent className="max-w-[85%] px-5 py-3.5 text-base leading-relaxed">
+          <UserAttachmentPreview metadata={metadata} localAttachments={localAttachments} />
+          <p className="whitespace-pre-wrap">{userText}</p>
+        </MessageContent>
+      </Message>
     );
   }
 
   // Parse message parts for step-by-step display
   const messageParts = parseMessageParts(message);
   const showStepLayout = showMode;
+  const reasoningText = messageParts
+    .filter((part) => part.type === "reasoning" && part.text)
+    .map((part) => part.text)
+    .join("\n\n")
+    .trim();
+  const toolParts = messageParts.filter(
+    (part) => part.type.startsWith("tool-") && part.toolName
+  );
 
   // Extract inline pending items from message OR use external ones
   const inlineItems = externalPendingItems ?? extractPendingItemsFromMessage(message);
   const hasConfirmations = inlineItems.length > 0 && !isCurrentlyStreaming;
 
+  const getToolDescription = (part: MessagePart) => {
+    if (!part.result) return undefined;
+    try {
+      const parsed = JSON.parse(part.result);
+      if (parsed && typeof parsed === "object") {
+        if ("found" in parsed || "count" in parsed) {
+          const found = (parsed as { found?: number; count?: number }).found ?? (parsed as { count?: number }).count ?? 0;
+          const total = (parsed as { total?: number }).total ?? found;
+          return `Found ${found} of ${total}`;
+        }
+        if ("type" in parsed && "operation" in parsed) {
+          return "Ready for confirmation";
+        }
+        if (part.toolName === "load_full_project_context" && (parsed as { success?: boolean }).success) {
+          const counts = (parsed as { counts?: { tasks?: number; notes?: number; shoppingItems?: number } }).counts;
+          return `Loaded: ${counts?.tasks || 0} tasks, ${counts?.notes || 0} notes, ${counts?.shoppingItems || 0} items`;
+        }
+      }
+    } catch {
+      return undefined;
+    }
+    return undefined;
+  };
+
   // Assistant message
   return (
-    <div className="flex flex-col gap-4 items-start">
-      <div className="w-full max-w-4xl">
+    <Message from="assistant" className="max-w-full">
+      <MessageContent className="w-full max-w-4xl">
         {/* Show loading indicator when streaming just started with no content */}
         {isCurrentlyStreaming && messageParts.length === 0 ? (
           <ThinkingIndicator />
         ) : showStepLayout ? (
-          // Step-by-step view for assistant responses
           <div className="relative w-full">
-            <div className="relative z-10 py-2">
-              <MessageStepList
-                parts={messageParts}
-                isStreaming={isCurrentlyStreaming}
-              />
+            <div className="relative z-10 py-2 space-y-4">
+              {reasoningText && (
+                <Reasoning isStreaming={isCurrentlyStreaming} defaultOpen={isCurrentlyStreaming}>
+                  <ReasoningTrigger />
+                  <ReasoningContent>{reasoningText}</ReasoningContent>
+                </Reasoning>
+              )}
+
+              {toolParts.length > 0 && (
+                <ChainOfThought defaultOpen={isCurrentlyStreaming}>
+                  <ChainOfThoughtHeader>Chain of Thought</ChainOfThoughtHeader>
+                  <ChainOfThoughtContent>
+                    {toolParts.map((part, index) => {
+                      const config = part.toolName ? getToolConfig(part.toolName) : null;
+                      const isLast = index === toolParts.length - 1;
+                      const status = isCurrentlyStreaming && isLast ? "active" : "complete";
+
+                      return (
+                        <ChainOfThoughtStep
+                          key={`${part.type}-${index}`}
+                          icon={config?.icon}
+                          label={config?.label ?? part.toolName ?? "Tool"}
+                          description={getToolDescription(part)}
+                          status={status}
+                        />
+                      );
+                    })}
+                  </ChainOfThoughtContent>
+                </ChainOfThought>
+              )}
+
+              {(message.text || isCurrentlyStreaming) && (
+                <div className={cn(
+                  "relative overflow-hidden",
+                  hasConfirmations ? "rounded-2xl bg-muted/20 border border-border/50" : "rounded-3xl bg-transparent"
+                )}>
+                  <div className={cn("relative z-10", hasConfirmations ? "p-6" : "p-4 sm:p-6")}>
+                    {(message.text?.toLowerCase().includes("thinking") && message.text.length < 20) || !message.text ? (
+                      <ThinkingIndicator />
+                    ) : (
+                      <div className="prose prose-neutral dark:prose-invert max-w-none leading-relaxed text-base text-foreground/90">
+                        <div
+                          className={cn(
+                            "whitespace-pre-wrap",
+                            isCurrentlyStreaming && "animate-pulse-subtle"
+                          )}
+                        >
+                          {message.text || ""}
+                          {isCurrentlyStreaming && message.text && (
+                            <span className="inline-block w-2 h-5 ml-1 bg-primary/60 animate-blink" />
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Inline confirmations */}
               {hasConfirmations && onConfirmItem && onRejectItem && (
@@ -441,10 +539,14 @@ export const StreamingMessage = memo(function StreamingMessage({
           </div>
         ) : (
           // Simple text response (no steps)
-          <div className={cn(
-            "relative overflow-hidden",
-            hasConfirmations ? "rounded-2xl bg-muted/20 border border-border/50" : "rounded-3xl bg-transparent"
-          )}>
+          <div
+            className={cn(
+              "relative overflow-hidden",
+              hasConfirmations
+                ? "rounded-2xl bg-muted/20 border border-border/50"
+                : "rounded-3xl bg-transparent"
+            )}
+          >
             <div className={cn("relative z-10", hasConfirmations ? "p-6" : "p-4 sm:p-6")}>
               {/* Show Thinking indicator if text is just "Thinking..." or similar */}
               {(message.text?.toLowerCase().includes("thinking") && message.text.length < 20) || !message.text ? (
@@ -492,8 +594,8 @@ export const StreamingMessage = memo(function StreamingMessage({
             </span>
           </div>
         )}
-      </div>
-    </div>
+      </MessageContent>
+    </Message>
   );
 });
 
@@ -536,10 +638,11 @@ export const StreamingMessageList = memo(function StreamingMessageList({
           msg.role === "assistant" &&
           index === messages.length - 1 ||
           (index === messages.length - 2 && messages[messages.length - 1]?.role === "user");
+        const messageKey = msg.id ?? msg.key ?? `${msg.order}-${index}`;
 
         return (
           <StreamingMessage
-            key={msg.key}
+            key={messageKey}
             message={msg}
             showMode={showMode}
             pendingItems={isLastAssistant ? pendingItems : undefined}

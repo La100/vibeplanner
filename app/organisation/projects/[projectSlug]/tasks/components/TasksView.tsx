@@ -440,30 +440,30 @@ export default function TasksView() {
         </DialogContent>
       </Dialog>
 
-      <div className="flex-grow overflow-y-auto">
+      <div className="flex-grow overflow-y-auto overflow-x-hidden">
         {viewMode === "kanban" ? (
           <KanbanProvider onDragEnd={handleDragEnd}>
             <div className="grid flex-grow grid-cols-1 gap-4 items-start md:grid-cols-2 lg:grid-cols-4">
               {statusOptions.map((status) => (
                 <KanbanBoard id={status.value} key={status.value}>
-                  <KanbanHeader 
-                    name={status.label} 
+                  <KanbanHeader
+                    name={status.label}
                     color={status.color}
                   />
                   <KanbanCards>
                     {localKanbanTasks
                       .filter((task) => task.column === status.value)
                       .map((task, index) => (
-                        <KanbanCard 
-                          key={task.id} 
-                          id={task.id} 
+                        <KanbanCard
+                          key={task.id}
+                          id={task.id}
                           name={task.name}
                           index={index}
                           parent={status.value}
                         >
-                            <TaskCardContent 
-                            task={task} 
-                            projectSlug={params.projectSlug} 
+                            <TaskCardContent
+                            task={task}
+                            projectSlug={params.projectSlug}
                           />
                         </KanbanCard>
                       ))}
