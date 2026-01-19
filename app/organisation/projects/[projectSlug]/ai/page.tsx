@@ -1,7 +1,7 @@
-import AIAssistantSmart from "@/components/AIAssistantSmart";
+import AIAssistant from "@/components/ai/assistant";
 
 const AIPage = () => {
-  return <AIAssistantSmart />;
+  return <AIAssistant />;
 };
 
 export default AIPage;

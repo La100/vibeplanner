@@ -75,8 +75,6 @@ export function GoogleCalendar({ className }: GoogleCalendarProps) {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
   // New event form state
   const [newEvent, setNewEvent] = useState({
@@ -288,7 +286,6 @@ export function GoogleCalendar({ className }: GoogleCalendarProps) {
 
   // Handle day click
   const handleDayClick = (day: Date) => {
-    setSelectedDate(day);
     setNewEvent((prev) => ({
       ...prev,
       startDate: format(day, "yyyy-MM-dd"),
@@ -682,5 +679,3 @@ export function GoogleCalendar({ className }: GoogleCalendarProps) {
     </div>
   );
 }
-
-

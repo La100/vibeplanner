@@ -16,7 +16,7 @@ import TaskDetailSidebar from './TaskDetailSidebar';
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
-import ActivityLog from "@/components/ActivityLog";
+import ActivityLog from "@/components/dashboard/ActivityLog";
 
 type TaskPriority = "low" | "medium" | "high" | "urgent" | null;
 

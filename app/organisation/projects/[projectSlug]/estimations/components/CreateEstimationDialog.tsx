@@ -26,7 +26,6 @@ interface CreateEstimationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: Id<"projects">;
-  teamId: Id<"teams">;
   currencySymbol: string;
 }
 
@@ -34,8 +33,6 @@ export function CreateEstimationDialog({
   open,
   onOpenChange,
   projectId,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  teamId,
   currencySymbol
 }: CreateEstimationDialogProps) {
   const [step, setStep] = useState(1);
@@ -502,4 +499,3 @@ export function CreateEstimationDialog({
     </Dialog>
   );
 }
-

@@ -11,7 +11,6 @@ import {
   LayoutDashboard,
   Settings, 
   Calendar,
-  GanttChartSquare,
   ShoppingCart,
   CheckSquare,
   Files,
@@ -64,12 +63,6 @@ const sidebarSections: PermissionSection[] = [
     label: "Calendar", 
     icon: Calendar,
     description: "Project calendar and scheduling"
-  },
-  { 
-    key: "gantt", 
-    label: "Gantt Chart", 
-    icon: GanttChartSquare,
-    description: "Project timeline visualization"
   },
   { 
     key: "files", 

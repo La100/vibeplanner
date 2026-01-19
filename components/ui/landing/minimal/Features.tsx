@@ -6,7 +6,7 @@ import { Calendar, Layout, Users, BarChart3, Sparkles } from "lucide-react";
 const features = [
   {
     title: "Project Rhythm",
-    description: "Visualize progress with intuitive Gantt charts and boards.",
+    description: "Visualize progress with intuitive timelines and boards.",
     icon: Layout,
     className: "md:col-span-2 md:row-span-2",
     color: "bg-blue-500/10 text-blue-600",
@@ -106,7 +106,6 @@ export function Features() {
     </section>
   );
 }
-
 
 
 

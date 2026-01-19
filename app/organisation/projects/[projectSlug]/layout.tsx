@@ -1,4 +1,4 @@
-import { ProjectSidebar } from "@/components/ProjectSidebar";
+import { ProjectSidebar } from "@/components/project/ProjectSidebar";
 import { ProjectProvider } from "@/components/providers/ProjectProvider";
 import { 
   SidebarProvider, 

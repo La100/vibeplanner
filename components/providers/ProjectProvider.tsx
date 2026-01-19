@@ -17,7 +17,6 @@ interface ProjectContextType {
       tasks?: { visible: boolean };
       surveys?: { visible: boolean };
       calendar?: { visible: boolean };
-      gantt?: { visible: boolean };
       files?: { visible: boolean };
       shopping_list?: { visible: boolean };
       settings?: { visible: boolean };

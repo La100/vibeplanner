@@ -1,4 +1,4 @@
-import CompanyProjects from "@/components/CompanyProjects";
+import CompanyProjects from "@/components/company/CompanyProjects";
 
 export default function CompanyPage() {
   return <CompanyProjects />;

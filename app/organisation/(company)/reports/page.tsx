@@ -1,4 +1,4 @@
-import CompanyReports from "@/components/CompanyReports";
+import CompanyReports from "@/components/company/CompanyReports";
 
 export default function ReportsPage() {
   return <CompanyReports />;

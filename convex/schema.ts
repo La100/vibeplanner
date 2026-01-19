@@ -742,6 +742,9 @@ export default defineSchema({
     userClerkId: v.string(), // User who started the thread
     title: v.optional(v.string()), // Optional thread title
     lastMessageAt: v.number(), // Timestamp of last message
+    messageCount: v.optional(v.number()), // Total messages in thread
+    lastMessagePreview: v.optional(v.string()),
+    lastMessageRole: v.optional(v.union(v.literal("user"), v.literal("assistant"))),
     lastResponseId: v.optional(v.string()), // OpenAI Response ID (not currently used)
     agentThreadId: v.optional(v.string()), // Convex Agent Thread ID
     abortedAt: v.optional(v.number()), // Timestamp when user requested abort

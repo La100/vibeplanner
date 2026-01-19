@@ -53,7 +53,6 @@ import type * as clipper from "../clipper.js";
 import type * as comments from "../comments.js";
 import type * as contacts from "../contacts.js";
 import type * as costEstimations from "../costEstimations.js";
-import type * as crons from "../crons.js";
 import type * as customers from "../customers.js";
 import type * as files from "../files.js";
 import type * as googleCalendar from "../googleCalendar.js";
@@ -63,20 +62,15 @@ import type * as http from "../http.js";
 import type * as labor from "../labor.js";
 import type * as myFunctions from "../myFunctions.js";
 import type * as notes from "../notes.js";
-import type * as pdfAnalysis from "../pdfAnalysis.js";
 import type * as productLibrary from "../productLibrary.js";
 import type * as projects from "../projects.js";
-import type * as quickAdmin from "../quickAdmin.js";
 import type * as rag from "../rag.js";
-import type * as seedDummyData from "../seedDummyData.js";
 import type * as shopping from "../shopping.js";
 import type * as stripe from "../stripe.js";
 import type * as stripeActions from "../stripeActions.js";
 import type * as surveys from "../surveys.js";
 import type * as tasks from "../tasks.js";
 import type * as teams from "../teams.js";
-import type * as testSeed from "../testSeed.js";
-import type * as textExtraction from "../textExtraction.js";
 import type * as users from "../users.js";
 
 import type {
@@ -131,7 +125,6 @@ declare const fullApi: ApiFromModules<{
   comments: typeof comments;
   contacts: typeof contacts;
   costEstimations: typeof costEstimations;
-  crons: typeof crons;
   customers: typeof customers;
   files: typeof files;
   googleCalendar: typeof googleCalendar;
@@ -141,20 +134,15 @@ declare const fullApi: ApiFromModules<{
   labor: typeof labor;
   myFunctions: typeof myFunctions;
   notes: typeof notes;
-  pdfAnalysis: typeof pdfAnalysis;
   productLibrary: typeof productLibrary;
   projects: typeof projects;
-  quickAdmin: typeof quickAdmin;
   rag: typeof rag;
-  seedDummyData: typeof seedDummyData;
   shopping: typeof shopping;
   stripe: typeof stripe;
   stripeActions: typeof stripeActions;
   surveys: typeof surveys;
   tasks: typeof tasks;
   teams: typeof teams;
-  testSeed: typeof testSeed;
-  textExtraction: typeof textExtraction;
   users: typeof users;
 }>;
 

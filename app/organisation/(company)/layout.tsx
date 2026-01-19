@@ -5,7 +5,7 @@ import { useQuery } from "convex/react";
 import { apiAny } from "@/lib/convexApiAny";
 import { useEffect } from "react";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
-import { CompanySidebar } from "@/components/CompanySidebar";
+import { CompanySidebar } from "@/components/company/CompanySidebar";
 import { useOrganization } from "@clerk/nextjs";
 
 export default function CompanyLayout({

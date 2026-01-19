@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Users, Mail, UserX, Crown, User } from "lucide-react";
 import { toast } from "sonner";
-import ProjectCustomers from "@/components/ProjectCustomers";
+import ProjectCustomers from "@/components/project/ProjectCustomers";
 import { Id } from "@/convex/_generated/dataModel";
 
 interface ProjectMembersProps {

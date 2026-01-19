@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Playfair_Display } from "next/font/google";
 import "./globals.css";
-import ConvexClientProvider from "@/components/ConvexClientProvider";
+import ConvexClientProvider from "@/components/providers/ConvexClientProvider";
 import { ClerkProvider } from "@clerk/nextjs";
 import type { ClerkProviderProps } from "@clerk/clerk-react";
 import { Toaster } from "@/components/ui/sonner";

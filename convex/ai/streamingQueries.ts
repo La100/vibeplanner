@@ -14,7 +14,7 @@ import { components, internal } from "../_generated/api";
 import { query, mutation, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
-import { vStreamArgs, listUIMessages, syncStreams } from "@convex-dev/agent";
+import { createThread, vStreamArgs, listUIMessages, syncStreams } from "@convex-dev/agent";
 import type { SyncStreamsReturnValue } from "@convex-dev/agent";
 
 /**
@@ -282,12 +282,12 @@ export const listThreadMessages = query({
   handler: async (ctx, args) => {
     // Empty streams object for cases where we can't get real streams
     const emptyStreams: SyncStreamsReturnValue = { kind: "list", messages: [] };
-    
+
     // Handle placeholder threadId (when client has no real thread yet)
     if (!args.threadId || args.threadId === "__no_thread__") {
-      return { 
-        page: [], 
-        isDone: true, 
+      return {
+        page: [],
+        isDone: true,
         continueCursor: "",
         streams: emptyStreams,
       };
@@ -297,20 +297,36 @@ export const listThreadMessages = query({
 
     // Handle legacy/custom thread IDs (e.g. "thread-123" or "thread_123")
     if (isLegacyThreadId(args.threadId)) {
-      const mapping = await ctx.runQuery(internal.ai.threads.getThreadForResponses, {
-        threadId: args.threadId
-      });
-      
-      if (mapping && mapping.agentThreadId) {
-        agentThreadId = mapping.agentThreadId;
-      } else {
-        // No mapping yet - return empty page with empty streams
-        // The mutation will create the mapping when streaming starts
-        return { 
-          page: [], 
-          isDone: true, 
+      // Check if thread document exists first - this is a reactive query
+      const threadDoc = await ctx.db
+        .query("aiThreads")
+        .withIndex("by_thread_id", (q) => q.eq("threadId", args.threadId))
+        .first();
+
+      if (!threadDoc) {
+        // Thread doesn't exist yet - this is a brand new chat
+        // Return empty but query will re-run when thread is created
+        return {
+          page: [],
+          isDone: true,
           continueCursor: "",
           streams: emptyStreams,
+          _waiting: true,
+        };
+      }
+
+      // Thread exists, check for agent mapping
+      if (threadDoc.agentThreadId) {
+        agentThreadId = threadDoc.agentThreadId;
+      } else {
+        // Thread exists but no mapping yet - action is working on it
+        // Return empty but query will re-run when mapping is saved
+        return {
+          page: [],
+          isDone: true,
+          continueCursor: "",
+          streams: emptyStreams,
+          _waiting: true,
         };
       }
     }
@@ -331,15 +347,24 @@ export const listThreadMessages = query({
           (await syncStreams(ctx, components.agent, {
           threadId: agentThreadId,
           streamArgs: args.streamArgs,
+          // Include "finished" status for longer to smooth transition to persisted messages
+          // This prevents flickering when streaming completes but DB hasn't updated yet
           includeStatuses: ["streaming", "finished", "aborted"],
         })) ?? emptyStreams;
-      } catch (e) {
-        console.error("syncStreams error:", e);
+      } catch {
         // Keep emptyStreams on error
       }
     }
-    
-    return { ...paginated, streams };
+
+    // Anti-flickering: If we have finished streams but empty page,
+    // keep the stream messages visible until persisted messages load
+    const hasFinishedStreams = streams && 'messages' in streams && streams.messages.length > 0;
+    const hasPersistedMessages = paginated.page && paginated.page.length > 0;
+
+    return {
+      ...paginated,
+      streams,
+    };
   },
 });
 
@@ -362,7 +387,7 @@ export const listThreadMessages = query({
  */
 export const initiateStreaming = mutation({
   args: {
-    threadId: v.string(),
+    threadId: v.optional(v.string()),
     projectId: v.id("projects"),
     prompt: v.string(),
     fileId: v.optional(v.union(v.id("files"), v.string())),
@@ -373,46 +398,121 @@ export const initiateStreaming = mutation({
     success: v.boolean(),
   }),
   handler: async (ctx, args) => {
+    console.log("🎯 [MUTATION] initiateStreaming called:", {
+      hasThreadId: !!args.threadId,
+      projectId: args.projectId,
+      promptLength: args.prompt.length,
+      hasFiles: !!(args.fileId || args.fileIds),
+    });
+
     // Validate user identity
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
+      console.error("❌ [MUTATION] Unauthorized - no identity");
       throw new Error("Unauthorized");
     }
     const userClerkId = identity.subject;
 
+    console.log("👤 [MUTATION] User authenticated:", userClerkId);
+
     // Validate project access
     const project = await ctx.db.get(args.projectId);
     if (!project) {
+      console.error("❌ [MUTATION] Project not found:", args.projectId);
       throw new Error("Project not found");
     }
 
-    // Generate threadId if not provided or empty
-    const threadId = args.threadId && args.threadId.trim().length > 0
-      ? args.threadId
-      : `thread-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    console.log("📁 [MUTATION] Project found:", {
+      projectName: project.name,
+      teamId: project.teamId,
+    });
 
-    // Ensure thread exists
-    const existingThread = await ctx.db
-      .query("aiThreads")
-      .withIndex("by_thread_id", (q) => q.eq("threadId", threadId))
-      .unique();
+    const trimmedPrompt = args.prompt.trim();
+    const threadTitle = trimmedPrompt.slice(0, 120) || "New conversation";
+    let threadId = args.threadId?.trim();
 
-    if (!existingThread) {
-      // Create new thread
+    if (!threadId) {
+      console.log("🆕 [MUTATION] Creating new thread");
+      const agentThreadId = await createThread(ctx, components.agent, {
+        userId: userClerkId,
+        title: threadTitle,
+      });
+
+      console.log("💾 [MUTATION] Inserting new thread document:", {
+        agentThreadId,
+        title: threadTitle,
+      });
+
+      // For new threads, we directly use the agent thread ID
+      // No mapping needed since it's not a legacy thread ID
       await ctx.db.insert("aiThreads", {
-        threadId,
+        threadId: agentThreadId,
+        agentThreadId: agentThreadId, // Store agent thread ID in both fields
         projectId: args.projectId,
         teamId: project.teamId,
         userClerkId,
         lastMessageAt: Date.now(),
-        title: args.prompt.trim().slice(0, 120) || "New conversation",
+        title: threadTitle,
+        messageCount: 1,
+        lastMessagePreview: args.prompt,
+        lastMessageRole: "user",
       });
+
+      threadId = agentThreadId;
     } else {
-      // Update last message time
-      await ctx.db.patch(existingThread._id, {
-        lastMessageAt: Date.now(),
-      });
+      console.log("🔄 [MUTATION] Using existing thread:", threadId);
+      if (!threadId) {
+        throw new Error("Missing thread ID");
+      }
+      const assuredThreadId = threadId;
+
+      const existingThread = await ctx.db
+        .query("aiThreads")
+        .withIndex("by_thread_id", (q) => q.eq("threadId", assuredThreadId))
+        .unique();
+
+      if (!existingThread) {
+        await ctx.db.insert("aiThreads", {
+          threadId: assuredThreadId,
+          projectId: args.projectId,
+          teamId: project.teamId,
+          userClerkId,
+          lastMessageAt: Date.now(),
+          title: threadTitle,
+          messageCount: 1,
+          lastMessagePreview: args.prompt,
+          lastMessageRole: "user",
+        });
+      } else {
+        if (existingThread.userClerkId !== userClerkId || existingThread.projectId !== args.projectId) {
+          throw new Error("Thread does not belong to this project or user");
+        }
+
+        const titlePatch =
+          (!existingThread.title || existingThread.title.trim().length === 0) && trimmedPrompt.length > 0
+            ? threadTitle
+            : undefined;
+
+        await ctx.runMutation(internal.ai.threads.updateThreadSummary, {
+          threadId: assuredThreadId,
+          lastMessageAt: Date.now(),
+          lastMessagePreview: args.prompt,
+          lastMessageRole: "user",
+          messageCountDelta: 1,
+          title: titlePatch,
+        });
+      }
     }
+
+    if (!threadId) {
+      console.error("❌ [MUTATION] Missing thread ID after creation/lookup");
+      throw new Error("Missing thread ID");
+    }
+
+    console.log("📅 [MUTATION] Scheduling streaming action:", {
+      threadId,
+      promptLength: args.prompt.length,
+    });
 
     // Schedule the streaming action to run in the background
     await ctx.scheduler.runAfter(0, internal.ai.streaming.internalDoStreaming, {
@@ -423,6 +523,8 @@ export const initiateStreaming = mutation({
       fileId: args.fileId,
       fileIds: args.fileIds,
     });
+
+    console.log("✅ [MUTATION] Streaming action scheduled successfully:", threadId);
 
     return {
       threadId,

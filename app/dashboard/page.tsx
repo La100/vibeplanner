@@ -1,6 +1,6 @@
 "use client";
 
-import { SmartDashboard } from "@/components/SmartDashboard";
+import { SmartDashboard } from "@/components/dashboard/SmartDashboard";
 
 export default function DashboardPage() {
   return (

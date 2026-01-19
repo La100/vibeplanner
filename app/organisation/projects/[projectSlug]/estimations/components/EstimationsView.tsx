@@ -294,7 +294,6 @@ export default function EstimationsView() {
         open={isCreateOpen}
         onOpenChange={setIsCreateOpen}
         projectId={project._id}
-        teamId={project.teamId}
         currencySymbol={currencySymbol}
       />
 
@@ -310,4 +309,3 @@ export default function EstimationsView() {
     </div>
   );
 }
-

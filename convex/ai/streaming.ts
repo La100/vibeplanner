@@ -22,18 +22,12 @@ import {
   buildSystemInstructions,
   getCurrentDateTime,
 } from "./helpers/contextBuilder";
-import { prepareMessageWithFile, prepareMessageWithFiles, type FileMetadataForHistory } from "./files";
+import { prepareMessageWithFile, prepareMessageWithFiles } from "./files";
 import type { ProjectContextSnapshot } from "./types";
 import { AI_MODEL, calculateCost } from "./config";
 import { defaultPrompt } from "./prompt";
-import { webcrypto } from "crypto";
 import type { Id } from "../_generated/dataModel";
 import { buildFallbackResponseFromTools } from "./helpers/streamResponseBuilder";
-
-// Ensure global crypto in Convex action runtime
-if (!(globalThis as any).crypto) {
-  (globalThis as any).crypto = webcrypto;
-}
 
 /**
  * Internal action that does the actual streaming work
@@ -51,17 +45,29 @@ export const internalDoStreaming = internalAction({
   returns: v.null(),
   handler: async (ctx, args) => {
     const startTime = Date.now();
-    console.log("▶️ Starting internalDoStreaming for thread:", args.threadId);
     const agentModeIdentifier = "convex_agent_stream";
+
+    console.log("🚀 [STREAMING START]", {
+      threadId: args.threadId,
+      projectId: args.projectId,
+      userClerkId: args.userClerkId,
+      message: args.message.substring(0, 100) + (args.message.length > 100 ? "..." : ""),
+      hasFiles: !!(args.fileId || args.fileIds),
+      timestamp: new Date().toISOString(),
+    });
 
     try {
       const providedThreadId = args.threadId;
       const isLegacyThreadId = providedThreadId.startsWith("thread-") || providedThreadId.startsWith("thread_");
 
+      console.log("📝 [THREAD INFO]", {
+        providedThreadId,
+        isLegacyThreadId,
+      });
+
       // Streaming start
 
       // Resolve teamId from project
-      console.log("🔍 Resolving teamId for project:", args.projectId);
       const projectForTeam = await ctx.runQuery(api.projects.getProject, {
         projectId: args.projectId,
       });
@@ -69,13 +75,18 @@ export const internalDoStreaming = internalAction({
       if (!teamId) {
         throw new Error("Unable to resolve teamId");
       }
-      console.log("✅ Resolved teamId:", teamId);
 
       const aiAccess = await ctx.runQuery(internal.stripe.checkAIFeatureAccessByProject, {
         projectId: args.projectId,
       });
 
+      console.log("🔐 [AI ACCESS CHECK]", {
+        allowed: aiAccess.allowed,
+        message: aiAccess.message,
+      });
+
       if (!aiAccess.allowed) {
+        console.error("❌ [AI ACCESS DENIED]", aiAccess.message);
         throw new Error(aiAccess.message || "AI features are unavailable for this project.");
       }
 
@@ -84,18 +95,15 @@ export const internalDoStreaming = internalAction({
 
       const ensureSnapshot = async (): Promise<ProjectContextSnapshot> => {
         if (!snapshot) {
-          console.log("📸 Loading project snapshot...");
           snapshot = (await ctx.runQuery(
             internal.ai.longContextQueries.getProjectContextSnapshot,
             { projectId: args.projectId }
           )) as unknown as ProjectContextSnapshot;
-          console.log("✅ Snapshot loaded, tasks count:", snapshot.tasks.length);
         }
         return snapshot!;
       };
 
       // Build system instructions
-      console.log("📝 Building system instructions...");
       // Use custom AI prompt from project if available, otherwise use default
       const systemPrompt = projectForTeam?.customAiPrompt || defaultPrompt;
       const teamMembers = await ctx.runQuery(internal.teams.getTeamMembersWithUserDetails, {
@@ -111,6 +119,12 @@ export const internalDoStreaming = internalAction({
         args.userClerkId
       );
 
+      console.log("📋 [SYSTEM INSTRUCTIONS]", {
+        hasCustomPrompt: !!projectForTeam?.customAiPrompt,
+        teamMembersCount: teamMembers.length,
+        currentDate,
+      });
+
       // Prepare user message
       let userPrompt = args.message;
       let userMessageContent:
@@ -120,9 +134,6 @@ export const internalDoStreaming = internalAction({
             | { type: "image"; image: string; mediaType?: string }
             | { type: "file"; data: string; mediaType: string }
           > = userPrompt;
-      let fileMetadata: FileMetadataForHistory | undefined;
-      let filesMetadata: FileMetadataForHistory[] | undefined;
-
       if (args.fileIds && args.fileIds.length > 0) {
         const result = await prepareMessageWithFiles({
           ctx,
@@ -131,8 +142,6 @@ export const internalDoStreaming = internalAction({
         });
         userPrompt = result.message;
         userMessageContent = result.content;
-        fileMetadata = result.fileMetadata;
-        filesMetadata = result.filesMetadata;
       } else if (args.fileId) {
         const result = await prepareMessageWithFile({
           ctx,
@@ -141,70 +150,77 @@ export const internalDoStreaming = internalAction({
         });
         userPrompt = result.message;
         userMessageContent = result.content;
-        fileMetadata = result.fileMetadata;
       }
 
-      // Load conversation history from our custom storage
-      const loadThreadMessages = async (): Promise<Array<{ role: "user" | "assistant"; content: string }>> => {
-        const messages = await ctx.runQuery(internal.ai.threads.getThreadMessages, {
-          threadId: providedThreadId,
-          limit: 30,
-        });
-        return messages.map((msg: any) => ({
-          role: msg.role,
-          content: msg.content,
-        }));
-      };
+      console.log("📨 [USER MESSAGE]", {
+        messageLength: userPrompt.length,
+        hasMultipartContent: Array.isArray(userMessageContent),
+        fileIds: args.fileIds?.length || 0,
+        fileId: args.fileId || null,
+      });
 
       // Create agent
-      console.log("🤖 Creating agent...");
       const agent = createVibePlannerAgent(systemInstructions, {
         projectId: args.projectId as string,
         runAction: ctx.runAction,
         loadSnapshot: ensureSnapshot,
-        loadThreadMessages,
       });
 
-      // Check for existing agent thread mapping or create new
+      console.log("🤖 [AGENT CREATED]");
+
+      // Determine the agent thread ID
       let agentThreadId: string | undefined;
 
       if (isLegacyThreadId) {
+        // Legacy thread ID - look up or create mapping
         const mapping: any = await ctx.runQuery(internal.ai.threads.getThreadForResponses, {
           threadId: providedThreadId
         });
         if (mapping && mapping.agentThreadId) {
           agentThreadId = mapping.agentThreadId;
-          // Found existing mapping
+          console.log("🔗 [FOUND EXISTING MAPPING]", {
+            legacyThreadId: providedThreadId,
+            agentThreadId,
+          });
+        } else {
+          // Create new agent thread for legacy ID
+          console.log("🆕 [CREATE NEW AGENT THREAD]");
+          const createResult = await agent.createThread(ctx, {
+            userId: args.userClerkId,
+          });
+          agentThreadId = createResult.threadId;
+
+          console.log("💾 [SAVE THREAD MAPPING]", {
+            legacyThreadId: providedThreadId,
+            agentThreadId: agentThreadId,
+          });
+
+          await ctx.runMutation(internal.ai.threads.saveAgentThreadMapping, {
+            threadId: providedThreadId,
+            agentThreadId: agentThreadId
+          });
         }
-      }
-
-      if (!agentThreadId) {
-        console.log("🧵 Creating new agent thread...");
-        const createResult = await agent.createThread(ctx, {
-          userId: args.userClerkId,
-        });
-        agentThreadId = createResult.threadId;
-
-        await ctx.runMutation(internal.ai.threads.saveAgentThreadMapping, {
-          threadId: providedThreadId,
-          agentThreadId: agentThreadId
-        });
-        console.log("✅ Created new agent thread:", agentThreadId);
       } else {
-        console.log("✅ Using existing agent thread:", agentThreadId);
+        // Not a legacy ID - providedThreadId IS the agent thread ID
+        // (created via createThread in the mutation)
+        agentThreadId = providedThreadId;
+        console.log("✅ [USING DIRECT AGENT THREAD ID]", {
+          agentThreadId,
+        });
       }
 
-      // Load previous messages for context
-      console.log("📚 Loading previous messages...");
-      const previousMessages = await loadThreadMessages();
-      const messagesForAI = previousMessages.map((m: { role: string; content: string }) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      }));
+      console.log("🔗 [FINAL THREAD ID]", {
+        agentThreadId,
+        providedThreadId,
+      });
 
       // Stream via Convex Agent (saves deltas for subscriptions)
-      console.log(`🌊 Starting agent.streamText with model: ${AI_MODEL}...`);
-      
+
+      console.log("🌊 [START STREAMING]", {
+        agentThreadId,
+        userId: args.userClerkId,
+      });
+
       let response;
       try {
         response = await agent.streamText(
@@ -212,10 +228,7 @@ export const internalDoStreaming = internalAction({
           { userId: args.userClerkId, threadId: agentThreadId },
           {
             system: systemInstructions,
-            messages: [
-              ...messagesForAI,
-              { role: "user" as const, content: userMessageContent },
-            ],
+            messages: [{ role: "user" as const, content: userMessageContent }],
             toolChoice: "auto" as const, // Allow AI to decide when to use tools
           },
           {
@@ -225,27 +238,33 @@ export const internalDoStreaming = internalAction({
           },
           },
         );
-        console.log("✅ agent.streamText returned response object");
+        console.log("✅ [STREAMING INITIATED]");
       } catch (err) {
-        console.error("❌ agent.streamText failed immediately:", err);
+        console.error("❌ [STREAMING FAILED]", err);
         throw err;
       }
 
       // Get final result - need to extract from steps when tools are used
-      console.log("⏳ Waiting for response.usage...");
       const usage = await response.usage;
-      console.log("✅ usage received:", JSON.stringify(usage));
 
       const totalInputTokens = (usage as any)?.inputTokens || (usage as any)?.promptTokens || 0;
       const totalOutputTokens = (usage as any)?.outputTokens || (usage as any)?.completionTokens || 0;
 
+      console.log("📊 [TOKEN USAGE]", {
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+        totalTokens: totalInputTokens + totalOutputTokens,
+      });
+
       // Extract the latest text from steps (avoid concatenating duplicates)
-      console.log("⏳ Waiting for response.steps...");
       const steps = await response.steps;
-      console.log(`✅ steps received (${steps?.length || 0} steps)`);
-      
+
+      console.log("🔄 [PROCESSING STEPS]", {
+        stepsCount: steps?.length || 0,
+      });
+
       let fullResponse = "";
-      
+
       if (steps && Array.isArray(steps)) {
         let latestStepText = "";
 
@@ -289,7 +308,17 @@ export const internalDoStreaming = internalAction({
       
       // Collect tool calls and results from the response steps
       if (steps && Array.isArray(steps)) {
-        for (const step of steps) {
+        for (let i = 0; i < steps.length; i++) {
+          const step = steps[i];
+          console.log(`📋 [STEP ${i + 1}/${steps.length}]`, {
+            hasToolCalls: !!step.toolCalls,
+            toolCallsCount: step.toolCalls?.length || 0,
+            toolNames: step.toolCalls?.map((tc: any) => tc.toolName || tc.name) || [],
+            hasToolResults: !!step.toolResults,
+            toolResultsCount: step.toolResults?.length || 0,
+            hasText: !!step.text,
+            textLength: step.text?.length || 0,
+          });
           if (step.toolCalls && Array.isArray(step.toolCalls)) {
             allToolCalls.push(...step.toolCalls);
           }
@@ -312,15 +341,20 @@ export const internalDoStreaming = internalAction({
           fullResponse = toolSummary;
         } else {
           fullResponse = "✅ Operation completed";
-          console.log("ℹ️ Tool call completed without additional AI commentary.");
         }
       }
 
+      console.log("💬 [FINAL RESPONSE]", {
+        responseLength: fullResponse.length,
+        responsePreview: fullResponse.substring(0, 100) + (fullResponse.length > 100 ? "..." : ""),
+        toolCallsCount: allToolCalls.length,
+      });
+
       if (allToolCalls.length > 0) {
-        console.log("🛠 Detected tool calls", {
-          count: allToolCalls.length,
-          names: allToolCalls.map((c: any) => c.toolName || c.name),
-          results: allToolResults.length,
+
+        console.log("🔧 [PROCESSING TOOL CALLS]", {
+          toolCallsCount: allToolCalls.length,
+          toolNames: allToolCalls.map((tc: any) => tc.toolName || tc.name).filter(Boolean),
         });
 
         // Tools that should NOT create pending items (read-only/search tools)
@@ -382,8 +416,8 @@ export const internalDoStreaming = internalAction({
               if (parsed && typeof parsed === 'object') {
                 payload = parsed;
               }
-            } catch (e) {
-              console.warn("⚠️ Could not parse tool result:", e);
+            } catch {
+              // Could not parse tool result
             }
           }
 
@@ -406,21 +440,11 @@ export const internalDoStreaming = internalAction({
 
           // Only persist if we have at least a type
           if (payload?.type) {
-            console.log("💾 Saving tool call to pending:", {
-              toolName,
-              callId: toolCallId,
-              type: payload.type,
-              operation: payload.operation,
-              hasData: Boolean(payload.data),
-            });
-
             functionCalls.push({
               callId: toolCallId,
               functionName: toolName,
               arguments: JSON.stringify(payload),
             });
-          } else {
-            console.warn("⚠️ Skipping tool call without type", { toolName, toolCallId, payload });
           }
         }
         
@@ -510,25 +534,43 @@ export const internalDoStreaming = internalAction({
         }
 
         // Save action function calls to database for confirmation UI
-        if (functionCalls.length > 0) {
+        // Filter out read-only tools that don't require confirmation
+        const READ_ONLY_TOOLS = new Set([
+          "search_items",
+          "search_tasks",
+          "search_notes",
+          "search_shopping_items",
+          "search_labor_items",
+          "search_surveys",
+          "search_contacts",
+          "load_full_project_context",
+        ]);
+
+        const actionFunctionCalls = functionCalls.filter(
+          (fc) => !READ_ONLY_TOOLS.has(fc.functionName)
+        );
+
+        if (actionFunctionCalls.length > 0) {
           const responseId = `resp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-          
+
+          console.log("💾 [SAVE FUNCTION CALLS]", {
+            responseId,
+            functionCallsCount: actionFunctionCalls.length,
+            functionNames: actionFunctionCalls.map((fc) => fc.functionName),
+            filteredOutCount: functionCalls.length - actionFunctionCalls.length,
+          });
+
           await ctx.runMutation(internal.ai.threads.saveFunctionCalls, {
             threadId: providedThreadId,
             projectId: args.projectId,
             responseId,
-            functionCalls,
-          });
-
-          console.log("✅ Saved tool calls for confirmation", {
-            responseId,
-            count: functionCalls.length,
-            names: functionCalls.map((f) => f.functionName),
+            functionCalls: actionFunctionCalls,
           });
         } else {
-          console.warn("⚠️ No functionCalls generated from tool calls", {
-            toolCalls: allToolCalls.length,
-            toolResults: allToolResults.length,
+
+          console.log("⚠️ [NO FUNCTION CALLS TO SAVE]", {
+            allToolCallsCount: allToolCalls.length,
+            message: "Tool calls did not generate pending items (read-only or parsing failed)",
           });
 
           // Heuristic: if user asked to delete and search_shopping_items returned exactly one item, auto-stage delete
@@ -565,10 +607,6 @@ export const internalDoStreaming = internalAction({
                   responseId,
                   functionCalls,
                 });
-                console.log("✅ Auto-staged bulk delete_shopping_item after search_shopping_items", {
-                  count: functionCalls.length,
-                  responseId,
-                });
               } else {
                 const firstItem = items[0];
                 const itemId = firstItem?.id || firstItem?._id;
@@ -589,11 +627,10 @@ export const internalDoStreaming = internalAction({
                     responseId,
                     functionCalls: [autoCall],
                   });
-                  console.log("✅ Auto-staged delete_shopping_item after search_shopping_items", { itemId, responseId });
                 }
               }
-            } catch (e) {
-              console.warn("⚠️ Failed to auto-stage delete after shopping search", e);
+            } catch {
+              // Failed to auto-stage delete after shopping search
             }
           }
         }
@@ -611,29 +648,27 @@ export const internalDoStreaming = internalAction({
         ),
       };
 
-      // Save to our custom storage
       const responseTime = Date.now() - startTime;
-      const trimmedUserMessage =
-        args.message.trim() ||
-        (filesMetadata && filesMetadata.length > 0
-          ? `📎 Attached: ${filesMetadata.map((file) => file.fileName ?? "file").join(", ")}`
-          : fileMetadata
-            ? `📎 Attached: ${fileMetadata.fileName ?? "file"}`
-            : "");
 
-      await ctx.runMutation(internal.ai.threads.saveMessagesToThread, {
+      console.log("📝 [UPDATE THREAD SUMMARY]", {
         threadId: providedThreadId,
-        projectId: args.projectId,
-        userMessage: trimmedUserMessage,
-        assistantMessage: fullResponse,
-        tokenUsage,
-        userMetadata: fileMetadata ? {
-          fileId: fileMetadata.fileId,
-          fileName: fileMetadata.fileName,
-          fileType: fileMetadata.fileType,
-          fileSize: fileMetadata.fileSize,
-        } : undefined,
-        assistantMetadata: { mode: agentModeIdentifier },
+        responsePreview: fullResponse.substring(0, 50) + "...",
+      });
+
+      await ctx.runMutation(internal.ai.threads.updateThreadSummary, {
+        threadId: providedThreadId,
+        lastMessageAt: Date.now(),
+        lastMessagePreview: fullResponse,
+        lastMessageRole: "assistant",
+        messageCountDelta: 1,
+      });
+
+      console.log("💰 [SAVE TOKEN USAGE]", {
+        inputTokens: tokenUsage.inputTokens,
+        outputTokens: tokenUsage.outputTokens,
+        totalTokens: tokenUsage.totalTokens,
+        estimatedCostUSD: tokenUsage.estimatedCostUSD,
+        responseTimeMs: responseTime,
       });
 
       // Save usage statistics
@@ -656,10 +691,19 @@ export const internalDoStreaming = internalAction({
       });
 
       // Streaming completed
+      console.log("✅ [STREAMING COMPLETED]", {
+        threadId: providedThreadId,
+        responseTimeMs: responseTime,
+        success: true,
+      });
 
       return null;
     } catch (error) {
-      console.error("❌ Streaming error:", error);
+      console.error("❌ [STREAMING ERROR]", {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        threadId: args.threadId,
+      });
       return null;
     }
   },
@@ -690,13 +734,22 @@ export const startStreamingChat = action({
     success: boolean;
     error?: string;
   }> => {
+    console.log("🎬 [START STREAMING CHAT ACTION]", {
+      projectId: args.projectId,
+      userClerkId: args.userClerkId,
+      hasThreadId: !!args.threadId,
+      messageLength: args.message.length,
+    });
+
     try {
       const identity = await ctx.auth.getUserIdentity();
       if (!identity) {
+        console.error("❌ [UNAUTHORIZED] No identity");
         throw new Error("Unauthorized");
       }
 
       if (identity.subject !== args.userClerkId) {
+        console.error("❌ [FORBIDDEN] Identity mismatch");
         throw new Error("Forbidden");
       }
 
@@ -718,6 +771,11 @@ export const startStreamingChat = action({
         ? args.threadId
         : `thread-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
+      console.log("📅 [SCHEDULE STREAMING]", {
+        providedThreadId,
+        isNewThread: !args.threadId,
+      });
+
       // Call the mutation to initialize and schedule streaming
       // Type annotation to break circular reference
       await ctx.scheduler.runAfter(0, internal.ai.streaming.internalDoStreaming, {
@@ -729,13 +787,20 @@ export const startStreamingChat = action({
         fileIds: args.fileIds,
       });
 
+      console.log("✅ [STREAMING SCHEDULED]", {
+        threadId: providedThreadId,
+      });
+
       return {
         threadId: providedThreadId,
         agentThreadId: undefined,
         success: true,
       };
     } catch (error) {
-      console.error("❌ Error scheduling streaming:", error);
+      console.error("❌ [ERROR SCHEDULING STREAMING]", {
+        error: error instanceof Error ? error.message : String(error),
+        threadId: args.threadId,
+      });
       return {
         threadId: args.threadId || "",
         agentThreadId: undefined,

@@ -45,8 +45,6 @@ export function AddLaborItemForm({
   onAddItem,
   isPending,
   defaultSectionId,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  isInline = false
 }: AddLaborItemFormProps) {
   const [newItemName, setNewItemName] = useState('');
   const [newItemNotes, setNewItemNotes] = useState('');

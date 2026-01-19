@@ -17,13 +17,12 @@ import {
   Paperclip,
   History,
 } from "lucide-react";
-import { AISubscriptionWall } from "@/components/AISubscriptionWall";
+import { AISubscriptionWall } from "@/components/ai/shared";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-// Reuse ChatSidebar and ChatInput from ai-assistant
-import { ChatSidebar, ThreadListItem } from "@/components/ai-assistant/ChatSidebar";
-import { ChatInput } from "@/components/ai-assistant/ChatInput";
+import { ChatSidebar, ThreadListItem } from "@/components/ai/assistant/ui/Sidebar";
+import { ChatInput } from "@/components/ai/assistant/ui/ChatInput";
 
 export default function VisualizationsPage() {
   const { organization } = useOrganization();
@@ -73,8 +72,6 @@ export default function VisualizationsPage() {
   const getUploadUrl = useAction(apiAny.ai.imageGen.generation.getUploadUrl);
   const createSession = useMutation(apiAny.ai.visualizationSessions.createSession);
   const addUserMessage = useMutation(apiAny.ai.visualizationSessions.addUserMessage);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const deleteSession = useMutation(apiAny.ai.visualizationSessions.deleteSession);
 
   // Map sessions to ThreadListItem format for ChatSidebar
   const threadList: ThreadListItem[] = useMemo(() => {

@@ -5,9 +5,11 @@ import { apiAny } from "@/lib/convexApiAny";
 import { useProject } from "@/components/providers/ProjectProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, Calendar, TrendingUp, MapPin, DollarSign, Building2, User, Target } from "lucide-react";
-import { Suspense } from "react";
+import { CheckCircle, Calendar, TrendingUp, MapPin, DollarSign, Building2, User, Target, History, ChevronDown } from "lucide-react";
+import { Suspense, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ProjectChangelog } from "./ProjectChangelog";
 
 function ProjectOverviewSkeleton() {
   return (
@@ -49,6 +51,7 @@ function ProjectOverviewSkeleton() {
 
 function ProjectOverviewContent() {
   const { project } = useProject();
+  const [isChangelogOpen, setChangelogOpen] = useState(false);
   
   const hasAccess = useQuery(apiAny.projects.checkUserProjectAccess, {
     projectId: project._id,
@@ -304,6 +307,36 @@ function ProjectOverviewContent() {
           </CardContent>
         </Card>
       )}
+
+      <Collapsible open={isChangelogOpen} onOpenChange={setChangelogOpen}>
+        <Card className="mt-6 lg:mt-8">
+          <CardHeader className="pb-2">
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-3 text-left"
+              >
+                <div className="flex items-center gap-2">
+                  <History className="h-5 w-5 text-primary" />
+                  <CardTitle className="text-lg lg:text-xl">Project Changelog</CardTitle>
+                </div>
+                <ChevronDown
+                  className={`h-4 w-4 transition-transform ${isChangelogOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+            </CollapsibleTrigger>
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent className="pt-0">
+              <ProjectChangelog
+                enabled={isChangelogOpen}
+                showHeader={false}
+                className="px-0 lg:px-0"
+              />
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
     </div>
   );
 }
