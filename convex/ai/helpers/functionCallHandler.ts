@@ -250,7 +250,13 @@ export const processFunctionCalls = async (
 
       case "create_multiple_tasks":
         {
-          functionArgs.tasks.forEach((task: any) => {
+          const tasks = Array.isArray(functionArgs.tasks)
+            ? functionArgs.tasks
+            : Array.isArray(functionArgs.items)
+              ? functionArgs.items
+              : [];
+
+          tasks.forEach((task: any) => {
             if (task.assignedTo) {
               const assignedUser = teamMembers.find((m) =>
                 m.name === task.assignedTo ||
@@ -274,8 +280,9 @@ export const processFunctionCalls = async (
             });
           });
         }
-        actionSummaries.push(`${functionArgs.tasks.length} tasks`);
-        finalResponse = `I'll create ${functionArgs.tasks.length} tasks for you. ${aiResponse}`;
+        const taskCount = (Array.isArray(functionArgs.tasks) ? functionArgs.tasks : functionArgs.items || []).length;
+        actionSummaries.push(`${taskCount} tasks`);
+        finalResponse = `I'll create ${taskCount} tasks for you. ${aiResponse}`;
         break;
 
       case "edit_task":
@@ -359,17 +366,25 @@ export const processFunctionCalls = async (
         break;
 
       case "create_multiple_notes":
-        functionArgs.notes.forEach((note: any) => {
-          pendingItems.push({
-            type: "note",
-            operation: "create",
-            data: note,
-            functionCall: funcCallDataPayload,
-            responseId: responseId,
+        {
+          const notes = Array.isArray(functionArgs.notes)
+            ? functionArgs.notes
+            : Array.isArray(functionArgs.items)
+              ? functionArgs.items
+              : [];
+
+          notes.forEach((note: any) => {
+            pendingItems.push({
+              type: "note",
+              operation: "create",
+              data: note,
+              functionCall: funcCallDataPayload,
+              responseId: responseId,
+            });
           });
-        });
-        actionSummaries.push(`${functionArgs.notes.length} notes`);
-        finalResponse = `I'll create ${functionArgs.notes.length} notes for you. ${aiResponse}`;
+          actionSummaries.push(`${notes.length} notes`);
+          finalResponse = `I'll create ${notes.length} notes for you. ${aiResponse}`;
+        }
         break;
 
       case "edit_note":

@@ -325,10 +325,58 @@ export function createStreamingTools(options?: StreamingToolOptions) {
       description: "Update/edit an existing item. Provide the type, item ID, and fields to update. Only changed fields need to be included.",
       inputSchema: updateItemSchema,
       execute: async (args: z.infer<typeof updateItemSchema>) => {
+        const typeToTable: Record<string, string> = {
+          task: "tasks",
+          note: "notes",
+          shopping: "shoppingListItems",
+          labor: "laborItems",
+          survey: "surveys",
+          contact: "contacts",
+          shoppingSection: "shoppingListSections",
+          laborSection: "laborSections",
+        };
+
+        // Fetch original item from database to show in edit form
+        let originalItem: { title?: string; name?: string; _id?: string } | null = null;
+        let debugInfo: any = {};
+
+        if (options?.runAction) {
+          try {
+            const { internal } = await import("../_generated/api");
+            const tableName = typeToTable[args.type];
+            debugInfo.tableName = tableName;
+            debugInfo.itemId = args.itemId;
+
+            if (tableName) {
+              try {
+                originalItem = await options.runAction(internal.ai.search.getItemById, {
+                  tableName,
+                  itemId: args.itemId,
+                });
+                debugInfo.lookupSuccess = true;
+                debugInfo.found = !!originalItem;
+              } catch (innerErr) {
+                console.error("Error in runAction:", innerErr);
+                debugInfo.lookupError = String(innerErr);
+              }
+            } else {
+              debugInfo.error = "No table name for type " + args.type;
+            }
+          } catch (error) {
+            console.error("Failed to fetch original item:", error);
+            debugInfo.globalError = String(error);
+          }
+        } else {
+          debugInfo.error = "No runAction available";
+        }
+
         return JSON.stringify({
           type: getOperationType(args.type),
           operation: "edit",
-          data: { ...args.data, itemId: args.itemId }
+          data: { itemId: args.itemId },
+          updates: args.data,
+          originalItem: originalItem || { _id: args.itemId },
+          debug: debugInfo
         });
       },
     },
@@ -337,10 +385,54 @@ export function createStreamingTools(options?: StreamingToolOptions) {
       description: "Update multiple items at once (2+ items of the same type). More efficient than multiple single updates.",
       inputSchema: updateMultipleItemsSchema,
       execute: async (args: z.infer<typeof updateMultipleItemsSchema>) => {
+        // Fetch original items from database for bulk edit
+        const originalItems: any[] = [];
+        if (options?.runAction) {
+          try {
+            const { internal } = await import("../_generated/api");
+            const typeToTable: Record<string, string> = {
+              task: "tasks",
+              note: "notes",
+              shopping: "shoppingListItems",
+              labor: "laborItems",
+              survey: "surveys",
+              contact: "contacts",
+              shoppingSection: "shoppingListSections",
+              laborSection: "laborSections",
+            };
+            const tableName = typeToTable[args.type];
+            if (tableName) {
+              for (const update of args.updates) {
+                const item = await options.runAction(internal.ai.search.getItemById, {
+                  tableName,
+                  itemId: update.itemId,
+                });
+                if (item) {
+                  originalItems.push({ ...item, updates: update.data });
+                }
+              }
+            }
+          } catch (error) {
+            console.error("Failed to fetch original items for bulk edit:", error);
+          }
+        }
+
         return JSON.stringify({
           type: getOperationType(args.type),
           operation: "bulk_edit",
-          data: { items: args.updates.map(u => ({ ...u.data, itemId: u.itemId })) }
+          data: {
+            items: originalItems.length > 0
+              ? originalItems.map(item => ({
+                itemId: item._id,
+                originalItem: item,
+                updates: item.updates
+              }))
+              : args.updates.map(u => ({
+                itemId: u.itemId,
+                originalItem: {},
+                updates: u.data
+              }))
+          }
         });
       },
     },
@@ -349,10 +441,38 @@ export function createStreamingTools(options?: StreamingToolOptions) {
       description: "Delete/remove an item from the project. Provide the type and item ID.",
       inputSchema: deleteItemSchema,
       execute: async (args: z.infer<typeof deleteItemSchema>) => {
+        // Fetch original item to show full details in delete confirmation
+        let originalItem: { title?: string; name?: string; _id?: string } | null = null;
+        if (options?.runAction) {
+          try {
+            const { internal } = await import("../_generated/api");
+            const typeToTable: Record<string, string> = {
+              task: "tasks",
+              note: "notes",
+              shopping: "shoppingListItems",
+              shoppingSection: "shoppingListSections",
+              labor: "laborItems",
+              laborSection: "laborSections",
+              survey: "surveys",
+              contact: "contacts",
+            };
+            const tableName = typeToTable[args.type];
+            if (tableName) {
+              originalItem = await options.runAction(internal.ai.search.getItemById, {
+                tableName,
+                itemId: args.itemId,
+              });
+            }
+          } catch (error) {
+            console.error("Failed to fetch original item for deletion:", error);
+          }
+        }
+
         return JSON.stringify({
           type: getOperationType(args.type),
           operation: "delete",
-          data: { itemId: args.itemId, name: args.name, reason: args.reason }
+          data: { itemId: args.itemId, name: args.name || originalItem?.title || originalItem?.name, reason: args.reason },
+          originalItem: originalItem || { _id: args.itemId, title: args.name, name: args.name },
         });
       },
     },
@@ -417,7 +537,7 @@ export function createStreamingTools(options?: StreamingToolOptions) {
 
           let finalContext = formattedContext;
           if (finalContext.length > 500000) {
-             finalContext = finalContext.substring(0, 500000) + "\n...[TRUNCATED due to size]...";
+            finalContext = finalContext.substring(0, 500000) + "\n...[TRUNCATED due to size]...";
           }
 
           return JSON.stringify({

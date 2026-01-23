@@ -1,35 +1,7 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internalMutation, query } from "./_generated/server";
 
 // ====== QUERIES ======
-
-// Get user's Google Calendar connection status
-export const getConnectionStatus = query({
-  args: { 
-    teamId: v.id("teams") 
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-
-    const token = await ctx.db
-      .query("googleCalendarTokens")
-      .withIndex("by_user_and_team", (q) => 
-        q.eq("clerkUserId", identity.subject).eq("teamId", args.teamId)
-      )
-      .first();
-
-    if (!token) {
-      return { isConnected: false, email: null };
-    }
-
-    return {
-      isConnected: token.isConnected,
-      email: token.email,
-      lastSyncAt: token.lastSyncAt,
-    };
-  },
-});
 
 // Get Google Calendar events for a project
 export const getProjectEvents = query({
@@ -56,137 +28,15 @@ export const getProjectEvents = query({
       );
     }
 
+    // Filter to only show App Items (Task, Shopping, Labor)
+    // We only want events that have a sourceType
+    filteredEvents = filteredEvents.filter((e) => e.sourceType !== undefined && e.sourceType !== null);
+
     return filteredEvents;
   },
 });
 
-// Get all team members' calendar connections
-export const getTeamCalendarConnections = query({
-  args: {
-    teamId: v.id("teams"),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return [];
-
-    const tokens = await ctx.db
-      .query("googleCalendarTokens")
-      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
-      .collect();
-
-    // Get user info for each token
-    const connections = await Promise.all(
-      tokens.map(async (token) => {
-        const user = await ctx.db
-          .query("users")
-          .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", token.clerkUserId))
-          .first();
-
-        return {
-          clerkUserId: token.clerkUserId,
-          email: token.email,
-          isConnected: token.isConnected,
-          userName: user?.name || "Unknown",
-          userImageUrl: user?.imageUrl,
-          lastSyncAt: token.lastSyncAt,
-        };
-      })
-    );
-
-    return connections;
-  },
-});
-
-// Internal query to get token data
-export const getTokenData = internalQuery({
-  args: {
-    clerkUserId: v.string(),
-    teamId: v.id("teams"),
-  },
-  handler: async (ctx, args) => {
-    const token = await ctx.db
-      .query("googleCalendarTokens")
-      .withIndex("by_user_and_team", (q) => 
-        q.eq("clerkUserId", args.clerkUserId).eq("teamId", args.teamId)
-      )
-      .first();
-
-    return token;
-  },
-});
-
 // ====== MUTATIONS ======
-
-// Store OAuth tokens
-export const storeTokens = internalMutation({
-  args: {
-    clerkUserId: v.string(),
-    teamId: v.id("teams"),
-    accessToken: v.string(),
-    refreshToken: v.string(),
-    expiresAt: v.number(),
-    email: v.optional(v.string()),
-    calendarId: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    // Check if token already exists
-    const existing = await ctx.db
-      .query("googleCalendarTokens")
-      .withIndex("by_user_and_team", (q) => 
-        q.eq("clerkUserId", args.clerkUserId).eq("teamId", args.teamId)
-      )
-      .first();
-
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        accessToken: args.accessToken,
-        refreshToken: args.refreshToken,
-        expiresAt: args.expiresAt,
-        email: args.email,
-        calendarId: args.calendarId,
-        isConnected: true,
-        lastSyncAt: Date.now(),
-      });
-      return existing._id;
-    }
-
-    return await ctx.db.insert("googleCalendarTokens", {
-      clerkUserId: args.clerkUserId,
-      teamId: args.teamId,
-      accessToken: args.accessToken,
-      refreshToken: args.refreshToken,
-      expiresAt: args.expiresAt,
-      email: args.email,
-      calendarId: args.calendarId,
-      isConnected: true,
-      lastSyncAt: Date.now(),
-    });
-  },
-});
-
-// Disconnect Google Calendar
-export const disconnect = mutation({
-  args: {
-    teamId: v.id("teams"),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const token = await ctx.db
-      .query("googleCalendarTokens")
-      .withIndex("by_user_and_team", (q) => 
-        q.eq("clerkUserId", identity.subject).eq("teamId", args.teamId)
-      )
-      .first();
-
-    if (token) {
-      await ctx.db.delete(token._id);
-    }
-
-    return { success: true };
-  },
-});
 
 // Store synced events
 export const storeEvents = internalMutation({
@@ -210,6 +60,11 @@ export const storeEvents = internalMutation({
       htmlLink: v.optional(v.string()),
       status: v.optional(v.string()),
       colorId: v.optional(v.string()),
+      sourceType: v.optional(v.union(
+        v.literal("task"),
+        v.literal("shopping"),
+        v.literal("labor")
+      )),
     })),
   },
   handler: async (ctx, args) => {
@@ -220,16 +75,26 @@ export const storeEvents = internalMutation({
         .withIndex("by_google_event_id", (q) => q.eq("googleEventId", event.googleEventId))
         .first();
 
+      // Look up source type from links if not provided
+      let sourceType = event.sourceType;
+      if (!sourceType) {
+        const link = await ctx.db
+          .query("googleCalendarLinks")
+          .withIndex("by_google_event_id", (q) => q.eq("googleEventId", event.googleEventId))
+          .first();
+        sourceType = link?.sourceType;
+      }
+
+      const eventData = {
+        ...event,
+        sourceType,
+        lastSyncAt: Date.now(),
+      };
+
       if (existing) {
-        await ctx.db.patch(existing._id, {
-          ...event,
-          lastSyncAt: Date.now(),
-        });
+        await ctx.db.patch(existing._id, eventData);
       } else {
-        await ctx.db.insert("googleCalendarEvents", {
-          ...event,
-          lastSyncAt: Date.now(),
-        });
+        await ctx.db.insert("googleCalendarEvents", eventData);
       }
     }
   },
@@ -251,5 +116,6 @@ export const deleteEvent = internalMutation({
     }
   },
 });
+
 
 

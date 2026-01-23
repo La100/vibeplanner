@@ -1,4 +1,4 @@
-import { internalAction } from "../_generated/server";
+import { internalAction, internalQuery } from "../_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "../_generated/api";
 
@@ -70,7 +70,7 @@ export const searchShoppingItems = internalAction({
   args: {
     projectId: v.id("projects"),
     query: v.optional(v.string()),
-    sectionName: v.optional(v.string()),
+    completed: v.optional(v.boolean()),
     limit: v.optional(v.number()),
   },
   returns: v.object({
@@ -88,18 +88,12 @@ export const searchShoppingItems = internalAction({
 
     let filteredItems: any[] = allItems;
 
-    // Filter by section if provided
-    if (args.sectionName && args.sectionName.trim().length > 0) {
-      // Get all sections
-      const sections = await ctx.runQuery(api.shopping.getShoppingListSections, {
-        projectId: args.projectId,
+    // Filter by completion status if provided
+    if (args.completed !== undefined) {
+      filteredItems = filteredItems.filter((item: any) => {
+        const isCompleted = item.realizationStatus === "COMPLETED";
+        return isCompleted === args.completed;
       });
-      const section = sections.find((s: any) =>
-        s.name.toLowerCase() === args.sectionName!.toLowerCase()
-      );
-      if (section) {
-        filteredItems = filteredItems.filter((item: any) => item.sectionId === section._id);
-      }
     }
 
     // Search by query if provided
@@ -110,7 +104,8 @@ export const searchShoppingItems = internalAction({
         const notesMatch = item.notes?.toLowerCase().includes(queryLower);
         const categoryMatch = item.category?.toLowerCase().includes(queryLower);
         const supplierMatch = item.supplier?.toLowerCase().includes(queryLower);
-        return nameMatch || notesMatch || categoryMatch || supplierMatch;
+        const sectionMatch = item.sectionName?.toLowerCase().includes(queryLower);
+        return nameMatch || notesMatch || categoryMatch || supplierMatch || sectionMatch;
       });
     }
 
@@ -132,7 +127,6 @@ export const searchNotes = internalAction({
   args: {
     projectId: v.id("projects"),
     query: v.optional(v.string()),
-    includeArchived: v.optional(v.boolean()),
     limit: v.optional(v.number()),
   },
   returns: v.object({
@@ -143,16 +137,14 @@ export const searchNotes = internalAction({
   handler: async (ctx, args) => {
     const limit = args.limit || 10;
 
+    // Get all notes for the project
     const allNotes = await ctx.runQuery(internal.rag.getProjectNotes, {
       projectId: args.projectId,
     }) as any[];
 
     let filteredNotes: any[] = allNotes;
 
-    if (!args.includeArchived) {
-      filteredNotes = filteredNotes.filter((note: any) => !note.isArchived);
-    }
-
+    // Search by query if provided
     if (args.query && args.query.trim().length > 0) {
       const queryLower = args.query.toLowerCase();
       filteredNotes = filteredNotes.filter((note: any) => {
@@ -162,12 +154,10 @@ export const searchNotes = internalAction({
       });
     }
 
-    filteredNotes.sort((a: any, b: any) => {
-      const aTime = a.updatedAt || a.createdAt || a._creationTime || 0;
-      const bTime = b.updatedAt || b.createdAt || b._creationTime || 0;
-      return bTime - aTime;
-    });
+    // Sort by update time (most recent first)
+    filteredNotes.sort((a: any, b: any) => (b.updatedAt || b._creationTime || 0) - (a.updatedAt || a._creationTime || 0));
 
+    // Limit results
     const results = filteredNotes.slice(0, limit);
 
     return {
@@ -185,7 +175,8 @@ export const searchSurveys = internalAction({
     status: v.optional(v.union(
       v.literal("draft"),
       v.literal("active"),
-      v.literal("closed")
+      v.literal("completed"),
+      v.literal("archived")
     )),
     limit: v.optional(v.number()),
   },
@@ -197,31 +188,32 @@ export const searchSurveys = internalAction({
   handler: async (ctx, args) => {
     const limit = args.limit || 10;
 
+    // Get all surveys for the project
     const allSurveys = await ctx.runQuery(internal.rag.getProjectSurveys, {
       projectId: args.projectId,
     }) as any[];
 
     let filteredSurveys: any[] = allSurveys;
 
+    // Filter by status if provided
     if (args.status) {
       filteredSurveys = filteredSurveys.filter((survey: any) => survey.status === args.status);
     }
 
+    // Search by query if provided
     if (args.query && args.query.trim().length > 0) {
       const queryLower = args.query.toLowerCase();
       filteredSurveys = filteredSurveys.filter((survey: any) => {
         const titleMatch = survey.title?.toLowerCase().includes(queryLower);
-        const descriptionMatch = survey.description?.toLowerCase().includes(queryLower);
-        return titleMatch || descriptionMatch;
+        const descMatch = survey.description?.toLowerCase().includes(queryLower);
+        return titleMatch || descMatch;
       });
     }
 
-    filteredSurveys.sort((a: any, b: any) => {
-      const aTime = a.updatedAt || a._creationTime || 0;
-      const bTime = b.updatedAt || b._creationTime || 0;
-      return bTime - aTime;
-    });
+    // Sort by creation time (most recent first)
+    filteredSurveys.sort((a: any, b: any) => (b._creationTime || 0) - (a._creationTime || 0));
 
+    // Limit results
     const results = filteredSurveys.slice(0, limit);
 
     return {
@@ -234,9 +226,9 @@ export const searchSurveys = internalAction({
 
 export const searchContacts = internalAction({
   args: {
-    projectId: v.id("projects"),
+    teamSlug: v.string(),
     query: v.optional(v.string()),
-    contactType: v.optional(v.union(
+    type: v.optional(v.union(
       v.literal("contractor"),
       v.literal("supplier"),
       v.literal("subcontractor"),
@@ -252,16 +244,19 @@ export const searchContacts = internalAction({
   handler: async (ctx, args) => {
     const limit = args.limit || 10;
 
-    const allContacts = await ctx.runQuery(internal.rag.getProjectContacts, {
-      projectId: args.projectId,
+    // Get all contacts for the team
+    const allContacts = await ctx.runQuery(internal.rag.getTeamContacts, {
+      teamSlug: args.teamSlug,
     }) as any[];
 
     let filteredContacts: any[] = allContacts;
 
-    if (args.contactType) {
-      filteredContacts = filteredContacts.filter((contact: any) => contact.type === args.contactType);
+    // Filter by type if provided
+    if (args.type) {
+      filteredContacts = filteredContacts.filter((contact: any) => contact.type === args.type);
     }
 
+    // Search by query if provided
     if (args.query && args.query.trim().length > 0) {
       const queryLower = args.query.toLowerCase();
       filteredContacts = filteredContacts.filter((contact: any) => {
@@ -274,15 +269,10 @@ export const searchContacts = internalAction({
       });
     }
 
-    filteredContacts.sort((a: any, b: any) => {
-      const aTime = a._creationTime || 0;
-      const bTime = b._creationTime || 0;
-      if (aTime === bTime) {
-        return (a.name || "").localeCompare(b.name || "");
-      }
-      return bTime - aTime;
-    });
+    // Sort by creation time (most recent first)
+    filteredContacts.sort((a: any, b: any) => (b._creationTime || 0) - (a._creationTime || 0));
 
+    // Limit results
     const results = filteredContacts.slice(0, limit);
 
     return {
@@ -297,7 +287,6 @@ export const searchLaborItems = internalAction({
   args: {
     projectId: v.id("projects"),
     query: v.optional(v.string()),
-    sectionName: v.optional(v.string()),
     limit: v.optional(v.number()),
   },
   returns: v.object({
@@ -309,25 +298,11 @@ export const searchLaborItems = internalAction({
     const limit = args.limit || 10;
 
     // Get all labor items for the project
-    const allItems = await ctx.runQuery(api.labor.getLaborItemsByProject, {
+    const allItems = await ctx.runQuery(internal.rag.getProjectLaborItems, {
       projectId: args.projectId,
     }) as any[];
 
     let filteredItems: any[] = allItems;
-
-    // Filter by section if provided
-    if (args.sectionName && args.sectionName.trim().length > 0) {
-      // Get all sections
-      const sections = await ctx.runQuery(api.labor.getLaborSections, {
-        projectId: args.projectId,
-      });
-      const section = sections.find((s: any) =>
-        s.name.toLowerCase() === args.sectionName!.toLowerCase()
-      );
-      if (section) {
-        filteredItems = filteredItems.filter((item: any) => item.sectionId === section._id);
-      }
-    }
 
     // Search by query if provided
     if (args.query && args.query.trim().length > 0) {
@@ -351,5 +326,27 @@ export const searchLaborItems = internalAction({
       total: filteredItems.length,
       items: results,
     };
+  },
+});
+
+/**
+ * Get a single item by ID - used for edit operations to fetch original data
+ */
+export const getItemById = internalQuery({
+  args: {
+    tableName: v.string(),
+    itemId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      // Direct DB lookup is faster and avoids auth issues in nested queries
+      // We trust the calling function (listPendingItems) to verify access if needed
+      // or we accept that AI needs to see the item to edit it.
+      const item = await ctx.db.get(args.itemId as any);
+      return item;
+    } catch (error) {
+      console.error(`Failed to fetch ${args.tableName} item ${args.itemId}:`, error);
+      return null;
+    }
   },
 });

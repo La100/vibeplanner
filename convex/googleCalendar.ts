@@ -4,16 +4,36 @@ import { v } from "convex/values";
 import { action, internalAction } from "./_generated/server";
 import { internal, api } from "./_generated/api";
 import { google } from "googleapis";
+import { clerkClient } from "@clerk/clerk-sdk-node";
 
 const internalAny = internal as any;
 
-// OAuth2 client configuration
-const getOAuth2Client = () => {
-  return new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
-  );
+// Helper to get Google OAuth token from Clerk
+const getGoogleAuthToken = async (clerkUserId: string) => {
+  try {
+    const response = await clerkClient.users.getUserOauthAccessToken(
+      clerkUserId,
+      "oauth_google"
+    );
+
+    if (response.data.length === 0 || !response.data[0].token) {
+      return null;
+    }
+
+    return response.data[0].token;
+  } catch (error) {
+    console.error("Error fetching Google token from Clerk:", error);
+    return null;
+  }
+};
+
+const getOAuth2Client = async (clerkUserId: string) => {
+  const token = await getGoogleAuthToken(clerkUserId);
+  if (!token) return null;
+
+  const oauth2Client = new google.auth.OAuth2();
+  oauth2Client.setCredentials({ access_token: token });
+  return oauth2Client;
 };
 
 const isAllDayTimestamp = (timestamp: number) => {
@@ -33,118 +53,7 @@ const addDays = (timestamp: number, days: number) => {
   return timestamp + days * 24 * 60 * 60 * 1000;
 };
 
-const getAuthorizedClient = async (ctx: any, clerkUserId: string, teamId: string) => {
-  const tokenData = await ctx.runQuery(internalAny.googleCalendarDb.getTokenData, {
-    clerkUserId,
-    teamId,
-  });
-
-  if (!tokenData || !tokenData.isConnected) {
-    return null;
-  }
-
-  const oauth2Client = getOAuth2Client();
-  oauth2Client.setCredentials({
-    access_token: tokenData.accessToken,
-    refresh_token: tokenData.refreshToken,
-  });
-
-  if (tokenData.expiresAt < Date.now()) {
-    try {
-      const { credentials } = await oauth2Client.refreshAccessToken();
-      await ctx.runMutation(internalAny.googleCalendarDb.storeTokens, {
-        clerkUserId,
-        teamId,
-        accessToken: credentials.access_token!,
-        refreshToken: credentials.refresh_token || tokenData.refreshToken,
-        expiresAt: credentials.expiry_date || Date.now() + 3600000,
-        email: tokenData.email,
-        calendarId: tokenData.calendarId,
-      });
-      oauth2Client.setCredentials(credentials);
-    } catch (error) {
-      console.error("Error refreshing Google Calendar token:", error);
-      return null;
-    }
-  }
-
-  return oauth2Client;
-};
-
 // ====== ACTIONS (Google API calls) ======
-
-// Generate OAuth URL
-export const getAuthUrl = action({
-  args: {
-    teamId: v.id("teams"),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const oauth2Client = getOAuth2Client();
-
-    const scopes = [
-      "https://www.googleapis.com/auth/calendar",
-      "https://www.googleapis.com/auth/calendar.events",
-      "https://www.googleapis.com/auth/userinfo.email",
-    ];
-
-    const authUrl = oauth2Client.generateAuthUrl({
-      access_type: "offline",
-      scope: scopes,
-      prompt: "consent",
-      state: JSON.stringify({
-        clerkUserId: identity.subject,
-        teamId: args.teamId,
-      }),
-    });
-
-    return authUrl;
-  },
-});
-
-// Exchange code for tokens
-export const exchangeCodeForTokens = internalAction({
-  args: {
-    code: v.string(),
-    clerkUserId: v.string(),
-    teamId: v.id("teams"),
-  },
-  handler: async (ctx, args) => {
-    const oauth2Client = getOAuth2Client();
-
-    try {
-      const { tokens } = await oauth2Client.getToken(args.code);
-      oauth2Client.setCredentials(tokens);
-
-      // Get user email
-      const oauth2 = google.oauth2({ version: "v2", auth: oauth2Client });
-      const userInfo = await oauth2.userinfo.get();
-
-      // Get primary calendar ID
-      const calendar = google.calendar({ version: "v3", auth: oauth2Client });
-      const calendarList = await calendar.calendarList.list();
-      const primaryCalendar = calendarList.data.items?.find((cal) => cal.primary);
-
-      // Store tokens
-      await ctx.runMutation(internal.googleCalendarDb.storeTokens, {
-        clerkUserId: args.clerkUserId,
-        teamId: args.teamId,
-        accessToken: tokens.access_token!,
-        refreshToken: tokens.refresh_token!,
-        expiresAt: tokens.expiry_date || Date.now() + 3600000,
-        email: userInfo.data.email || undefined,
-        calendarId: primaryCalendar?.id || undefined,
-      });
-
-      return { success: true, email: userInfo.data.email };
-    } catch (error) {
-      console.error("Error exchanging code for tokens:", error);
-      throw new Error("Failed to connect Google Calendar");
-    }
-  },
-});
 
 // Sync events from Google Calendar
 export const syncEvents = action({
@@ -158,49 +67,10 @@ export const syncEvents = action({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
-    // Get user's token
-    const token = await ctx.runQuery(api.googleCalendarDb.getConnectionStatus, {
-      teamId: args.teamId,
-    });
+    const oauth2Client = await getOAuth2Client(identity.subject);
 
-    if (!token?.isConnected) {
-      throw new Error("Google Calendar not connected");
-    }
-
-    // Get full token data for API access
-    const tokenData = await ctx.runQuery(internal.googleCalendarDb.getTokenData, {
-      clerkUserId: identity.subject,
-      teamId: args.teamId,
-    });
-
-    if (!tokenData) {
-      throw new Error("Token data not found");
-    }
-
-    const oauth2Client = getOAuth2Client();
-    oauth2Client.setCredentials({
-      access_token: tokenData.accessToken,
-      refresh_token: tokenData.refreshToken,
-    });
-
-    // Check if token needs refresh
-    if (tokenData.expiresAt < Date.now()) {
-      try {
-        const { credentials } = await oauth2Client.refreshAccessToken();
-        await ctx.runMutation(internal.googleCalendarDb.storeTokens, {
-          clerkUserId: identity.subject,
-          teamId: args.teamId,
-          accessToken: credentials.access_token!,
-          refreshToken: credentials.refresh_token || tokenData.refreshToken,
-          expiresAt: credentials.expiry_date || Date.now() + 3600000,
-          email: tokenData.email,
-          calendarId: tokenData.calendarId,
-        });
-        oauth2Client.setCredentials(credentials);
-      } catch (error) {
-        console.error("Error refreshing token:", error);
-        throw new Error("Failed to refresh Google Calendar access");
-      }
+    if (!oauth2Client) {
+      throw new Error("Google Calendar not connected via Clerk");
     }
 
     const calendar = google.calendar({ version: "v3", auth: oauth2Client });
@@ -236,13 +106,13 @@ export const syncEvents = action({
         startTime: event.start?.dateTime
           ? new Date(event.start.dateTime).getTime()
           : event.start?.date
-          ? new Date(event.start.date).getTime()
-          : Date.now(),
+            ? new Date(event.start.date).getTime()
+            : Date.now(),
         endTime: event.end?.dateTime
           ? new Date(event.end.dateTime).getTime()
           : event.end?.date
-          ? new Date(event.end.date).getTime()
-          : Date.now(),
+            ? new Date(event.end.date).getTime()
+            : Date.now(),
         allDay: !!event.start?.date,
         location: event.location || undefined,
         attendees: event.attendees?.map((a) => ({
@@ -255,14 +125,16 @@ export const syncEvents = action({
         colorId: event.colorId || undefined,
       }));
 
+      // We still use the existing storeEvents mutation to save to our DB
       await ctx.runMutation(internal.googleCalendarDb.storeEvents, {
         events: transformedEvents,
       });
 
       return { success: true, count: transformedEvents.length };
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error syncing events:", error);
-      throw new Error("Failed to sync Google Calendar events");
+      const errorMessage = error.message || JSON.stringify(error);
+      throw new Error(`Failed to sync Google Calendar events: ${errorMessage}`);
     }
   },
 });
@@ -284,20 +156,10 @@ export const createEvent = action({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
-    const tokenData = await ctx.runQuery(internal.googleCalendarDb.getTokenData, {
-      clerkUserId: identity.subject,
-      teamId: args.teamId,
-    });
-
-    if (!tokenData) {
-      throw new Error("Google Calendar not connected");
+    const oauth2Client = await getOAuth2Client(identity.subject);
+    if (!oauth2Client) {
+      throw new Error("Google Calendar not connected via Clerk");
     }
-
-    const oauth2Client = getOAuth2Client();
-    oauth2Client.setCredentials({
-      access_token: tokenData.accessToken,
-      refresh_token: tokenData.refreshToken,
-    });
 
     const calendar = google.calendar({ version: "v3", auth: oauth2Client });
 
@@ -375,20 +237,10 @@ export const updateEvent = action({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
-    const tokenData = await ctx.runQuery(internal.googleCalendarDb.getTokenData, {
-      clerkUserId: identity.subject,
-      teamId: args.teamId,
-    });
-
-    if (!tokenData) {
-      throw new Error("Google Calendar not connected");
+    const oauth2Client = await getOAuth2Client(identity.subject);
+    if (!oauth2Client) {
+      throw new Error("Google Calendar not connected via Clerk");
     }
-
-    const oauth2Client = getOAuth2Client();
-    oauth2Client.setCredentials({
-      access_token: tokenData.accessToken,
-      refresh_token: tokenData.refreshToken,
-    });
 
     const calendar = google.calendar({ version: "v3", auth: oauth2Client });
 
@@ -442,20 +294,10 @@ export const deleteGoogleEvent = action({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
-    const tokenData = await ctx.runQuery(internal.googleCalendarDb.getTokenData, {
-      clerkUserId: identity.subject,
-      teamId: args.teamId,
-    });
-
-    if (!tokenData) {
-      throw new Error("Google Calendar not connected");
+    const oauth2Client = await getOAuth2Client(identity.subject);
+    if (!oauth2Client) {
+      throw new Error("Google Calendar not connected via Clerk");
     }
-
-    const oauth2Client = getOAuth2Client();
-    oauth2Client.setCredentials({
-      access_token: tokenData.accessToken,
-      refresh_token: tokenData.refreshToken,
-    });
 
     const calendar = google.calendar({ version: "v3", auth: oauth2Client });
 
@@ -480,6 +322,11 @@ export const deleteGoogleEvent = action({
 
 // ====== INTERNAL ACTIONS (Task/Shopping sync) ======
 
+// Helper for internal actions to get client
+const getAuthorizedClientForInternal = async (clerkUserId: string) => {
+  return await getOAuth2Client(clerkUserId);
+};
+
 export const syncTaskEvent = internalAction({
   args: {
     taskId: v.id("tasks"),
@@ -490,9 +337,10 @@ export const syncTaskEvent = internalAction({
     description: v.optional(v.string()),
     startDate: v.optional(v.number()),
     endDate: v.optional(v.number()),
+    attendees: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const oauth2Client = await getAuthorizedClient(ctx, args.clerkUserId, args.teamId);
+    const oauth2Client = await getAuthorizedClientForInternal(args.clerkUserId);
     if (!oauth2Client) return { skipped: true, reason: "not_connected" };
 
     const startTs = args.startDate ?? args.endDate;
@@ -526,6 +374,10 @@ export const syncTaskEvent = internalAction({
     } else {
       requestBody.start = { dateTime: new Date(startTs).toISOString() };
       requestBody.end = { dateTime: new Date(endTs).toISOString() };
+    }
+
+    if (args.attendees && args.attendees.length > 0) {
+      requestBody.attendees = args.attendees.map((email) => ({ email }));
     }
 
     try {
@@ -582,7 +434,7 @@ export const syncShoppingItemEvent = internalAction({
     quantity: v.number(),
   },
   handler: async (ctx, args) => {
-    const oauth2Client = await getAuthorizedClient(ctx, args.clerkUserId, args.teamId);
+    const oauth2Client = await getAuthorizedClientForInternal(args.clerkUserId);
     if (!oauth2Client) return { skipped: true, reason: "not_connected" };
 
     if (!args.buyBefore) {
@@ -653,15 +505,112 @@ export const syncShoppingItemEvent = internalAction({
   },
 });
 
+export const syncLaborEvent = internalAction({
+  args: {
+    itemId: v.id("laborItems"),
+    projectId: v.id("projects"),
+    teamId: v.id("teams"),
+    clerkUserId: v.string(),
+    name: v.string(),
+    notes: v.optional(v.string()),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+    quantity: v.number(),
+    unit: v.string(),
+    attendees: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const oauth2Client = await getAuthorizedClientForInternal(args.clerkUserId);
+    if (!oauth2Client) return { skipped: true, reason: "not_connected" };
+
+    if (!args.startDate || !args.endDate) {
+      await ctx.runAction(internalAny.googleCalendar.deleteGoogleEventForSource, {
+        sourceType: "labor",
+        sourceId: args.itemId,
+        clerkUserId: args.clerkUserId,
+        teamId: args.teamId,
+      });
+      return { skipped: true, reason: "missing_dates" };
+    }
+
+    const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+    const existingLink = await ctx.runQuery(internalAny.googleCalendarLinks.getLinkBySource, {
+      sourceType: "labor",
+      sourceId: args.itemId,
+      clerkUserId: args.clerkUserId,
+    });
+
+    const requestBody: any = {
+      summary: `Labor: ${args.name}`,
+      description: args.notes
+        ? `Quantity: ${args.quantity} ${args.unit}\n${args.notes}`
+        : `Quantity: ${args.quantity} ${args.unit}`,
+      start: { date: toDateString(args.startDate) },
+      end: { date: toDateString(args.endDate) },
+    };
+
+    if (args.attendees && args.attendees.length > 0) {
+      requestBody.attendees = args.attendees.map((email) => ({ email }));
+    }
+
+    // Labor works usually defined by days, so force all-day to simplify
+    // Or we could check if start/end has time components. 
+    // Let's assume passed start/end are timestamps. 
+    // If we want time precision, we should use dateTime.
+    // The user didn't specify, but Labor is usually "Day X".
+    // However, I'll stick to dates (all day) for now as it's safer for "Labor".
+
+    try {
+      if (existingLink) {
+        const response = await calendar.events.update({
+          calendarId: "primary",
+          eventId: existingLink.googleEventId,
+          requestBody,
+        });
+
+        await ctx.runMutation(internalAny.googleCalendarLinks.upsertLink, {
+          sourceType: "labor",
+          sourceId: args.itemId,
+          projectId: args.projectId,
+          teamId: args.teamId,
+          clerkUserId: args.clerkUserId,
+          googleEventId: response.data.id!,
+        });
+
+        return { success: true, eventId: response.data.id };
+      }
+
+      const response = await calendar.events.insert({
+        calendarId: "primary",
+        requestBody,
+      });
+
+      await ctx.runMutation(internalAny.googleCalendarLinks.upsertLink, {
+        sourceType: "labor",
+        sourceId: args.itemId,
+        projectId: args.projectId,
+        teamId: args.teamId,
+        clerkUserId: args.clerkUserId,
+        googleEventId: response.data.id!,
+      });
+
+      return { success: true, eventId: response.data.id };
+    } catch (error) {
+      console.error("Error syncing labor item to Google Calendar:", error);
+      return { success: false };
+    }
+  },
+});
+
 export const deleteGoogleEventForSource = internalAction({
   args: {
-    sourceType: v.union(v.literal("task"), v.literal("shopping")),
+    sourceType: v.union(v.literal("task"), v.literal("shopping"), v.literal("labor")),
     sourceId: v.string(),
     clerkUserId: v.string(),
     teamId: v.id("teams"),
   },
   handler: async (ctx, args) => {
-    const oauth2Client = await getAuthorizedClient(ctx, args.clerkUserId, args.teamId);
+    const oauth2Client = await getAuthorizedClientForInternal(args.clerkUserId);
     if (!oauth2Client) return { skipped: true, reason: "not_connected" };
 
     const existingLink = await ctx.runQuery(internalAny.googleCalendarLinks.getLinkBySource, {

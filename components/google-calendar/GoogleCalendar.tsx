@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useQuery, useAction } from "convex/react";
 import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 import { useProject } from "@/components/providers/ProjectProvider";
+import { useUser } from "@clerk/nextjs";
 import {
   format,
   startOfMonth,
@@ -22,7 +23,6 @@ import {
   CalendarIcon,
   ChevronLeft,
   ChevronRight,
-  Plus,
   RefreshCw,
   ExternalLink,
   Clock,
@@ -33,18 +33,12 @@ import {
   Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogDescription,
-  DialogFooter
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -69,32 +63,26 @@ interface CalendarEventData {
 
 export function GoogleCalendar({ className }: GoogleCalendarProps) {
   const { project, team } = useProject();
+  const { user, isLoaded } = useUser();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedEvent, setSelectedEvent] = useState<CalendarEventData | null>(null);
   const [isEventDialogOpen, setIsEventDialogOpen] = useState(false);
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // New event form state
-  const [newEvent, setNewEvent] = useState({
-    title: "",
-    description: "",
-    startDate: "",
-    startTime: "09:00",
-    endDate: "",
-    endTime: "10:00",
-    allDay: false,
-    location: "",
-    attendees: "",
-  });
+  // Connection state derived from Clerk user
+  const googleAccount = useMemo(() => {
+    console.log("External accounts:", user?.externalAccounts);
+    return user?.externalAccounts.find((acc) =>
+      acc.provider === "google" ||
+      acc.verification?.strategy === "oauth_google"
+    );
+  }, [user]);
+
+  const isConnected = !!googleAccount;
+  const hasCalendarScope = googleAccount?.approvedScopes?.includes("https://www.googleapis.com/auth/calendar.events");
 
   // Convex queries and mutations
-  const connectionStatus = useQuery(apiAny.googleCalendarDb.getConnectionStatus, 
-    team?._id ? { teamId: team._id } : "skip"
-  );
-
-  const calendarEvents = useQuery(apiAny.googleCalendarDb.getProjectEvents, 
+  const calendarEvents = useQuery(apiAny.googleCalendarDb.getProjectEvents,
     project?._id ? {
       projectId: project._id,
       startDate: startOfMonth(subMonths(currentDate, 1)).getTime(),
@@ -102,11 +90,8 @@ export function GoogleCalendar({ className }: GoogleCalendarProps) {
     } : "skip"
   );
 
-  const getAuthUrl = useAction(apiAny.googleCalendar.getAuthUrl);
   const syncEvents = useAction(apiAny.googleCalendar.syncEvents);
-  const createEvent = useAction(apiAny.googleCalendar.createEvent);
   const deleteEvent = useAction(apiAny.googleCalendar.deleteGoogleEvent);
-  const disconnect = useMutation(apiAny.googleCalendarDb.disconnect);
 
   // Calendar navigation
   const goToNextMonth = () => setCurrentDate(addMonths(currentDate, 1));
@@ -119,17 +104,17 @@ export function GoogleCalendar({ className }: GoogleCalendarProps) {
     const monthEnd = endOfMonth(currentDate);
     const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 });
     const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
-    
+
     return eachDayOfInterval({ start: calendarStart, end: calendarEnd });
   }, [currentDate]);
 
   // Get events for a specific day
   const getEventsForDay = useCallback((day: Date) => {
     if (!calendarEvents) return [];
-    
+
     const dayStart = new Date(day).setHours(0, 0, 0, 0);
     const dayEnd = new Date(day).setHours(23, 59, 59, 999);
-    
+
     return calendarEvents.filter((event) => {
       const eventStart = event.startTime;
       const eventEnd = event.endTime;
@@ -137,59 +122,59 @@ export function GoogleCalendar({ className }: GoogleCalendarProps) {
     });
   }, [calendarEvents]);
 
-  // Connect to Google Calendar
   const handleConnect = async () => {
-    if (!team?._id) return;
-    
-    setIsConnecting(true);
-    try {
-      const authUrl = await getAuthUrl({ teamId: team._id });
-      // Open in popup
-      const popup = window.open(authUrl, "google-calendar-auth", "width=600,height=700");
-      
-      // Listen for popup close
-      const checkPopup = setInterval(() => {
-        if (popup?.closed) {
-          clearInterval(checkPopup);
-          setIsConnecting(false);
-        }
-      }, 500);
+    if (!user) return;
+    console.log("Handle connect triggered. Google account found:", !!googleAccount);
 
-      // Listen for success message
-      const handleMessage = (event: MessageEvent) => {
-        if (event.data?.type === "google-calendar-connected") {
-          if (event.data.success) {
-            toast.success("Google Calendar connected successfully!");
-          }
-          setIsConnecting(false);
-          window.removeEventListener("message", handleMessage);
-        }
-      };
-      window.addEventListener("message", handleMessage);
+    try {
+      if (googleAccount) {
+        console.log("Re-authorizing existing account...");
+        // Re-authorize with correct scopes
+        await googleAccount.reauthorize({
+          additionalScopes: [
+            "https://www.googleapis.com/auth/calendar",
+            "https://www.googleapis.com/auth/calendar.events",
+            "https://www.googleapis.com/auth/userinfo.email"
+          ],
+          redirectUrl: window.location.href,
+        });
+      } else {
+        // Create new connection
+        await user.createExternalAccount({
+          strategy: "oauth_google",
+          redirectUrl: window.location.href,
+          additionalScopes: [
+            "https://www.googleapis.com/auth/calendar",
+            "https://www.googleapis.com/auth/calendar.events",
+            "https://www.googleapis.com/auth/userinfo.email"
+          ],
+        });
+      }
     } catch (error) {
       console.error("Error connecting to Google Calendar:", error);
       toast.error("Failed to connect to Google Calendar");
-      setIsConnecting(false);
     }
   };
 
-  // Disconnect from Google Calendar
+  // Disconnect from Google Calendar via Clerk
   const handleDisconnect = async () => {
-    if (!team?._id) return;
-    
-    try {
-      await disconnect({ teamId: team._id });
-      toast.success("Google Calendar disconnected");
-    } catch (error) {
-      console.error("Error disconnecting:", error);
-      toast.error("Failed to disconnect");
+    if (!googleAccount) return;
+
+    if (confirm("Are you sure you want to disconnect Google Calendar?")) {
+      try {
+        await googleAccount.destroy();
+        toast.success("Google Calendar disconnected");
+      } catch (error) {
+        console.error("Error disconnecting:", error);
+        toast.error("Failed to disconnect");
+      }
     }
   };
 
   // Sync events
   const handleSync = async () => {
     if (!project?._id || !team?._id) return;
-    
+
     setIsSyncing(true);
     try {
       const result = await syncEvents({
@@ -197,57 +182,13 @@ export function GoogleCalendar({ className }: GoogleCalendarProps) {
         teamId: team._id,
       });
       toast.success(`Synced ${result.count} events from Google Calendar`);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error syncing events:", error);
-      toast.error("Failed to sync events");
+      const message = error instanceof Error ? error.message : "Failed to sync events";
+      toast.error(message);
+      // If error suggests auth failure, might want to prompt re-auth
     } finally {
       setIsSyncing(false);
-    }
-  };
-
-  // Create new event
-  const handleCreateEvent = async () => {
-    if (!project?._id || !team?._id || !newEvent.title) return;
-
-    try {
-      let startTime: number;
-      let endTime: number;
-
-      if (newEvent.allDay) {
-        startTime = new Date(newEvent.startDate).setHours(0, 0, 0, 0);
-        endTime = new Date(newEvent.endDate || newEvent.startDate).setHours(23, 59, 59, 999);
-      } else {
-        const [startHour, startMin] = newEvent.startTime.split(":").map(Number);
-        const [endHour, endMin] = newEvent.endTime.split(":").map(Number);
-        startTime = new Date(newEvent.startDate).setHours(startHour, startMin, 0, 0);
-        endTime = new Date(newEvent.endDate || newEvent.startDate).setHours(endHour, endMin, 0, 0);
-      }
-
-      const attendees = newEvent.attendees
-        ? newEvent.attendees.split(",").map((e) => e.trim()).filter(Boolean)
-        : undefined;
-
-      await createEvent({
-        projectId: project._id,
-        teamId: team._id,
-        title: newEvent.title,
-        description: newEvent.description || undefined,
-        startTime,
-        endTime,
-        allDay: newEvent.allDay,
-        location: newEvent.location || undefined,
-        attendees,
-      });
-
-      toast.success("Event created successfully!");
-      setIsCreateDialogOpen(false);
-      resetNewEventForm();
-      
-      // Sync to update the view
-      await handleSync();
-    } catch (error) {
-      console.error("Error creating event:", error);
-      toast.error("Failed to create event");
     }
   };
 
@@ -269,29 +210,9 @@ export function GoogleCalendar({ className }: GoogleCalendarProps) {
     }
   };
 
-  // Reset new event form
-  const resetNewEventForm = () => {
-    setNewEvent({
-      title: "",
-      description: "",
-      startDate: "",
-      startTime: "09:00",
-      endDate: "",
-      endTime: "10:00",
-      allDay: false,
-      location: "",
-      attendees: "",
-    });
-  };
-
   // Handle day click
   const handleDayClick = (day: Date) => {
-    setNewEvent((prev) => ({
-      ...prev,
-      startDate: format(day, "yyyy-MM-dd"),
-      endDate: format(day, "yyyy-MM-dd"),
-    }));
-    setIsCreateDialogOpen(true);
+    setCurrentDate(day);
   };
 
   // Handle event click
@@ -319,7 +240,16 @@ export function GoogleCalendar({ className }: GoogleCalendarProps) {
     return colors[colorId || "1"] || "bg-primary";
   };
 
-  if (!connectionStatus?.isConnected) {
+  if (!isLoaded) {
+    return (
+      <div className="flex h-full items-center justify-center p-12">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // If connected via Clerk but scope check fails, or if not connected
+  if (!isConnected || !hasCalendarScope) {
     return (
       <div className={cn("flex flex-col items-center justify-center p-12 space-y-6", className)}>
         <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center">
@@ -328,14 +258,16 @@ export function GoogleCalendar({ className }: GoogleCalendarProps) {
         <div className="text-center space-y-2">
           <h2 className="text-2xl font-semibold">Connect Google Calendar</h2>
           <p className="text-muted-foreground max-w-md">
-            Connect your Google Calendar to sync events, create meetings, and manage your schedule directly from VibePlanner.
+            {isConnected
+              ? "You need to grant calendar permissions to sync events."
+              : "Connect your Google Calendar to sync events, create meetings, and manage your schedule directly from VibePlanner."}
           </p>
         </div>
-        <Button onClick={handleConnect} disabled={isConnecting} size="lg" className="gap-2">
-          {isConnecting ? (
+        <Button onClick={handleConnect} size="lg" className="gap-2">
+          {isConnected ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Connecting...
+              <RefreshCw className="w-4 h-4 ml-2" />
+              Re-authorize Google Calendar
             </>
           ) : (
             <>
@@ -368,25 +300,25 @@ export function GoogleCalendar({ className }: GoogleCalendarProps) {
             Today
           </Button>
         </div>
-        
+
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 text-green-700 rounded-full text-sm">
             <div className="w-2 h-2 bg-green-500 rounded-full" />
-            {connectionStatus.email}
+            {googleAccount.emailAddress}
           </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handleSync} 
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSync}
             disabled={isSyncing}
             className="gap-2"
           >
             <RefreshCw className={cn("w-4 h-4", isSyncing && "animate-spin")} />
             Sync
           </Button>
-          <Button 
-            variant="default" 
-            size="sm" 
+          {/* Button
+            variant="default"
+            size="sm"
             onClick={() => {
               setNewEvent((prev) => ({
                 ...prev,
@@ -399,9 +331,9 @@ export function GoogleCalendar({ className }: GoogleCalendarProps) {
           >
             <Plus className="w-4 h-4" />
             Add Event
-          </Button>
-          <Button 
-            variant="ghost" 
+          </Button> */}
+          <Button
+            variant="ghost"
             size="icon"
             onClick={handleDisconnect}
             title="Disconnect Google Calendar"
@@ -486,7 +418,7 @@ export function GoogleCalendar({ className }: GoogleCalendarProps) {
               {selectedEvent?.title}
             </DialogTitle>
           </DialogHeader>
-          
+
           {selectedEvent && (
             <div className="space-y-4">
               <div className="flex items-center gap-3 text-muted-foreground">
@@ -552,128 +484,6 @@ export function GoogleCalendar({ className }: GoogleCalendarProps) {
               </div>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Create Event Dialog */}
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Create New Event</DialogTitle>
-            <DialogDescription>
-              Add a new event to your Google Calendar
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="title">Event Title</Label>
-              <Input
-                id="title"
-                value={newEvent.title}
-                onChange={(e) => setNewEvent((prev) => ({ ...prev, title: e.target.value }))}
-                placeholder="Enter event title"
-              />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Switch
-                id="allDay"
-                checked={newEvent.allDay}
-                onCheckedChange={(checked) => setNewEvent((prev) => ({ ...prev, allDay: checked }))}
-              />
-              <Label htmlFor="allDay">All day event</Label>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="startDate">Start Date</Label>
-                <Input
-                  id="startDate"
-                  type="date"
-                  value={newEvent.startDate}
-                  onChange={(e) => setNewEvent((prev) => ({ ...prev, startDate: e.target.value }))}
-                />
-              </div>
-              {!newEvent.allDay && (
-                <div>
-                  <Label htmlFor="startTime">Start Time</Label>
-                  <Input
-                    id="startTime"
-                    type="time"
-                    value={newEvent.startTime}
-                    onChange={(e) => setNewEvent((prev) => ({ ...prev, startTime: e.target.value }))}
-                  />
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="endDate">End Date</Label>
-                <Input
-                  id="endDate"
-                  type="date"
-                  value={newEvent.endDate || newEvent.startDate}
-                  onChange={(e) => setNewEvent((prev) => ({ ...prev, endDate: e.target.value }))}
-                />
-              </div>
-              {!newEvent.allDay && (
-                <div>
-                  <Label htmlFor="endTime">End Time</Label>
-                  <Input
-                    id="endTime"
-                    type="time"
-                    value={newEvent.endTime}
-                    onChange={(e) => setNewEvent((prev) => ({ ...prev, endTime: e.target.value }))}
-                  />
-                </div>
-              )}
-            </div>
-
-            <div>
-              <Label htmlFor="location">Location (optional)</Label>
-              <Input
-                id="location"
-                value={newEvent.location}
-                onChange={(e) => setNewEvent((prev) => ({ ...prev, location: e.target.value }))}
-                placeholder="Enter location"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="attendees">Attendees (optional)</Label>
-              <Input
-                id="attendees"
-                value={newEvent.attendees}
-                onChange={(e) => setNewEvent((prev) => ({ ...prev, attendees: e.target.value }))}
-                placeholder="email1@example.com, email2@example.com"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Separate multiple emails with commas
-              </p>
-            </div>
-
-            <div>
-              <Label htmlFor="description">Description (optional)</Label>
-              <Textarea
-                id="description"
-                value={newEvent.description}
-                onChange={(e) => setNewEvent((prev) => ({ ...prev, description: e.target.value }))}
-                placeholder="Enter event description"
-                rows={3}
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleCreateEvent} disabled={!newEvent.title || !newEvent.startDate}>
-              Create Event
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

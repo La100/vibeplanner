@@ -11,10 +11,10 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { 
-  Loader2, 
-  X, 
-  MessageSquare, 
+import {
+  Loader2,
+  X,
+  MessageSquare,
   Plus,
 } from "lucide-react";
 
@@ -48,10 +48,12 @@ export function ChatSidebar({
   onThreadSelect,
   onNewChat,
 }: ChatSidebarProps) {
+
+
   return (
     <aside
       className={cn(
-        "hidden shrink-0 flex-col bg-muted/20 border-r border-border/50 overflow-hidden transition-[width] duration-300 ease-out md:flex md:sticky md:self-start md:top-4 md:h-full",
+        "hidden shrink-0 flex-col bg-sidebar border-r border-border/50 overflow-hidden transition-[width] duration-300 ease-out md:flex md:sticky md:self-start md:top-4 md:h-full",
         showHistory ? "w-80" : "w-0"
       )}
     >
@@ -78,15 +80,16 @@ export function ChatSidebar({
         </div>
 
         <div className="px-4 pb-4">
-          <Button 
-            onClick={onNewChat} 
-            className="w-full justify-start pl-3" 
-            variant="outline" 
+          <Button
+            onClick={onNewChat}
+            className="w-full justify-start pl-3"
+            variant="outline"
             size="sm"
           >
             <Plus className="mr-2 h-4 w-4" />
             New Chat
           </Button>
+
         </div>
 
         <Separator className="opacity-50" />
@@ -106,10 +109,10 @@ export function ChatSidebar({
                   previewRaw.length > 0
                     ? previewRaw
                     : thread.messageCount === 0
-                    ? "No messages yet."
-                    : thread.lastMessageRole === "assistant"
-                    ? "Assistant replied."
-                    : "You replied.";
+                      ? "No messages yet."
+                      : thread.lastMessageRole === "assistant"
+                        ? "Assistant replied."
+                        : "You replied.";
                 const relativeTime = formatDistanceToNow(
                   new Date(thread.lastMessageAt ?? Date.now()),
                   { addSuffix: true }
@@ -152,5 +155,3 @@ export function ChatSidebar({
 }
 
 export default ChatSidebar;
-
-

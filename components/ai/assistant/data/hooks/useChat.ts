@@ -15,6 +15,21 @@ import type { ChatHistoryEntry, SessionTokens } from "../types";
 import { useUIMessages } from "@convex-dev/agent/react";
 
 type UIMessagesResult = ReturnType<typeof useUIMessages>["results"];
+type UIMessageItem = NonNullable<UIMessagesResult>[number];
+type MessagePart = NonNullable<UIMessageItem["parts"]>[number];
+type ToolResultPart = MessagePart & { result?: string };
+type ToolCallishPart = MessagePart & {
+  toolCallId?: string;
+  callId?: string;
+  id?: string;
+  toolName?: string;
+};
+type PersistentCall = {
+  callId: string;
+  status?: string;
+  result?: string;
+  arguments: string;
+};
 
 interface UseAIChatProps {
   projectId: Id<"projects"> | undefined;
@@ -36,7 +51,7 @@ interface UseAIChatReturn {
   showHistory: boolean;
   setShowHistory: (show: boolean) => void;
   isStreaming: boolean;
-  
+
   // Computed
   threadList: Array<{
     threadId: string;
@@ -52,7 +67,7 @@ interface UseAIChatReturn {
   chatIsLoading: boolean;
   previousThreadsCount: number;
   mobileSelectValue: string;
-  
+
   // UIMessages from streaming
   uiMessages: UIMessagesResult;
   streamingStatus: "LoadingFirstPage" | "CanLoadMore" | "Exhausted";
@@ -64,12 +79,12 @@ interface UseAIChatReturn {
     fileSize?: number;
     mode?: string;
   }>;
-  
+
   // Refs
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   abortControllerRef: React.MutableRefObject<AbortController | null>;
-  
+
   // Actions
   handleSendMessage: (
     selectedFiles: File[],
@@ -99,7 +114,22 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
   const [showHistory, setShowHistory] = useState(false);
   const [currentMode, setCurrentMode] = useState<'full' | 'recent' | null>(null);
   const [sessionTokens, setSessionTokens] = useState<SessionTokens>({ total: 0, cost: 0 });
-  
+
+  // Anti-flicker: suppress messages briefly when switching threads to ensure 
+  // useUIMessages clears its cache/stale data
+  const [suppressMessages, setSuppressMessages] = useState(false);
+
+  const setThreadIdWithSuppression = useCallback((id: string | undefined) => {
+    setThreadId(id);
+    // Only suppress if we are setting a valid ID (switching TO a thread)
+    // If setting to undefined (clearing), shouldSubscribe becomes false anyway.
+    if (id) {
+      setSuppressMessages(true);
+      // Short timeout to allow render cycle to clear/reset the hook
+      setTimeout(() => setSuppressMessages(false), 50);
+    }
+  }, []);
+
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -121,7 +151,14 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
   // - Skip if no threadId (empty/new chat state)
   // - For new threads: subscribe anyway (optimistic updates will work)
   // - For existing threads: always subscribe
-  const shouldSubscribe = Boolean(threadId);
+  // - Skip if explicitly suppressed (anti-flicker)
+  const shouldSubscribe = Boolean(threadId) && !suppressMessages;
+
+  // List persistent function calls (pending + confirmed/rejected)
+  const persistentFunctionCalls = useQuery(
+    apiAny.ai.threads.listPendingItems,
+    shouldSubscribe ? { threadId: threadId! } : "skip"
+  );
 
   const streamingHookResult = useUIMessages(
     apiAny.ai.streamingQueries.listThreadMessages,
@@ -130,7 +167,96 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
   );
 
   // Extract results - always from hook when subscribed
-  const uiMessages = shouldSubscribe ? streamingHookResult.results : undefined;
+  const rawUiMessages = shouldSubscribe ? streamingHookResult.results : undefined;
+
+  // Merge persistent status into UI messages
+  const uiMessages = useMemo(() => {
+    if (!rawUiMessages) return undefined;
+    if (!persistentFunctionCalls) return rawUiMessages;
+
+    const callMap = new Map<string, PersistentCall>(
+      persistentFunctionCalls.map((c) => {
+        const call = c as PersistentCall;
+        return [call.callId, call];
+      })
+    );
+
+    return rawUiMessages.map(msg => {
+      if (!msg.parts) return msg;
+
+      let parts = [...msg.parts];
+      let hasUpdates = false;
+
+      // 1. Update existing tool-results with persisted status
+      parts = parts.map(part => {
+        if (part.type.startsWith("tool-result")) {
+          const callId = part.type.replace("tool-result:", "");
+          const persistentCall = callMap.get(callId);
+
+          const partWithResult = part as ToolResultPart;
+          if (persistentCall?.status && partWithResult.result) {
+            try {
+              const currentResult = JSON.parse(partWithResult.result);
+              if (currentResult.status !== persistentCall.status) {
+                hasUpdates = true;
+                const enrichedResult = {
+                  ...currentResult,
+                  status: persistentCall.status,
+                  outcome: persistentCall.result ? JSON.parse(persistentCall.result) : undefined
+                };
+                return {
+                  ...part,
+                  result: JSON.stringify(enrichedResult)
+                };
+              }
+            } catch {
+              return part;
+            }
+          }
+        }
+        return part;
+      });
+
+      // 2. Inject missing tool-results for pending items
+      const toolCallParts = parts.filter((p) => {
+        const part = p as ToolCallishPart;
+        const hasCallId = "toolCallId" in part || "callId" in part || "id" in part;
+        const isToolCallType = typeof part.type === "string" && part.type.startsWith("tool-");
+        return (isToolCallType || hasCallId) && !part.type.startsWith("tool-result");
+      });
+
+      for (const tc of toolCallParts) {
+        const toolCallish = tc as ToolCallishPart;
+        const callId = toolCallish.toolCallId || toolCallish.callId || toolCallish.id;
+
+        if (callId) {
+          const persistentCall = callMap.get(callId);
+          const hasResult = parts.some(p => p.type === `tool-result:${callId}`);
+
+          if (persistentCall && !hasResult && persistentCall.arguments) {
+            hasUpdates = true;
+            parts.push({
+              type: `tool-result:${callId}`,
+              toolCallId: callId,
+              toolName: toolCallish.toolName,
+              result: JSON.stringify({
+                ...JSON.parse(persistentCall.arguments),
+                status: persistentCall.status
+              })
+            } as MessagePart);
+          }
+        }
+      }
+
+      if (!hasUpdates) return msg;
+
+      return {
+        ...msg,
+        parts
+      };
+    });
+  }, [rawUiMessages, persistentFunctionCalls]);
+
   const streamingStatus = shouldSubscribe ? streamingHookResult.status : "Exhausted";
   const loadMoreMessages = streamingHookResult.loadMore;
 
@@ -195,7 +321,7 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
   // Use a ref to track last scroll to avoid excessive scrolling
   const lastScrollRef = useRef(0);
   const uiMessagesLength = uiMessages?.length ?? 0;
-  
+
   useEffect(() => {
     // Only scroll when messages count changes, not during streaming updates
     if (uiMessagesLength > lastScrollRef.current) {
@@ -255,20 +381,20 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
       return;
     }
     setInitialThreadSelectionDone(true);
-    setThreadId(selectedThreadId);
+    setThreadIdWithSuppression(selectedThreadId);
     setChatHistory([]);
     setMessage("");
     setSessionTokens({ total: 0, cost: 0 });
     setCurrentMode(null);
-  }, [threadId]);
+  }, [threadId, setThreadIdWithSuppression]);
 
   const handleNewChat = useCallback(() => {
-    setThreadId(undefined);
+    setThreadIdWithSuppression(undefined);
     setChatHistory([]);
     setMessage("");
     setSessionTokens({ total: 0, cost: 0 });
     setCurrentMode(null);
-  }, []);
+  }, [setThreadIdWithSuppression]);
 
   const handleClearChat = useCallback(async () => {
     if (!threadId || !projectId || !userClerkId) return;
@@ -280,13 +406,13 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
       setCurrentMode(null);
       // Reset threadId to start fresh - this forces useUIMessages to skip
       // and clears any cached/stale streaming data from the agent SDK
-      setThreadId(undefined);
+      setThreadIdWithSuppression(undefined);
       toast.success("Chat cleared");
     } catch (error) {
       console.error("Failed to clear chat:", error);
       toast.error("Failed to clear chat");
     }
-  }, [threadId, projectId, userClerkId, clearThread]);
+  }, [threadId, projectId, userClerkId, clearThread, setThreadIdWithSuppression]);
 
   const handleClearPreviousThreads = useCallback(async () => {
     if (!projectId || !userClerkId) return;
@@ -437,7 +563,7 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
 
       if (!threadId && result?.threadId) {
         console.log("🆔 [CLIENT] Setting new threadId:", result.threadId);
-        setThreadId(result.threadId);
+        setThreadIdWithSuppression(result.threadId);
       }
 
       // isLoading will be turned off when streaming completes
@@ -456,7 +582,7 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
       console.log("🏁 [CLIENT] handleSendMessage finished, isSending = false");
       isSendingRef.current = false;
     }
-  }, [projectId, userClerkId, message, threadId, initiateStreamingMutation, isLoading, isStreaming]);
+  }, [projectId, userClerkId, message, threadId, initiateStreamingMutation, isLoading, isStreaming, setThreadIdWithSuppression]);
 
   // Turn off isLoading when streaming finishes
   useEffect(() => {
@@ -481,11 +607,11 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
     currentMode,
     sessionTokens,
     threadId,
-    setThreadId,
+    setThreadId: setThreadIdWithSuppression,
     showHistory,
     setShowHistory,
     isStreaming,
-    
+
     // Computed
     threadList,
     isThreadListLoading,
@@ -494,18 +620,18 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
     chatIsLoading,
     previousThreadsCount,
     mobileSelectValue,
-    
+
     // UIMessages from streaming
     uiMessages: uiMessages ?? [],
     streamingStatus: streamingStatus as "LoadingFirstPage" | "CanLoadMore" | "Exhausted",
     loadMoreMessages,
     messageMetadataByIndex,
-    
+
     // Refs
     messagesEndRef,
     inputRef,
     abortControllerRef,
-    
+
     // Actions
     handleSendMessage,
     handleStopResponse,

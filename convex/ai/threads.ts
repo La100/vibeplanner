@@ -509,14 +509,26 @@ export const getPendingFunctionCalls = internalQuery({
     functionName: v.string(),
     arguments: v.string(),
     result: v.optional(v.string()),
+    status: v.optional(v.string()),
   })),
   handler: async (ctx, args) => {
-    const calls = await ctx.db
+    const confirmed = await ctx.db
       .query("aiFunctionCalls")
       .withIndex("by_thread_and_status", (q) =>
         q.eq("threadId", args.threadId).eq("status", "confirmed")
       )
       .collect();
+
+    const rejected = await ctx.db
+      .query("aiFunctionCalls")
+      .withIndex("by_thread_and_status", (q) =>
+        q.eq("threadId", args.threadId).eq("status", "rejected")
+      )
+      .collect();
+
+    const calls = [...confirmed, ...rejected];
+    // Sort by creation time to maintain order
+    calls.sort((a, b) => a._creationTime - b._creationTime);
 
     return calls.map(call => ({
       _id: call._id,
@@ -524,6 +536,7 @@ export const getPendingFunctionCalls = internalQuery({
       functionName: call.functionName,
       arguments: call.arguments,
       result: call.result,
+      status: call.status,
     }));
   },
 });
@@ -539,21 +552,102 @@ export const listPendingItems = query({
     functionName: v.string(),
     arguments: v.string(),
     responseId: v.string(),
+    status: v.optional(v.string()),
+    result: v.optional(v.string()),
   })),
   handler: async (ctx, args) => {
+    // const { internal } = await import("../_generated/api");
     const calls = await ctx.db
       .query("aiFunctionCalls")
-      .withIndex("by_thread_and_status", (q) =>
-        q.eq("threadId", args.threadId).eq("status", "pending")
-      )
+      .withIndex("by_thread", (q) => q.eq("threadId", args.threadId))
       .collect();
 
-    return calls.map(call => ({
-      _id: call._id,
-      callId: call.callId,
-      functionName: call.functionName,
-      arguments: call.arguments,
-      responseId: call.responseId,
+    // Filter out replayed calls as they are handled by the agent history
+    // UPDATE: We now KEEP replayed calls so the UI can show them as "Confirmed"
+    const visibleCalls = calls; // calls.filter(call => call.status !== "replayed");
+
+    return await Promise.all(visibleCalls.map(async (call) => {
+      let argsStr = call.arguments;
+      let status = call.status;
+
+      // If replayed, recover the original status (confirmed/rejected) from the result JSON if possible
+      if (status === "replayed" && call.result) {
+        try {
+          const parsedResult = JSON.parse(call.result);
+          if (parsedResult.status === "confirmed" || parsedResult.status === "rejected") {
+            status = parsedResult.status;
+          } else {
+            // Default to confirmed if result exists but no explicit status in it
+            status = "confirmed";
+          }
+        } catch (e) {
+          // If parse fails but result exists, assume confirmed
+          status = "confirmed";
+        }
+      }
+
+      // Enrich update_item arguments with originalItem if missing
+      // Check function name case-insensitive recursively? No, exact match.
+      // We also check "update_multiple_items" if needed, but the bug is reported for "update_item".
+      if (call.functionName === "update_item") {
+        let argsObj: any;
+        try {
+          try {
+            argsObj = JSON.parse(call.arguments);
+          } catch (e) {
+            // If double stringified
+            try {
+              argsObj = JSON.parse(JSON.parse(call.arguments));
+            } catch (e2) {
+              // Return explicit error for client debug
+              return {
+                ...call,
+                arguments: JSON.stringify({ debug_error: "Double parse failed" })
+              };
+            }
+          }
+
+          if (argsObj) {
+            // Ensure we handle both "itemId" and "data.itemId"
+            const type = argsObj.type;
+            const itemId = argsObj.itemId || argsObj.data?.itemId;
+
+            // Debug signal
+            argsObj.debug_server_touched = true;
+
+            if (itemId) {
+              try {
+                const originalItem = await ctx.db.get(itemId as any);
+                if (originalItem) {
+                  argsObj.originalItem = originalItem;
+                } else {
+                  argsObj.debug_error = `Item not found for ID: ${itemId}`;
+                }
+              } catch (dbErr: any) {
+                argsObj.debug_error = `DB Error: ${dbErr.message}`;
+              }
+            } else {
+              argsObj.debug_error = "No itemId found in args";
+            }
+
+            argsStr = JSON.stringify(argsObj);
+          }
+        } catch (error: any) {
+          // Catch all
+          const errObj = { debug_error: `General enrichment error: ${error.message}` };
+          argsStr = JSON.stringify(errObj);
+        }
+      }
+
+      return {
+        _id: call._id,
+        callId: call.callId,
+        functionName: call.functionName,
+        arguments: argsStr,
+        responseId: call.responseId,
+        status: status,
+        result: call.result,
+      };
     }));
   },
 });
@@ -582,6 +676,7 @@ export const markFunctionCallsAsConfirmed = mutation({
     results: v.array(v.object({
       callId: v.string(),
       result: v.optional(v.string()),
+      status: v.optional(v.union(v.literal("confirmed"), v.literal("rejected"))),
     })),
   },
   returns: v.null(),
@@ -596,8 +691,16 @@ export const markFunctionCallsAsConfirmed = mutation({
     for (const call of calls) {
       const result = args.results.find(r => r.callId === call.callId);
       if (result) {
+        // Determine status: explicit status > result presence > rejected
+        let newStatus: "confirmed" | "rejected" = "rejected";
+        if (result.status) {
+          newStatus = result.status;
+        } else if (result.result) {
+          newStatus = "confirmed";
+        }
+
         await ctx.db.patch(call._id, {
-          status: result.result ? "confirmed" : "rejected",
+          status: newStatus,
           result: result.result,
           confirmedAt: Date.now(),
         });

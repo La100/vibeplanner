@@ -6,9 +6,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-display: var(--font-display-serif);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -46,37 +46,37 @@
 
 :root {
   --radius: 0.625rem;
-  --background: #ffffff;
-  --foreground: #1A1A1A;
+  --background: #F3EFE7;
+  --foreground: #000000;
   --card: #FFFFFF;
-  --card-foreground: #1A1A1A;
+  --card-foreground: #000000;
   --popover: #FFFFFF;
-  --popover-foreground: #1A1A1A;
-  --primary: #0E0E0E;
+  --popover-foreground: #000000;
+  --primary: #000000;
   --primary-foreground: #FFFFFF;
-  --secondary: #FFFFFF;
-  --secondary-foreground: #1A1A1A;
-  --muted: #F2EEE6;
-  --muted-foreground: #3C3A37;
-  --accent: #C9B8A0;
-  --accent-foreground: #FFFFFF;
-  --destructive: #C06A3D;
-  --border: #E7E2D9;
-  --input: #E7E2D9;
-  --ring: #0A84FF;
+  --secondary: #EBE5DA;
+  --secondary-foreground: #000000;
+  --muted: #E4DFD5;
+  --muted-foreground: #525252;
+  --accent: #E4DFD5;
+  --accent-foreground: #000000;
+  --destructive: #dc322f;
+  --border: #D8D4CC;
+  --input: #D8D4CC;
+  --ring: #000000;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: #ffffff;
-  --sidebar-foreground: #1A1A1A;
-  --sidebar-primary: #0E0E0E;
+  --sidebar: #F3EFE7;
+  --sidebar-foreground: #000000;
+  --sidebar-primary: #000000;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #FFFFFF;
-  --sidebar-accent-foreground: #1A1A1A;
-  --sidebar-border: #E7E2D9;
-  --sidebar-ring: #0A84FF;
+  --sidebar-accent: #EBE5DA;
+  --sidebar-accent-foreground: #000000;
+  --sidebar-border: #D8D4CC;
+  --sidebar-ring: #000000;
 }
 
 .dark {
@@ -117,10 +117,11 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
   }
-  
+
   /* Global cursor pointer for interactive elements */
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
@@ -137,13 +138,13 @@
   [role="option"]:not([aria-disabled="true"]) {
     cursor: pointer;
   }
-  
+
   /* Specifically for shadcn/ui Button components */
   button[class*="inline-flex"]:not(:disabled),
   button[class*="items-center"]:not(:disabled) {
     cursor: pointer;
   }
-  
+
   /* Disabled state - explicit not-allowed cursor */
   button:disabled,
   [role="button"][aria-disabled="true"],
@@ -169,8 +170,10 @@
 
 /* Hide scrollbar for IE, Edge and Firefox */
 .no-scrollbar {
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
 }
 
 /* Tiptap Editor Styles */
@@ -428,9 +431,12 @@
 }
 
 @keyframes shimmer {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateX(-100%);
   }
+
   50% {
     transform: translateX(100%);
   }
@@ -512,6 +518,7 @@
     opacity: 0;
     transform: translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -586,18 +593,25 @@
 
 /* AI Streaming Animations */
 @keyframes blink {
-  0%, 50% {
+
+  0%,
+  50% {
     opacity: 1;
   }
-  51%, 100% {
+
+  51%,
+  100% {
     opacity: 0;
   }
 }
 
 @keyframes pulse-subtle {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.85;
   }
@@ -612,10 +626,12 @@
 }
 
 @keyframes onboard-float {
+
   0%,
   100% {
     transform: translateY(0px);
   }
+
   50% {
     transform: translateY(18px);
   }
@@ -626,6 +642,7 @@
     opacity: 0;
     transform: translateY(16px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0px);

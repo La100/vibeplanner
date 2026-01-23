@@ -68,9 +68,9 @@ export function SmartDashboard() {
         }
       })();
     } else {
-      // No organization - redirect to organisation
-      console.log("No organization found, redirecting to organisation");
-      router.push("/organisation");
+      // No organization - redirect to onboarding
+      console.log("No organization found, redirecting to onboarding");
+      router.push("/onboarding/step1");
       hasRedirectedRef.current = true;
     }
   }, [isLoaded, organizations, setActive, router]);

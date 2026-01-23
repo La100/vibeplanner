@@ -36,6 +36,7 @@ import {
   LogOut,
   Settings2,
   ChevronDown,
+  Calendar,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -59,6 +60,7 @@ function ProjectSidebarContent() {
     { href: `/organisation/projects/${params.projectSlug}/moodboard`, label: "Moodboard", icon: Image, key: "moodboard", group: "project" },
     { href: `/organisation/projects/${params.projectSlug}/notes`, label: "Notes", icon: StickyNote, key: "notes", group: "project" },
     { href: `/organisation/projects/${params.projectSlug}/contacts`, label: "Contacts", icon: Contact, key: "contacts", group: "project" },
+    { href: `/organisation/projects/${params.projectSlug}/calendar`, label: "Calendar", icon: Calendar, key: "calendar", group: "project" },
     { href: `/organisation/projects/${params.projectSlug}/surveys`, label: "Surveys", icon: ClipboardList, key: "surveys", group: "project" },
     { href: `/organisation/projects/${params.projectSlug}/files`, label: "Files", icon: Files, key: "files", group: "project" },
     { href: `/organisation/projects/${params.projectSlug}/shopping-list`, label: "Materials", icon: ShoppingCart, key: "shopping_list", group: "renovation" },
@@ -174,10 +176,10 @@ function ProjectSidebarContent() {
               href={aiItem.href}
               onClick={handleLinkClick}
               onMouseEnter={() => handleLinkHover(aiItem.href)}
-              className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-all duration-200 shadow-sm"
+              className="flex items-center justify-center gap-2 w-full h-12 px-4 bg-[#000000] text-white hover:bg-black/90 rounded-full transition-all duration-200 shadow-lg hover:shadow-xl hover:-translate-y-0.5"
             >
-              <aiItem.icon className="h-4 w-4" />
-              <span className="text-sm font-semibold tracking-tight">{aiItem.label}</span>
+              <aiItem.icon className="h-5 w-5" />
+              <span className="text-base font-medium tracking-tight">{aiItem.label}</span>
             </Link>
           </SidebarGroupContent>
         </SidebarGroup>

@@ -48,14 +48,14 @@ export const getTeamById = query({
 });
 
 export const getTeamBySlug = query({
-    args: { slug: v.string() },
-    async handler(ctx, args) {
-        const team = await ctx.db
-            .query("teams")
-            .withIndex("by_slug", (q) => q.eq("slug", args.slug))
-            .unique();
-        return team;
-    }
+  args: { slug: v.string() },
+  async handler(ctx, args) {
+    const team = await ctx.db
+      .query("teams")
+      .withIndex("by_slug", (q) => q.eq("slug", args.slug))
+      .unique();
+    return team;
+  }
 });
 
 export const getTeam = query({
@@ -77,7 +77,7 @@ export const getCurrentUserTeamMember = query({
 
     return await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
       )
       .unique();
@@ -104,7 +104,7 @@ export const getTeamMemberByClerkId = internalQuery({
   async handler(ctx, args) {
     return await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", args.teamId).eq("clerkUserId", args.clerkUserId)
       )
       .unique();
@@ -128,7 +128,7 @@ export const getCurrentUserRoleInTeam = query({
 
     const teamMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", team._id).eq("clerkUserId", identity.subject)
       )
       .filter(q => q.eq(q.field("isActive"), true))
@@ -201,6 +201,42 @@ export const getTeamSettings = query({
   }
 });
 
+export const updateTeamTimezone = mutation({
+  args: {
+    teamId: v.id("teams"),
+    timezone: v.string(),
+  },
+  async handler(ctx, args) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const team = await ctx.db.get(args.teamId);
+    if (!team) {
+      throw new Error("Team not found");
+    }
+
+    // Check permissions
+    const teamMember = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", (q) =>
+        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+
+    if (!teamMember || teamMember.role !== "admin") {
+      throw new Error("Only admins can update team settings");
+    }
+
+    await ctx.db.patch(args.teamId, {
+      timezone: args.timezone,
+    });
+
+    return { success: true };
+  },
+});
+
 export const getTeamSettingsByClerkOrg = query({
   args: {
     clerkOrgId: v.string(),
@@ -231,6 +267,7 @@ export const getTeamSettingsByClerkOrg = query({
       name: team.name,
       description: team.description,
       currency: team.currency || "PLN",
+      timezone: team.timezone,
       userRole: teamMember.role,
     };
   }
@@ -351,7 +388,7 @@ export const removeProjectFromCustomer = mutation({
     // Sprawdź uprawnienia wywołującego
     const callerMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
       )
       .unique();
@@ -363,7 +400,7 @@ export const removeProjectFromCustomer = mutation({
     // Znajdź członka zespołu
     const targetMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", project.teamId).eq("clerkUserId", args.clerkUserId)
       )
       .unique();
@@ -375,7 +412,7 @@ export const removeProjectFromCustomer = mutation({
     // Usuń projekt z listy
     const currentProjectIds = targetMember.projectIds || [];
     const filteredProjectIds = currentProjectIds.filter(id => id !== args.projectId);
-    
+
     await ctx.db.patch(targetMember._id, {
       projectIds: filteredProjectIds,
     });
@@ -400,7 +437,7 @@ export const addCustomerToProject = internalMutation({
 
     const teamMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
       )
       .unique();
@@ -433,7 +470,7 @@ export const addCustomerToProject = internalMutation({
       .query("users")
       .filter(q => q.eq(q.field("email"), args.email.toLowerCase()))
       .first();
-    
+
     if (userWithEmail) {
       clerkUserId = userWithEmail.clerkUserId;
       joinedAt = Date.now();
@@ -471,7 +508,7 @@ export const createPendingCustomerInvitation = internalMutation({
         q.eq(q.field("projectId"), args.projectId)
       ))
       .collect();
-    
+
     for (const invitation of existingInvitations) {
       await ctx.db.delete(invitation._id);
     }
@@ -492,7 +529,7 @@ export const cleanupExpiredInvitations = internalMutation({
   args: {},
   async handler(ctx) {
     const now = Date.now();
-    
+
     // Znajdź wygasłe zaproszenia
     const expiredInvitations = await ctx.db
       .query("pendingCustomerInvitations")
@@ -553,12 +590,12 @@ export const getTeamMembersWithUserDetails = internalQuery({
   handler: async (ctx, args) => {
     const project = await ctx.db.get(args.projectId);
     if (!project || !project.teamId) return [];
-    
+
     const members = await ctx.db
       .query("teamMembers")
       .withIndex("by_team", (q) => q.eq("teamId", project.teamId!))
       .collect();
-    
+
     // Get user details for each member
     return await Promise.all(
       members
@@ -586,7 +623,7 @@ export const getTeamMembers = query({
       .query("teamMembers")
       .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
       .collect();
-    
+
     return Promise.all(
       members.map(async (member) => {
         const user = await ctx.db
@@ -605,7 +642,7 @@ export const getTeamMembers = query({
 });
 
 export const getProjectMembers = query({
-  args: { 
+  args: {
     teamId: v.id("teams"),
     projectId: v.optional(v.id("projects"))
   },
@@ -615,7 +652,7 @@ export const getProjectMembers = query({
       .query("teamMembers")
       .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
       .collect();
-    
+
     const result: Array<Record<string, unknown>> = [];
     const processedUserIds = new Set();
 
@@ -625,7 +662,7 @@ export const getProjectMembers = query({
         .query("users")
         .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", member.clerkUserId))
         .unique();
-      
+
       result.push({
         ...member,
         name: user?.name ?? "User without name",
@@ -633,7 +670,7 @@ export const getProjectMembers = query({
         imageUrl: user?.imageUrl,
         source: "teamMember"
       });
-      
+
       processedUserIds.add(member.clerkUserId);
     }
 
@@ -649,11 +686,11 @@ export const getProjectMembers = query({
 
       for (const customer of projectCustomers) {
         const customerUserId = customer.clerkUserId ?? "";
-        
+
         // Sprawdź czy customer nie jest już w wynikach (z teamMembers)
         if (!customer.clerkUserId || !processedUserIds.has(customer.clerkUserId)) {
           let user: Doc<"users"> | null = null;
-          
+
           if (customer.clerkUserId) {
             user = await ctx.db
               .query("users")
@@ -697,7 +734,7 @@ export const removeTeamMember = mutation({
     // Sprawdź uprawnienia wywołującego (musi być admin)
     const callerMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
       )
       .unique();
@@ -709,7 +746,7 @@ export const removeTeamMember = mutation({
     // Find the member to remove
     const targetMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", args.teamId).eq("clerkUserId", args.clerkUserId)
       )
       .unique();
@@ -733,7 +770,7 @@ export const removeTeamMember = mutation({
         .withIndex("by_clerk_user", q => q.eq("clerkUserId", args.clerkUserId))
         .filter(q => q.eq(q.field("teamId"), args.teamId))
         .collect();
-      
+
       for (const customerRecord of customerRecords) {
         await ctx.db.delete(customerRecord._id);
       }
@@ -906,7 +943,7 @@ export const changeTeamMemberRole = mutation({
     // Sprawdź uprawnienia wywołującego (musi być admin)
     const callerMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
       )
       .unique();
@@ -918,7 +955,7 @@ export const changeTeamMemberRole = mutation({
     // Znajdź członka do zmiany
     const targetMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", args.teamId).eq("clerkUserId", args.clerkUserId)
       )
       .unique();
@@ -953,7 +990,7 @@ export const addExistingMemberToProject = mutation({
     // Sprawdź uprawnienia wywołującego
     const callerMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
       )
       .unique();
@@ -965,7 +1002,7 @@ export const addExistingMemberToProject = mutation({
     // Znajdź członka organizacji do dodania
     const targetMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", project.teamId).eq("clerkUserId", args.clerkUserId)
       )
       .unique();
@@ -1041,7 +1078,7 @@ export const getAvailableOrgMembersForProject = query({
     // Sprawdź uprawnienia
     const callerMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
       )
       .unique();
@@ -1072,7 +1109,7 @@ export const getAvailableOrgMembersForProject = query({
     const existingProjectCustomerUserIds = new Set(
       existingProjectCustomers.map(customer => customer.clerkUserId).filter(Boolean)
     );
-    
+
     const existingProjectCustomerEmails = new Set(
       existingProjectCustomers.map(customer => customer.email)
     );
@@ -1084,7 +1121,7 @@ export const getAvailableOrgMembersForProject = query({
           .query("users")
           .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", member.clerkUserId))
           .unique();
-        
+
         return {
           ...member,
           user: user,
@@ -1095,7 +1132,7 @@ export const getAvailableOrgMembersForProject = query({
     // Improved logic: show only those who can be added as project customers
     const availableMembers = allMembersWithUsers.filter(memberWithUser => {
       const { user, ...member } = memberWithUser;
-      
+
       // Admin and Member already have full access to all projects - no need to add them as project customers
       if (member.role === "admin" || member.role === "member") {
         return false;
@@ -1105,7 +1142,7 @@ export const getAvailableOrgMembersForProject = query({
       if (existingProjectCustomerUserIds.has(member.clerkUserId)) {
         return false;
       }
-      
+
       // Also check by email (when the client doesn't have a clerkUserId yet)
       if (user && existingProjectCustomerEmails.has(user.email)) {
         return false;
@@ -1123,7 +1160,7 @@ export const getAvailableOrgMembersForProject = query({
     // Format result with user data
     const membersWithUserData = availableMembers.map(memberWithUser => {
       const { user, ...member } = memberWithUser;
-      
+
       return {
         ...member,
         name: user?.name ?? "Unknown User",
@@ -1163,7 +1200,7 @@ export const debugTeamMembers = query({
           .query("users")
           .withIndex("by_clerk_user_id", q => q.eq("clerkUserId", member.clerkUserId))
           .unique();
-        
+
         return {
           clerkUserId: member.clerkUserId,
           role: member.role,

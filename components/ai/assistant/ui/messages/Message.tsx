@@ -26,10 +26,22 @@ import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const toolResultDataSchema = z.record(z.unknown());
+const titleChangeSchema = z.object({
+  taskId: z.string().optional(),
+  currentTitle: z.string().optional(),
+  originalTitle: z.string().optional(),
+  newTitle: z.string(),
+});
 const pendingActionSchema = z.object({
   type: z.string(),
   operation: z.enum(["create", "edit", "delete", "bulk_create", "bulk_edit"]),
   data: toolResultDataSchema,
+  status: z.string().optional(),
+  outcome: z.unknown().optional(),
+  updates: toolResultDataSchema.optional(),
+  originalItem: toolResultDataSchema.optional(),
+  selection: toolResultDataSchema.optional(),
+  titleChanges: z.array(titleChangeSchema).optional(),
 }).passthrough();
 
 const bulkTasksSchema = z.object({
@@ -92,6 +104,12 @@ function extractPendingItemsFromMessage(message: UIMessage): PendingContentItem[
       if (hasError) continue;
 
       if (parsed.type && parsed.operation && parsed.data) {
+        const callId = part.type.replace("tool-result:", "");
+        const status =
+          parsed.status === "confirmed" || parsed.status === "rejected"
+            ? parsed.status
+            : undefined;
+
         if (parsed.operation === "bulk_create") {
           const bulkTasks = bulkTasksSchema.safeParse(parsed);
           if (bulkTasks.success) {
@@ -100,6 +118,8 @@ function extractPendingItemsFromMessage(message: UIMessage): PendingContentItem[
                 type: "task",
                 operation: "create",
                 data: task as Record<string, unknown>,
+                functionCall: { callId, functionName: "", arguments: "" },
+                status,
               });
             }
             continue;
@@ -112,6 +132,8 @@ function extractPendingItemsFromMessage(message: UIMessage): PendingContentItem[
                 type: "note",
                 operation: "create",
                 data: note as Record<string, unknown>,
+                functionCall: { callId, functionName: "", arguments: "" },
+                status,
               });
             }
             continue;
@@ -124,6 +146,8 @@ function extractPendingItemsFromMessage(message: UIMessage): PendingContentItem[
                 type: "shopping",
                 operation: "create",
                 data: item as Record<string, unknown>,
+                functionCall: { callId, functionName: "", arguments: "" },
+                status,
               });
             }
             continue;
@@ -143,6 +167,8 @@ function extractPendingItemsFromMessage(message: UIMessage): PendingContentItem[
             originalTitle?: string;
             newTitle: string;
           }>,
+          functionCall: { callId, functionName: "", arguments: "" },
+          status,
         });
       }
     }
@@ -247,22 +273,21 @@ type PreviewMessageProps = {
     type: string;
     previewUrl?: string;
   }>;
-  pendingItems?: PendingContentItem[];
-  onConfirmItem?: (index: number) => Promise<void>;
-  onRejectItem?: (index: number) => void | Promise<void>;
-  onEditItem?: (index: number) => void;
+  onConfirmItem?: (index: number | string) => Promise<void>;
+  onRejectItem?: (index: number | string) => void | Promise<void>;
+  onEditItem?: (index: number | string) => void;
   onConfirmAll?: () => Promise<void>;
   onRejectAll?: () => void | Promise<void>;
-  onUpdateItem?: (index: number, updates: Partial<PendingContentItem>) => void;
+  onUpdateItem?: (index: number | string, updates: Partial<PendingContentItem>) => void;
   isProcessing?: boolean;
 };
 
-const PurePreviewMessage = ({
+export const PurePreviewMessage = ({
   message,
   isLoading,
   metadata,
   localAttachments,
-  pendingItems: externalPendingItems,
+  pendingItems,
   onConfirmItem,
   onRejectItem,
   onEditItem,
@@ -270,7 +295,7 @@ const PurePreviewMessage = ({
   onRejectAll,
   onUpdateItem,
   isProcessing,
-}: PreviewMessageProps) => {
+}: PreviewMessageProps & { pendingItems?: PendingContentItem[] }) => {
   const isUser = message.role === "user";
   const textFromParts =
     message.parts?.find(
@@ -296,7 +321,28 @@ const PurePreviewMessage = ({
     [message.parts]
   );
 
-  const inlineItems = externalPendingItems ?? extractPendingItemsFromMessage(message);
+  // Extract items and merge with local pending state for optimistic updates
+  const inlineItems = useMemo(() => {
+    const items = extractPendingItemsFromMessage(message);
+    if (!pendingItems || pendingItems.length === 0) return items;
+
+    return items.map(item => {
+      // Find matching local item by callId
+      const localItem = pendingItems.find(
+        p => p.functionCall?.callId === item.functionCall?.callId
+      );
+
+      // If local item has a status (confirmed/rejected), use it
+      if (localItem?.status) {
+        return {
+          ...item,
+          status: localItem.status
+        };
+      }
+      return item;
+    });
+  }, [message, pendingItems]);
+
   const hasConfirmations = inlineItems.length > 0 && !isLoading;
 
   return (

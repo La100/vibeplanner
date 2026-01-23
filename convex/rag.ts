@@ -93,6 +93,36 @@ export const getProjectSurveys = internalQuery({
   },
 });
 
+export const getTeamContacts = internalQuery({
+  args: { teamSlug: v.string() },
+  returns: v.array(v.any()),
+  handler: async (ctx, args) => {
+    const team = await ctx.db
+      .query("teams")
+      .withIndex("by_slug", (q) => q.eq("slug", args.teamSlug))
+      .unique();
+
+    if (!team) return [];
+
+    return await ctx.db
+      .query("contacts")
+      .withIndex("by_team", (q) => q.eq("teamId", team._id))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
+  },
+});
+
+export const getProjectLaborItems = internalQuery({
+  args: { projectId: v.id("projects") },
+  returns: v.array(v.any()),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("laborItems")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+  },
+});
+
 // Helper queries
 export const getTaskById = internalQuery({
   args: { taskId: v.id("tasks") },

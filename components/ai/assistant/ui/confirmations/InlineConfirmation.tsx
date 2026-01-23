@@ -33,10 +33,10 @@ import { InlineCreationForm } from "./InlineCreationForm";
 interface ConfirmationCardProps {
   item: PendingContentItem;
   index: number;
-  onConfirm: (index: number) => Promise<void>;
-  onReject: (index: number) => void | Promise<void>;
+  onConfirm?: (index: number | string) => Promise<void>;
+  onReject?: (index: number | string) => void | Promise<void>;
   onEdit?: (index: number) => void;
-  onUpdate?: (index: number, updates: Partial<PendingContentItem>) => void;
+  onUpdate?: (index: number | string, updates: Partial<PendingContentItem>) => void;
   isProcessing?: boolean;
 }
 
@@ -47,6 +47,8 @@ const TYPE_COLORS: Record<string, string> = {
   survey: "bg-card border-border/50 shadow-sm",
   contact: "bg-card border-border/50 shadow-sm",
   shoppingSection: "bg-card border-border/50 shadow-sm",
+  labor: "bg-card border-border/50 shadow-sm",
+  laborSection: "bg-card border-border/50 shadow-sm",
 };
 
 const OPERATION_LABELS: Record<string, { label: string; color: string }> = {
@@ -69,7 +71,7 @@ function getCanonicalType(type: PendingContentType): string {
 }
 
 function getTitle(item: PendingContentItem): string {
-  const data = item.data;
+  const data = item.originalItem || item.data;
   return (
     (data?.title as string) ||
     (data?.name as string) ||
@@ -79,7 +81,7 @@ function getTitle(item: PendingContentItem): string {
 }
 
 function getDescription(item: PendingContentItem): string | undefined {
-  const data = item.data;
+  const data = item.originalItem || item.data;
   return (
     (data?.description as string) ||
     (data?.content as string) ||
@@ -139,12 +141,14 @@ export const ConfirmationCard = memo(function ConfirmationCard({
   const [isConfirming, setIsConfirming] = React.useState(false);
   const [expanded, setExpanded] = React.useState(false);
 
-  // Use InlineCreationForm for creation items
-  const type = getCanonicalType(item.type);
-  const supportedTypes = ["task", "note", "shopping", "contact"];
-  const needsInlineForm = supportedTypes.includes(type) && !item.status;
+  const operation = getOperation(item);
+  const canonicalType = getCanonicalType(item.type);
+  const supportedTypes = ["task", "note", "shopping", "labor", "contact", "survey", "shoppingSection", "laborSection"];
 
-  if (needsInlineForm && onUpdate) {
+  const isEditableState = !item.status;
+  const needsInlineForm = supportedTypes.includes(canonicalType) && isEditableState;
+
+  if (needsInlineForm && onUpdate && onConfirm && onReject) {
     return (
       <InlineCreationForm
         item={item}
@@ -156,9 +160,7 @@ export const ConfirmationCard = memo(function ConfirmationCard({
     );
   }
 
-  const canonicalType = getCanonicalType(item.type);
   const colorClass = TYPE_COLORS[canonicalType] || TYPE_COLORS.task;
-  const operation = getOperation(item);
   const operationInfo = OPERATION_LABELS[operation] || OPERATION_LABELS.create;
   const resolvedStatus = item.status;
   const approvalState = getApprovalState(item);
@@ -171,8 +173,9 @@ export const ConfirmationCard = memo(function ConfirmationCard({
     approvalState === "output-denied" ||
     approvalState === "output-error";
   const isAwaitingApproval = approvalState === "approval-requested";
+  const isConfirmed = resolvedStatus === "confirmed" || approvalState === "output-available";
   const resolvedLabel =
-    resolvedStatus === "confirmed" || approvalState === "output-available"
+    isConfirmed
       ? "Confirmed"
       : resolvedStatus === "rejected" || approvalState === "output-denied"
         ? "Rejected"
@@ -189,10 +192,59 @@ export const ConfirmationCard = memo(function ConfirmationCard({
   const title = getTitle(item);
   const description = getDescription(item);
 
+  if (isConfirmed) {
+    return (
+      <div className={cn("rounded-lg border bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800", isProcessing && "opacity-60")}>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="w-full p-3 flex items-center gap-2 hover:bg-green-100 dark:hover:bg-green-900/20 transition-colors text-left"
+        >
+          {expanded ? (
+            <ChevronDown className="h-4 w-4 text-green-600 dark:text-green-400" />
+          ) : (
+            <ChevronUp className="h-4 w-4 rotate-[-90deg] text-green-600 dark:text-green-400" />
+          )}
+          <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
+          <span className="text-sm font-medium text-green-900 dark:text-green-100">{title}</span>
+          <Badge variant="secondary" className="ml-auto text-xs bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+            Confirmed
+          </Badge>
+        </button>
+
+        {expanded && (
+          <div className="px-3 pb-3 pt-1 border-t border-green-200 dark:border-green-800">
+            <dl className="space-y-2 text-sm">
+              {description && (
+                <div>
+                  <dt className="text-green-700 dark:text-green-300 font-medium mb-1">Description:</dt>
+                  <dd className="text-green-900 dark:text-green-100">{description}</dd>
+                </div>
+              )}
+              {Object.entries(item.data).map(([key, value]) => {
+                if (!value || key === "type" || key === "operation" || key === "title" || key === "description") return null;
+                return (
+                  <div key={key}>
+                    <dt className="text-green-700 dark:text-green-300 font-medium capitalize">
+                      {key.replace(/([A-Z])/g, " $1").trim()}:
+                    </dt>
+                    <dd className="text-green-900 dark:text-green-100">
+                      {typeof value === "object" ? JSON.stringify(value) : String(value)}
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const handleConfirm = async () => {
+    if (!onConfirm) return;
     setIsConfirming(true);
     try {
-      await onConfirm(index);
+      await onConfirm(item.functionCall?.callId ?? index);
     } finally {
       setIsConfirming(false);
     }
@@ -206,23 +258,17 @@ export const ConfirmationCard = memo(function ConfirmationCard({
         isProcessing && "opacity-60"
       )}
     >
-      {/* Header */}
       <div className="flex items-start gap-3">
-        {/* Removed Icon Container */}
-
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="secondary" className={cn("text-xs", operationInfo.color)}>
               {operationInfo.label}
             </Badge>
-            {approvalLabel && (
+            {approvalLabel && !isResolved && (
               <Badge
                 variant="secondary"
                 className={cn(
                   "text-xs",
-                  approvalState === "output-available" && "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
-                  approvalState === "output-denied" && "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
-                  approvalState === "output-error" && "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
                   approvalState === "approval-requested" && "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
                 )}
               >
@@ -259,7 +305,6 @@ export const ConfirmationCard = memo(function ConfirmationCard({
         </div>
       </div>
 
-      {/* Expanded details */}
       {expanded && (
         <div className="mt-3 pt-3 border-t border-border/50">
           <dl className="space-y-2 text-sm">
@@ -282,7 +327,6 @@ export const ConfirmationCard = memo(function ConfirmationCard({
         </div>
       )}
 
-      {/* Actions */}
       <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/50">
         <Button
           size="sm"
@@ -309,13 +353,13 @@ export const ConfirmationCard = memo(function ConfirmationCard({
           <span className="text-xs text-muted-foreground">
             {resolvedLabel}
           </span>
-        ) : isAwaitingApproval ? (
+        ) : isAwaitingApproval && onConfirm && onReject ? (
           <>
             <Button
               size="sm"
               variant="ghost"
               className="text-xs h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-              onClick={() => onReject(index)}
+              onClick={() => onReject?.(item.functionCall?.callId ?? index)}
               disabled={isProcessing || isConfirming}
             >
               <X className="h-3 w-3 mr-1" />
@@ -349,6 +393,8 @@ export const ConfirmationCard = memo(function ConfirmationCard({
               Confirm
             </Button>
           </>
+        ) : !onConfirm && !onReject ? (
+          null
         ) : (
           <span className="text-xs text-muted-foreground">Waiting for approval</span>
         )}
@@ -365,12 +411,12 @@ ConfirmationCard.displayName = "ConfirmationCard";
 
 interface InlineConfirmationListProps {
   items: PendingContentItem[];
-  onConfirmItem: (index: number) => Promise<void>;
-  onRejectItem: (index: number) => void | Promise<void>;
+  onConfirmItem?: (index: number | string) => Promise<void>;
+  onRejectItem?: (index: number | string) => void | Promise<void>;
   onEditItem?: (index: number) => void;
   onConfirmAll?: () => Promise<void>;
   onRejectAll?: () => void | Promise<void>;
-  onUpdateItem?: (index: number, updates: Partial<PendingContentItem>) => void;
+  onUpdateItem?: (index: number | string, updates: Partial<PendingContentItem>) => void;
   isProcessing?: boolean;
 }
 
@@ -396,7 +442,7 @@ export function InlineConfirmationList({
   const isInlineFormOnly =
     visibleItems.length === 1 &&
     Boolean(onUpdateItem) &&
-    !visibleItems[0].item.status &&
+    (!visibleItems[0].item.status || visibleItems[0].item.status === "rejected") &&
     ["task", "note", "shopping", "contact"].includes(
       getCanonicalType(visibleItems[0].item.type)
     );
@@ -437,9 +483,21 @@ export function InlineConfirmationList({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="font-medium text-sm">
-            {visibleItems.length} item{visibleItems.length !== 1 ? "s" : ""} to confirm
-          </span>
+          {(() => {
+            const allConfirmed = visibleItems.every(({ item }) => {
+              const approvalState = getApprovalState(item);
+              return item.status === "confirmed" || approvalState === "output-available";
+            });
+
+            return (
+              <span className="font-medium text-sm">
+                {allConfirmed
+                  ? `${visibleItems.length} item${visibleItems.length !== 1 ? "s" : ""} confirmed`
+                  : `${visibleItems.length} item${visibleItems.length !== 1 ? "s" : ""} to confirm`
+                }
+              </span>
+            );
+          })()}
           {isProcessing && (
             <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
           )}
@@ -450,28 +508,31 @@ export function InlineConfirmationList({
           )}
         </div>
 
-        {visibleItems.length > 1 && onConfirmAll && onRejectAll && (
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-xs h-7 text-destructive hover:text-destructive"
-              onClick={onRejectAll}
-              disabled={isProcessing}
-            >
-              Reject All
-            </Button>
-            <Button
-              size="sm"
-              className="text-xs h-7 bg-green-600 hover:bg-green-700 text-white"
-              onClick={onConfirmAll}
-              disabled={isProcessing}
-            >
-              {isProcessing && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-              Confirm All
-            </Button>
-          </div>
-        )}
+        {visibleItems.length > 1 && onConfirmAll && onRejectAll && !visibleItems.every(({ item }) => {
+          const approvalState = getApprovalState(item);
+          return item.status === "confirmed" || approvalState === "output-available";
+        }) && (
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs h-7 text-destructive hover:text-destructive"
+                onClick={onRejectAll}
+                disabled={isProcessing}
+              >
+                Reject All
+              </Button>
+              <Button
+                size="sm"
+                className="text-xs h-7 bg-green-600 hover:bg-green-700 text-white"
+                onClick={onConfirmAll}
+                disabled={isProcessing}
+              >
+                {isProcessing && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                Confirm All
+              </Button>
+            </div>
+          )}
       </div>
 
       {/* Slider container */}

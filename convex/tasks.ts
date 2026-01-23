@@ -7,54 +7,54 @@ const internalAny = internal as any;
 
 // Utility function to check project read access
 const hasProjectAccess = async (ctx: any, projectId: Id<"projects">, requireWriteAccess = false): Promise<boolean> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return false;
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) return false;
 
-    const project = await ctx.db.get(projectId);
-    if (!project) return false;
+  const project = await ctx.db.get(projectId);
+  if (!project) return false;
 
-    const membership = await ctx.db
-        .query("teamMembers")
-        .withIndex("by_team_and_user", (q: any) =>
-            q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
-        )
-        .filter((q: any) => q.eq(q.field("isActive"), true))
-        .first();
+  const membership = await ctx.db
+    .query("teamMembers")
+    .withIndex("by_team_and_user", (q: any) =>
+      q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
+    )
+    .filter((q: any) => q.eq(q.field("isActive"), true))
+    .first();
 
-    if (!membership) return false;
-    
-    if (membership.role === 'admin') {
-        // Admin has full access to all projects
-        return true;
-    }
-    
-    if (membership.role === 'member') {
-        // Member may have limited access to specific projects
-        if (membership.projectIds && membership.projectIds.length > 0) {
-            return membership.projectIds.includes(projectId);
-        }
-        // Member without projectIds has access to all projects (backward compatibility)
-        return true;
-    }
-    
-    if (membership.role === 'customer') {
-        if (requireWriteAccess) return false; // Customers never have write access
-        return membership.projectIds?.includes(projectId) ?? false;
-    }
-    
-    if (membership.role === 'client') {
-        if (requireWriteAccess) return false; // Clients never have write access
-        return membership.projectIds?.includes(projectId) ?? false;
-    }
+  if (!membership) return false;
 
-    return false;
+  if (membership.role === 'admin') {
+    // Admin has full access to all projects
+    return true;
+  }
+
+  if (membership.role === 'member') {
+    // Member may have limited access to specific projects
+    if (membership.projectIds && membership.projectIds.length > 0) {
+      return membership.projectIds.includes(projectId);
+    }
+    // Member without projectIds has access to all projects (backward compatibility)
+    return true;
+  }
+
+  if (membership.role === 'customer') {
+    if (requireWriteAccess) return false; // Customers never have write access
+    return membership.projectIds?.includes(projectId) ?? false;
+  }
+
+  if (membership.role === 'client') {
+    if (requireWriteAccess) return false; // Clients never have write access
+    return membership.projectIds?.includes(projectId) ?? false;
+  }
+
+  return false;
 };
 
 // Utility function to check task read/write access
 const hasTaskAccess = async (ctx: any, taskId: Id<"tasks">, requireWriteAccess = false): Promise<boolean> => {
-    const task = await ctx.db.get(taskId);
-    if (!task) return false;
-    return await hasProjectAccess(ctx, task.projectId, requireWriteAccess);
+  const task = await ctx.db.get(taskId);
+  if (!task) return false;
+  return await hasProjectAccess(ctx, task.projectId, requireWriteAccess);
 }
 
 // ====== QUERIES ======
@@ -97,17 +97,17 @@ export const listProjectTasks = query({
 
     // Apply sorting
     if (args.sortBy) {
-        tasks.sort((a, b) => {
-            const fieldA = a[args.sortBy as keyof typeof a] as any;
-            const fieldB = b[args.sortBy as keyof typeof b] as any;
-            if (fieldA == null && fieldB == null) return 0;
-            if (fieldA == null) return args.sortOrder === 'desc' ? 1 : -1;
-            if (fieldB == null) return args.sortOrder === 'desc' ? -1 : 1;
-            let comparison = 0;
-            if (fieldA > fieldB) comparison = 1;
-            else if (fieldA < fieldB) comparison = -1;
-            return args.sortOrder === 'desc' ? -comparison : comparison;
-        });
+      tasks.sort((a, b) => {
+        const fieldA = a[args.sortBy as keyof typeof a] as any;
+        const fieldB = b[args.sortBy as keyof typeof b] as any;
+        if (fieldA == null && fieldB == null) return 0;
+        if (fieldA == null) return args.sortOrder === 'desc' ? 1 : -1;
+        if (fieldB == null) return args.sortOrder === 'desc' ? -1 : 1;
+        let comparison = 0;
+        if (fieldA > fieldB) comparison = 1;
+        else if (fieldA < fieldB) comparison = -1;
+        return args.sortOrder === 'desc' ? -comparison : comparison;
+      });
     }
 
     return await Promise.all(
@@ -287,7 +287,7 @@ export const getTask = query({
     if (!hasAccess) return null;
     const task = await ctx.db.get(args.taskId);
     if (!task) return null;
-    
+
     let assignedToName, assignedToImageUrl;
     if (task.assignedTo) {
       const user = await ctx.db.query("users").withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.assignedTo!)).unique();
@@ -295,29 +295,29 @@ export const getTask = query({
       assignedToImageUrl = user?.imageUrl;
     }
     const createdByUser = await ctx.db.query("users").withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.createdBy)).unique();
-    
-    return { 
-      ...task, 
-      assignedToName, 
-      assignedToImageUrl, 
-      createdByName: createdByUser?.name 
+
+    return {
+      ...task,
+      assignedToName,
+      assignedToImageUrl,
+      createdByName: createdByUser?.name
     };
   },
 });
 
 export const getCommentsForTask = query({
-    args: { taskId: v.id("tasks") },
-    async handler(ctx, args) {
-        const hasAccess = await hasTaskAccess(ctx, args.taskId);
-        if (!hasAccess) return [];
-        const comments = await ctx.db.query("comments").withIndex("by_task", (q) => q.eq("taskId", args.taskId)).order("desc").collect();
-        return Promise.all(
-            comments.map(async (comment) => {
-                const author = await ctx.db.query("users").withIndex("by_clerk_user_id", q => q.eq("clerkUserId", comment.authorId)).unique();
-                return { ...comment, authorName: author?.name, authorImageUrl: author?.imageUrl };
-            })
-        );
-    }
+  args: { taskId: v.id("tasks") },
+  async handler(ctx, args) {
+    const hasAccess = await hasTaskAccess(ctx, args.taskId);
+    if (!hasAccess) return [];
+    const comments = await ctx.db.query("comments").withIndex("by_task", (q) => q.eq("taskId", args.taskId)).order("desc").collect();
+    return Promise.all(
+      comments.map(async (comment) => {
+        const author = await ctx.db.query("users").withIndex("by_clerk_user_id", q => q.eq("clerkUserId", comment.authorId)).unique();
+        return { ...comment, authorName: author?.name, authorImageUrl: author?.imageUrl };
+      })
+    );
+  }
 });
 
 export const listTeamTasks = query({
@@ -325,12 +325,12 @@ export const listTeamTasks = query({
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
-    
+
     const tasks = await ctx.db
       .query("tasks")
       .withIndex("by_team", q => q.eq("teamId", args.teamId))
       .collect();
-    
+
     const tasksWithProjects = await Promise.all(
       tasks.map(async (task) => {
         const project = await ctx.db.get(task.projectId);
@@ -341,7 +341,7 @@ export const listTeamTasks = query({
         };
       })
     );
-    
+
     return tasksWithProjects;
   }
 });
@@ -409,6 +409,18 @@ export const createTask = mutation({
     });
 
     const targetUserId = args.assignedTo ?? identity.subject;
+
+    let attendees: string[] | undefined;
+    if (args.assignedTo) {
+      const assignee = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", args.assignedTo!))
+        .unique();
+      if (assignee?.email) {
+        attendees = [assignee.email];
+      }
+    }
+
     await ctx.scheduler.runAfter(0, internalAny.googleCalendar.syncTaskEvent, {
       taskId,
       projectId: args.projectId,
@@ -418,6 +430,7 @@ export const createTask = mutation({
       description: args.description,
       startDate: args.startDate,
       endDate: args.endDate,
+      attendees,
     });
 
     return taskId;
@@ -444,7 +457,7 @@ export const updateTask = mutation({
 
     const task = await ctx.db.get(args.taskId);
     if (!task) throw new Error("Task not found");
-    
+
     const { taskId, ...updates } = args;
     const updatePayload = { ...updates, updatedAt: Date.now() };
     const assignedToProvided = Object.prototype.hasOwnProperty.call(updates, "assignedTo");
@@ -464,6 +477,17 @@ export const updateTask = mutation({
       entityType: "task",
     });
 
+    let attendees: string[] | undefined;
+    if (nextAssignedTo) {
+      const assignee = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", nextAssignedTo))
+        .unique();
+      if (assignee?.email) {
+        attendees = [assignee.email];
+      }
+    }
+
     await ctx.scheduler.runAfter(0, internalAny.googleCalendar.syncTaskEvent, {
       taskId: args.taskId,
       projectId: task.projectId,
@@ -473,6 +497,7 @@ export const updateTask = mutation({
       description: updates.description ?? task.description,
       startDate: updates.startDate ?? task.startDate,
       endDate: updates.endDate ?? task.endDate,
+      attendees,
     });
 
     if (prevAssignedTo && prevAssignedTo !== nextAssignedTo) {
@@ -567,27 +592,55 @@ export const assignTask = mutation({
       entityId: args.taskId,
       entityType: "task",
     });
+
+    let attendees: string[] | undefined;
+    if (args.userId) {
+      const assignee = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", args.userId!))
+        .unique();
+      if (assignee?.email) {
+        attendees = [assignee.email];
+      }
+    }
+
+    // We need to use the target user (assignee) as the context for the sync if possible,
+    // or keep using the creator/previous assignee?
+    // In updateTask we used: const targetUserId = nextAssignedTo ?? task.createdBy;
+    const targetUserId = args.userId ?? task.createdBy;
+
+    await ctx.scheduler.runAfter(0, internalAny.googleCalendar.syncTaskEvent, {
+      taskId: args.taskId,
+      projectId: task.projectId,
+      teamId: task.teamId,
+      clerkUserId: targetUserId,
+      title: task.title,
+      description: task.description,
+      startDate: task.startDate,
+      endDate: task.endDate,
+      attendees,
+    });
   },
 });
 
 export const updateTaskContent = mutation({
-    args: { taskId: v.id("tasks"), content: v.string() },
-    async handler(ctx, args) {
-        const hasAccess = await hasTaskAccess(ctx, args.taskId, true);
-        if (!hasAccess) throw new Error("Permission denied.");
-        const task = await ctx.db.get(args.taskId);
-        if (!task) throw new Error("Task not found");
-        await ctx.db.patch(args.taskId, { content: args.content, updatedAt: Date.now() });
-        await ctx.runMutation(internal.activityLog.logActivity, {
-          teamId: task.teamId,
-          projectId: task.projectId,
-          taskId: args.taskId,
-          actionType: "task.content.update",
-          details: { title: task.title },
-          entityId: args.taskId,
-          entityType: "task",
-        });
-    }
+  args: { taskId: v.id("tasks"), content: v.string() },
+  async handler(ctx, args) {
+    const hasAccess = await hasTaskAccess(ctx, args.taskId, true);
+    if (!hasAccess) throw new Error("Permission denied.");
+    const task = await ctx.db.get(args.taskId);
+    if (!task) throw new Error("Task not found");
+    await ctx.db.patch(args.taskId, { content: args.content, updatedAt: Date.now() });
+    await ctx.runMutation(internal.activityLog.logActivity, {
+      teamId: task.teamId,
+      projectId: task.projectId,
+      taskId: args.taskId,
+      actionType: "task.content.update",
+      details: { title: task.title },
+      entityId: args.taskId,
+      entityType: "task",
+    });
+  }
 });
 
 // ====== ACTIONS ======
@@ -595,42 +648,42 @@ export const updateTaskContent = mutation({
 import OpenAI from "openai";
 
 const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export const generateTaskDetailsFromPrompt = action({
-    args: {
-        prompt: v.string(),
-        projectId: v.id("projects"),
-        timezoneOffsetInMinutes: v.number(),
-        taskId: v.optional(v.id("tasks")),
-    },
-    handler: async (ctx, args): Promise<any> => {
-        // 🔒 CHECK SUBSCRIPTION: AI features require Pro+ subscription
-        const subscriptionCheck = await ctx.runQuery(internal.stripe.checkAIFeatureAccessByProject, { 
-            projectId: args.projectId 
-        });
-        
-        if (!subscriptionCheck.allowed) {
-            throw new Error(subscriptionCheck.message || "🚫 AI features require Pro or Enterprise subscription. Please upgrade your plan to use AI task generation.");
-        }
+  args: {
+    prompt: v.string(),
+    projectId: v.id("projects"),
+    timezoneOffsetInMinutes: v.number(),
+    taskId: v.optional(v.id("tasks")),
+  },
+  handler: async (ctx, args): Promise<any> => {
+    // 🔒 CHECK SUBSCRIPTION: AI features require Pro+ subscription
+    const subscriptionCheck = await ctx.runQuery(internal.stripe.checkAIFeatureAccessByProject, {
+      projectId: args.projectId
+    });
 
-        const teamMembers: any[] = await ctx.runQuery(internal.teams.getTeamMembersForIndexing, { projectId: args.projectId });
-        const memberList = teamMembers.map((m: any) => ({
-            name: m.name || m.email || 'Unknown User',
-            email: m.email,
-            id: m.clerkUserId
-        }));
+    if (!subscriptionCheck.allowed) {
+      throw new Error(subscriptionCheck.message || "🚫 AI features require Pro or Enterprise subscription. Please upgrade your plan to use AI task generation.");
+    }
 
-        const offsetHours = -args.timezoneOffsetInMinutes / 60;
-        const offsetSign = offsetHours >= 0 ? "+" : "-";
-        const offsetString = `UTC${offsetSign}${String(Math.floor(Math.abs(offsetHours))).padStart(2, '0')}:${String(Math.abs(args.timezoneOffsetInMinutes) % 60).padStart(2, '0')}`;
+    const teamMembers: any[] = await ctx.runQuery(internal.teams.getTeamMembersForIndexing, { projectId: args.projectId });
+    const memberList = teamMembers.map((m: any) => ({
+      name: m.name || m.email || 'Unknown User',
+      email: m.email,
+      id: m.clerkUserId
+    }));
 
-        let taskContext = "";
-        if (args.taskId) {
-            const task = await ctx.runQuery(api.tasks.getTask, { taskId: args.taskId });
-            if (task) {
-                taskContext = `
+    const offsetHours = -args.timezoneOffsetInMinutes / 60;
+    const offsetSign = offsetHours >= 0 ? "+" : "-";
+    const offsetString = `UTC${offsetSign}${String(Math.floor(Math.abs(offsetHours))).padStart(2, '0')}:${String(Math.abs(args.timezoneOffsetInMinutes) % 60).padStart(2, '0')}`;
+
+    let taskContext = "";
+    if (args.taskId) {
+      const task = await ctx.runQuery(api.tasks.getTask, { taskId: args.taskId });
+      if (task) {
+        taskContext = `
 The user is editing an existing task. Here is the current state of the task:
 - Current Title: ${task.title}
 - Current Description: ${task.description || 'N/A'}
@@ -642,10 +695,10 @@ The user is editing an existing task. Here is the current state of the task:
 
 Your goal is to intelligently modify this task based on the user's prompt. For example, if the user says 'add X to the description', you must append 'X' to the current description. If the user asks to add a tag, append it to the existing array of tags. Do not just replace fields unless the user's intent is clearly to replace.
 `;
-            }
-        }
+      }
+    }
 
-        const systemPrompt: string = `
+    const systemPrompt: string = `
 You are an intelligent assistant for a project management app.
 Parse the user's request to extract task properties into a JSON object.
 Today's date is ${new Date().toISOString().split('T')[0]}.
@@ -675,49 +728,49 @@ ${JSON.stringify(memberList, null, 2)}
 Analyze the following prompt and return ONLY the JSON object.
 Prompt: "${args.prompt}"
 `;
-        try {
-            const response = await openai.chat.completions.create({
-                model: "gpt-5",
-                messages: [{ role: "system", content: systemPrompt }],
-                response_format: { type: "json_object" },
-            });
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-5",
+        messages: [{ role: "system", content: systemPrompt }],
+        response_format: { type: "json_object" },
+      });
 
-            const jsonResponse: string | null = response.choices[0].message.content;
-            if (!jsonResponse) {
-                throw new Error("AI did not return a response.");
-            }
+      const jsonResponse: string | null = response.choices[0].message.content;
+      if (!jsonResponse) {
+        throw new Error("AI did not return a response.");
+      }
 
-            return JSON.parse(jsonResponse);
+      return JSON.parse(jsonResponse);
 
-        } catch (error) {
-            console.error("Error parsing task from AI:", error);
-            throw new Error("Failed to generate task details from prompt.");
-        }
-    },
+    } catch (error) {
+      console.error("Error parsing task from AI:", error);
+      throw new Error("Failed to generate task details from prompt.");
+    }
+  },
 });
 
 // ====== HELPER FUNCTIONS FOR INCREMENTAL INDEXING ======
 
 export const getTaskById = internalQuery({
-    args: { taskId: v.id("tasks") },
-    handler: async (ctx, args) => {
-        return await ctx.db.get(args.taskId);
-    },
+  args: { taskId: v.id("tasks") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.taskId);
+  },
 });
 
 export const getTasksChangedAfter = internalQuery({
-    args: { 
-        projectId: v.id("projects"), 
-        since: v.number() 
-    },
-    handler: async (ctx, args) => {
-        return await ctx.db
-            .query("tasks")
-            .withIndex("by_project", q => q.eq("projectId", args.projectId))
-            .filter(q => q.or(
-                q.gt(q.field("_creationTime"), args.since),
-                q.gt(q.field("updatedAt"), args.since)
-            ))
-            .collect();
-    },
+  args: {
+    projectId: v.id("projects"),
+    since: v.number()
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("tasks")
+      .withIndex("by_project", q => q.eq("projectId", args.projectId))
+      .filter(q => q.or(
+        q.gt(q.field("_creationTime"), args.since),
+        q.gt(q.field("updatedAt"), args.since)
+      ))
+      .collect();
+  },
 });

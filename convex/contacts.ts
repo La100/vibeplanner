@@ -10,7 +10,7 @@ export const getContacts = query({
     search: v.optional(v.string()),
     type: v.optional(v.union(
       v.literal("contractor"),
-      v.literal("supplier"), 
+      v.literal("supplier"),
       v.literal("subcontractor"),
       v.literal("other")
     )),
@@ -38,7 +38,7 @@ export const getContacts = query({
     // Verify user is member of this team
     const teamMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", team._id).eq("clerkUserId", identity.subject)
       )
       .filter(q => q.eq(q.field("isActive"), true))
@@ -55,7 +55,7 @@ export const getContacts = query({
 
     // Apply type filter
     if (args.type) {
-      contactsQuery = contactsQuery.filter((q) => 
+      contactsQuery = contactsQuery.filter((q) =>
         q.eq(q.field("type"), args.type)
       );
     }
@@ -65,13 +65,13 @@ export const getContacts = query({
     // Apply search filter
     if (args.search) {
       const searchTerm = args.search.toLowerCase();
-      return contacts.filter(contact => 
+      return contacts.filter(contact =>
         contact.name.toLowerCase().includes(searchTerm) ||
         contact.companyName?.toLowerCase().includes(searchTerm) ||
         contact.email?.toLowerCase().includes(searchTerm) ||
         contact.phone?.toLowerCase().includes(searchTerm) ||
         contact.city?.toLowerCase().includes(searchTerm) ||
-false
+        false
       );
     }
 
@@ -102,7 +102,7 @@ export const getContact = query({
     // Verify user is member of this team
     const teamMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", team._id).eq("clerkUserId", identity.subject)
       )
       .filter(q => q.eq(q.field("isActive"), true))
@@ -132,7 +132,7 @@ export const createContact = mutation({
     type: v.union(
       v.literal("contractor"),
       v.literal("supplier"),
-      v.literal("subcontractor"), 
+      v.literal("subcontractor"),
       v.literal("other")
     ),
     notes: v.optional(v.string()),
@@ -156,7 +156,7 @@ export const createContact = mutation({
     // Verify user is member of this team
     const teamMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", team._id).eq("clerkUserId", identity.subject)
       )
       .filter(q => q.eq(q.field("isActive"), true))
@@ -238,7 +238,7 @@ export const updateContact = mutation({
     // Verify user is member of this team
     const teamMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", team._id).eq("clerkUserId", identity.subject)
       )
       .filter(q => q.eq(q.field("isActive"), true))
@@ -299,7 +299,7 @@ export const deleteContact = mutation({
     // Verify user is member of this team
     const teamMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", team._id).eq("clerkUserId", identity.subject)
       )
       .filter(q => q.eq(q.field("isActive"), true))
@@ -349,7 +349,7 @@ export const getProjectContacts = query({
     // Verify user is member of this team
     const teamMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", team._id).eq("clerkUserId", identity.subject)
       )
       .filter(q => q.eq(q.field("isActive"), true))
@@ -380,6 +380,13 @@ export const getProjectContacts = query({
     );
 
     return contacts.filter(Boolean);
+  },
+});
+
+export const getContactById = internalQuery({
+  args: { contactId: v.id("contacts") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.contactId);
   },
 });
 
@@ -415,7 +422,7 @@ export const assignContactToProject = mutation({
     // Verify user is member of this team
     const teamMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", team._id).eq("clerkUserId", identity.subject)
       )
       .filter(q => q.eq(q.field("isActive"), true))
@@ -432,7 +439,7 @@ export const assignContactToProject = mutation({
     // Check if already assigned
     const existing = await ctx.db
       .query("projectContacts")
-      .withIndex("by_project_and_contact", (q) => 
+      .withIndex("by_project_and_contact", (q) =>
         q.eq("projectId", args.projectId).eq("contactId", args.contactId))
       .filter((q) => q.eq(q.field("isActive"), true))
       .first();
@@ -482,7 +489,7 @@ export const removeContactFromProject = mutation({
     // Verify user is member of this team
     const teamMember = await ctx.db
       .query("teamMembers")
-      .withIndex("by_team_and_user", q => 
+      .withIndex("by_team_and_user", q =>
         q.eq("teamId", team._id).eq("clerkUserId", identity.subject)
       )
       .filter(q => q.eq(q.field("isActive"), true))
@@ -495,7 +502,7 @@ export const removeContactFromProject = mutation({
     // Find and deactivate assignment
     const assignment = await ctx.db
       .query("projectContacts")
-      .withIndex("by_project_and_contact", (q) => 
+      .withIndex("by_project_and_contact", (q) =>
         q.eq("projectId", args.projectId).eq("contactId", args.contactId))
       .filter((q) => q.eq(q.field("isActive"), true))
       .first();

@@ -2,6 +2,8 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 
+const internalAny = internal as any;
+
 // Common unit types for labor
 export const LABOR_UNITS = [
   "m²",      // square meters
@@ -25,6 +27,13 @@ export const getLaborSections = query({
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .order("asc")
       .collect();
+  },
+});
+
+export const getLaborSection = query({
+  args: { sectionId: v.id("laborSections") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.sectionId);
   },
 });
 
@@ -133,6 +142,8 @@ export const createLaborItem = mutation({
     unitPrice: v.optional(v.number()),
     sectionId: v.optional(v.union(v.id("laborSections"), v.null())),
     assignedTo: v.optional(v.string()),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -171,6 +182,34 @@ export const createLaborItem = mutation({
       },
     });
 
+    // Sync to Google Calendar
+    if (identity.subject) {
+      let attendees: string[] | undefined;
+      if (args.assignedTo) {
+        const assignee = await ctx.db
+          .query("users")
+          .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", args.assignedTo!))
+          .unique();
+        if (assignee?.email) {
+          attendees = [assignee.email];
+        }
+      }
+
+      await ctx.scheduler.runAfter(0, internalAny.googleCalendar.syncLaborEvent, {
+        itemId,
+        projectId: args.projectId,
+        teamId: project.teamId,
+        clerkUserId: identity.subject,
+        name: args.name,
+        notes: args.notes,
+        quantity: args.quantity,
+        unit: args.unit,
+        startDate: args.startDate,
+        endDate: args.endDate,
+        attendees,
+      });
+    }
+
     return itemId;
   },
 });
@@ -185,6 +224,8 @@ export const updateLaborItem = mutation({
     unitPrice: v.optional(v.number()),
     sectionId: v.optional(v.union(v.id("laborSections"), v.null())),
     assignedTo: v.optional(v.string()),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -222,6 +263,38 @@ export const updateLaborItem = mutation({
       },
     });
 
+    // Sync to Google Calendar
+    if (identity.subject) {
+      // Fetch full item again to get latest values if some were optional
+      const updatedItem = await ctx.db.get(itemId);
+      if (updatedItem) {
+        let attendees: string[] | undefined;
+        if (updatedItem.assignedTo) {
+          const assignee = await ctx.db
+            .query("users")
+            .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", updatedItem.assignedTo!))
+            .unique();
+          if (assignee?.email) {
+            attendees = [assignee.email];
+          }
+        }
+
+        await ctx.scheduler.runAfter(0, internalAny.googleCalendar.syncLaborEvent, {
+          itemId,
+          projectId: updatedItem.projectId,
+          teamId: updatedItem.teamId,
+          clerkUserId: identity.subject,
+          name: updatedItem.name,
+          notes: updatedItem.notes,
+          quantity: updatedItem.quantity,
+          unit: updatedItem.unit,
+          startDate: updatedItem.startDate,
+          endDate: updatedItem.endDate,
+          attendees,
+        });
+      }
+    }
+
     return args.itemId;
   },
 });
@@ -247,6 +320,16 @@ export const deleteLaborItem = mutation({
     });
 
     await ctx.db.delete(args.itemId);
+
+    // Remove from Google Calendar
+    if (identity.subject) {
+      await ctx.scheduler.runAfter(0, internalAny.googleCalendar.deleteGoogleEventForSource, {
+        sourceType: "labor",
+        sourceId: args.itemId,
+        clerkUserId: identity.subject,
+        teamId: item.teamId,
+      });
+    }
 
     return args.itemId;
   },

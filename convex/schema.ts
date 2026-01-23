@@ -83,6 +83,7 @@ export default defineSchema({
     })),
     // Simple AI tokens field - manually editable in dashboard
     aiTokens: v.optional(v.number()), // Total tokens available for this team
+    timezone: v.optional(v.string()), // Team timezone (e.g. "Europe/Warsaw")
   })
     .index("by_clerk_org", ["clerkOrgId"])
     .index("by_slug", ["slug"])
@@ -168,17 +169,17 @@ export default defineSchema({
     projectId: v.id("projects"),
     teamId: v.id("teams"),
     status: v.union(
-        v.literal("todo"),
-        v.literal("in_progress"),
-        v.literal("review"),
-        v.literal("done")
+      v.literal("todo"),
+      v.literal("in_progress"),
+      v.literal("review"),
+      v.literal("done")
     ),
     priority: v.optional(v.union(
-        v.literal("low"),
-        v.literal("medium"),
-        v.literal("high"),
-        v.literal("urgent"),
-        v.null()
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high"),
+      v.literal("urgent"),
+      v.null()
     )),
     assignedTo: v.optional(v.union(v.string(), v.null())), // Clerk user ID
     createdBy: v.string(), // Clerk user ID
@@ -234,7 +235,7 @@ export default defineSchema({
     extractedText: v.optional(v.string()), // Text extracted from file
     textExtractionStatus: v.optional(v.union(
       v.literal("pending"),
-      v.literal("processing"), 
+      v.literal("processing"),
       v.literal("completed"),
       v.literal("failed")
     )),
@@ -367,7 +368,7 @@ export default defineSchema({
     dimensions: 1536,
     filterFields: ["projectId"],
   }),
-    
+
   shoppingListSections: defineTable({
     name: v.string(),
     projectId: v.id("projects"),
@@ -384,10 +385,10 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
     buyBefore: v.optional(v.number()),
     priority: v.optional(v.union(
-        v.literal("low"),
-        v.literal("medium"),
-        v.literal("high"),
-        v.literal("urgent")
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high"),
+      v.literal("urgent")
     )),
     imageUrl: v.optional(v.string()),
     productLink: v.optional(v.string()),
@@ -414,9 +415,9 @@ export default defineSchema({
     assignedTo: v.optional(v.string()), // Clerk user ID
     updatedAt: v.optional(v.number()),
   })
-  .index("by_project", ["projectId"])
-  .index("by_section", ["sectionId"])
-  .index("by_status", ["realizationStatus"]),
+    .index("by_project", ["projectId"])
+    .index("by_section", ["sectionId"])
+    .index("by_status", ["realizationStatus"]),
 
   // Labor sections for grouping labor items
   laborSections: defineTable({
@@ -441,6 +442,8 @@ export default defineSchema({
     teamId: v.id("teams"),
     createdBy: v.string(), // Clerk user ID
     assignedTo: v.optional(v.string()), // Clerk user ID (contractor)
+    startDate: v.optional(v.number()), // Planned start
+    endDate: v.optional(v.number()), // Planned end
     updatedAt: v.optional(v.number()),
   })
     .index("by_project", ["projectId"])
@@ -610,7 +613,7 @@ export default defineSchema({
     .index("by_question", ["questionId"])
     .index("by_survey", ["surveyId"]),
 
-  
+
 
   // Contacts/Address Book
   contacts: defineTable({
@@ -686,8 +689,8 @@ export default defineSchema({
       )
     ),
     requestType: v.union(
-      v.literal("chat"), 
-      v.literal("embedding"), 
+      v.literal("chat"),
+      v.literal("embedding"),
       v.literal("other")
     ),
     inputTokens: v.number(),
@@ -870,21 +873,7 @@ export default defineSchema({
     .index("by_thread_and_status", ["threadId", "status"])
     .index("by_response_id", ["responseId"]),
 
-  // Google Calendar OAuth Tokens - stores user's Google Calendar access
-  googleCalendarTokens: defineTable({
-    clerkUserId: v.string(),
-    teamId: v.id("teams"),
-    accessToken: v.string(),
-    refreshToken: v.string(),
-    expiresAt: v.number(), // Unix timestamp when access token expires
-    email: v.optional(v.string()), // Google account email
-    calendarId: v.optional(v.string()), // Primary calendar ID
-    isConnected: v.boolean(),
-    lastSyncAt: v.optional(v.number()),
-  })
-    .index("by_user", ["clerkUserId"])
-    .index("by_team", ["teamId"])
-    .index("by_user_and_team", ["clerkUserId", "teamId"]),
+
 
   // Google Calendar Events Cache - synced events from Google Calendar
   googleCalendarEvents: defineTable({
@@ -907,6 +896,11 @@ export default defineSchema({
     status: v.optional(v.string()), // confirmed, tentative, cancelled
     colorId: v.optional(v.string()),
     lastSyncAt: v.number(),
+    sourceType: v.optional(v.union(
+      v.literal("task"),
+      v.literal("shopping"),
+      v.literal("labor")
+    )),
   })
     .index("by_project", ["projectId"])
     .index("by_team", ["teamId"])
@@ -915,7 +909,7 @@ export default defineSchema({
 
   // Google Calendar Source Links - maps internal items to Google events
   googleCalendarLinks: defineTable({
-    sourceType: v.union(v.literal("task"), v.literal("shopping")),
+    sourceType: v.union(v.literal("task"), v.literal("shopping"), v.literal("labor")),
     sourceId: v.string(),
     projectId: v.id("projects"),
     teamId: v.id("teams"),

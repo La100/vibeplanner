@@ -8,7 +8,8 @@
     "dev:backend": "convex dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "elo": "bash ./elo"
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.52",

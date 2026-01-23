@@ -23,7 +23,6 @@ import { toast } from "sonner";
 import {
   Loader2,
   MessageSquare,
-  RefreshCcw,
   Plus,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -40,7 +39,7 @@ import { ACCEPTED_FILE_TYPES, MAX_FILE_SIZE_BYTES } from "./config";
 // AI Assistant - UI Layer
 import { MessageList } from "./ui/messages";
 import { Sidebar } from "./ui";
-import { ConfirmationDialog } from "./ui/confirmations";
+
 
 // AI Assistant - Shared
 import { AISubscriptionWall } from "@/components/ai/shared";
@@ -123,7 +122,7 @@ const AIAssistant = () => {
     chatIsLoading,
     handleSendMessage: sendMessageWithFile,
     handleStopResponse,
-    handleClearChat,
+
     handleNewChat,
     handleThreadSelect: selectThread,
     // Streaming-related
@@ -138,17 +137,10 @@ const AIAssistant = () => {
   // Pending items hook - manages AI suggestions and confirmations
   const {
     pendingItems,
-    currentItemIndex,
     setCurrentItemIndex,
-    isConfirmationDialogOpen,
     setIsConfirmationDialogOpen,
     setShowConfirmationGrid,
-    isCreatingContent,
     isBulkProcessing,
-    handleContentConfirm,
-    handleContentCancel,
-    handleContentEdit,
-    handleContentDialogClose,
     handleConfirmAll,
     handleConfirmItem,
     handleRejectItem,
@@ -220,7 +212,7 @@ const AIAssistant = () => {
   useEffect(() => {
     // Only clear when switching to a DIFFERENT thread (not when setting initial threadId)
     const isThreadSwitch = prevThreadIdRef.current !== undefined &&
-                          prevThreadIdRef.current !== threadId;
+      prevThreadIdRef.current !== threadId;
 
     if (isThreadSwitch) {
       setLocalMessageAttachments((prev) => {
@@ -243,8 +235,14 @@ const AIAssistant = () => {
     if (!pendingUserMessage || pendingMessageCountRef.current === null) return;
 
     // Clear pending message when we have actual messages from streaming
-    // Add small delay to prevent flickering during optimistic -> streaming transition
-    if (uiMessages.length > pendingMessageCountRef.current) {
+    // Check if we have at least one more message AND if there's a new user message
+    const hasNewMessages = uiMessages.length > pendingMessageCountRef.current;
+    const lastMessage = uiMessages[uiMessages.length - 1];
+    const hasUserMessage = lastMessage?.role === "user" ||
+      (uiMessages.length > 0 &&
+        uiMessages.some((msg, idx) => idx > pendingMessageCountRef.current! && msg.role === "user"));
+
+    if (hasNewMessages && hasUserMessage) {
       // Use setTimeout to ensure smooth transition without visual gap
       const timeoutId = setTimeout(() => {
         setPendingUserMessage(null);
@@ -253,7 +251,7 @@ const AIAssistant = () => {
 
       return () => clearTimeout(timeoutId);
     }
-  }, [uiMessages.length, pendingUserMessage]);
+  }, [uiMessages.length, uiMessages, pendingUserMessage]);
 
   const handleThreadSelect = (selectedThreadId: string) => {
     selectThread(selectedThreadId);
@@ -269,13 +267,7 @@ const AIAssistant = () => {
     updateSessionParam(undefined);
   };
 
-  const handleClearChatClick = async () => {
-    suppressSessionSyncRef.current = true;
-    suppressedSessionParamRef.current = sessionParam;
-    await handleClearChat();
-    lastSessionParamRef.current = sessionParam;
-    updateSessionParam(undefined);
-  };
+
 
   const convertPromptFiles = async (files: FileUIPart[]) => {
     const uploadFiles: File[] = [];
@@ -320,23 +312,7 @@ const AIAssistant = () => {
     if (pendingItems.some((item) => !item.status)) {
       const rejectedCount = await handleAutoRejectPendingItems();
       if (rejectedCount > 0) {
-        const messageText = `❌ Odrzucono ${rejectedCount} propozycj${rejectedCount === 1 ? "e" : "i"} automatycznie po wyslaniu nowej wiadomosci.`;
-        const timestamp = Date.now();
-        setLocalMessages((prev) => [
-          ...prev,
-          {
-            id: `local-auto-reject-${timestamp}`,
-            key: `local-auto-reject-${timestamp}`,
-            role: "assistant",
-            content: messageText,
-            text: messageText,
-            parts: [{ type: "text", text: messageText }],
-            order: (uiMessages?.length ?? 0) + prev.length,
-            stepOrder: (uiMessages?.length ?? 0) + prev.length,
-            status: "success",
-            _creationTime: timestamp,
-          } as UIMessage,
-        ]);
+        // Silently rejected - no user notification needed per request
       }
     }
 
@@ -399,9 +375,13 @@ const AIAssistant = () => {
   const submitStatus = (isStreaming ? "streaming" : isLoading ? "submitted" : "ready") as ChatStatus;
   const allMessages = [...(uiMessages ?? []), ...localMessages];
 
+  // Calculate if the pending message is now redundant because it appeared in uiMessages
+  const hasNewMessages = pendingMessageCountRef.current !== null && uiMessages.length > pendingMessageCountRef.current;
+  const effectivePendingUserMessage = hasNewMessages ? null : pendingUserMessage;
+
   // ==================== MAIN RENDER ====================
 
-  const shouldShowChatLoading = chatIsLoading && uiMessages.length === 0;
+  const shouldShowChatLoading = chatIsLoading && uiMessages.length === 0 && !effectivePendingUserMessage;
 
   const isQuotaBlocked = !!(
     aiAccess &&
@@ -588,18 +568,7 @@ const AIAssistant = () => {
               <span className="sr-only">Toggle chat history</span>
               <MessageSquare className="h-5 w-5" />
             </Button>
-            {threadId && (
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={handleClearChatClick}
-                className="h-10 w-10 rounded-full"
-                title="Wyczyść bieżącą rozmowę"
-              >
-                <span className="sr-only">Clear chat</span>
-                <RefreshCcw className="h-4 w-4" />
-              </Button>
-            )}
+
           </div>
 
           <div className="flex flex-1 min-h-0 flex-col">
@@ -611,7 +580,7 @@ const AIAssistant = () => {
               <MessageList
                 messages={allMessages}
                 status={submitStatus}
-                pendingUserMessage={pendingUserMessage}
+                pendingUserMessage={effectivePendingUserMessage}
                 pendingItems={pendingItems as PendingContentItem[]}
                 onConfirmItem={handleConfirmItem}
                 onRejectItem={handleRejectItem}
@@ -619,7 +588,13 @@ const AIAssistant = () => {
                   handleEditItem(idx);
                   setShowConfirmationGrid(false);
                   setIsConfirmationDialogOpen(true);
-                  setCurrentItemIndex(idx);
+                  const resolvedIndex =
+                    typeof idx === "number"
+                      ? idx
+                      : pendingItems.findIndex((item) => item.functionCall?.callId === idx);
+                  if (resolvedIndex >= 0) {
+                    setCurrentItemIndex(resolvedIndex);
+                  }
                 }}
                 onConfirmAll={handleConfirmAll}
                 onRejectAll={handleRejectAll}
@@ -672,19 +647,7 @@ const AIAssistant = () => {
 
       {/* Note: Confirmation dialogs removed - inline confirmations now handle all pending items display */
         /* Re-added ConfirmationDialog to support editing from inline items */
-        pendingItems[currentItemIndex] && (
-          <ConfirmationDialog
-            isOpen={isConfirmationDialogOpen}
-            onClose={handleContentDialogClose}
-            onConfirm={handleContentConfirm}
-            onCancel={handleContentCancel}
-            onEdit={handleContentEdit}
-            contentItem={pendingItems[currentItemIndex]}
-            isLoading={isCreatingContent}
-            itemNumber={currentItemIndex + 1}
-            totalItems={pendingItems.length}
-          />
-        )}
+      }
 
     </PromptInputProvider>
   );

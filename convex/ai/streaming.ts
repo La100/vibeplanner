@@ -65,6 +65,42 @@ export const internalDoStreaming = internalAction({
         isLegacyThreadId,
       });
 
+      // AUTO-REJECT LOGIC:
+      // If there are any pending function calls from previous turns, reject them now.
+      // This allows the user to "cancel" a pending action simply by sending a new message.
+      const pendingCalls = await ctx.runQuery(api.ai.threads.listPendingItems, {
+        threadId: providedThreadId,
+      });
+
+      if (pendingCalls.length > 0) {
+        // Filter to only actual pending items to avoid touching history
+        const actuallyPending = pendingCalls.filter(c => c.status === "pending");
+
+        if (actuallyPending.length > 0) {
+          console.log("🚫 [AUTO-REJECT] Found pending calls, rejecting them before new message", {
+            count: actuallyPending.length,
+            callIds: actuallyPending.map(c => c.callId),
+          });
+
+          // Group by responseId for efficient batch updates
+          const pendingByResponse = new Map<string, Array<{ callId: string; result?: string | null }>>();
+          for (const call of actuallyPending) {
+            const list = pendingByResponse.get(call.responseId) || [];
+            list.push({ callId: call.callId, result: null }); // null result = reject
+            pendingByResponse.set(call.responseId, list);
+          }
+
+          // Execute rejections
+          for (const [responseId, results] of pendingByResponse.entries()) {
+            await ctx.runMutation(api.ai.threads.markFunctionCallsAsConfirmed, {
+              threadId: providedThreadId,
+              responseId,
+              results: results.map((r) => ({ ...r, status: "rejected" })) as any,
+            });
+          }
+        }
+      }
+
       // Streaming start
 
       // Resolve teamId from project
@@ -110,13 +146,17 @@ export const internalDoStreaming = internalAction({
         projectId: args.projectId,
       });
       const teamMembersContext = buildTeamMembersContext(teamMembers);
-      const { currentDate, currentDateTime } = getCurrentDateTime();
+      const team = await ctx.runQuery(api.teams.getTeamById, { teamId: teamId! });
+      const timezone = team?.timezone; // Get timezone from team
+
+      const { currentDate, currentDateTime } = getCurrentDateTime(timezone);
       const systemInstructions = buildSystemInstructions(
         systemPrompt,
         currentDateTime,
         currentDate,
         teamMembersContext,
-        args.userClerkId
+        args.userClerkId,
+        timezone
       );
 
       console.log("📋 [SYSTEM INSTRUCTIONS]", {
@@ -130,10 +170,10 @@ export const internalDoStreaming = internalAction({
       let userMessageContent:
         | string
         | Array<
-            | { type: "text"; text: string }
-            | { type: "image"; image: string; mediaType?: string }
-            | { type: "file"; data: string; mediaType: string }
-          > = userPrompt;
+          | { type: "text"; text: string }
+          | { type: "image"; image: string; mediaType?: string }
+          | { type: "file"; data: string; mediaType: string }
+        > = userPrompt;
       if (args.fileIds && args.fileIds.length > 0) {
         const result = await prepareMessageWithFiles({
           ctx,
@@ -221,6 +261,37 @@ export const internalDoStreaming = internalAction({
         userId: args.userClerkId,
       });
 
+      // REPLAY LOGIC:
+      // Fetch confirmed/rejected calls to feed back into agent history
+      const replayCalls = (await ctx.runQuery(internal.ai.threads.getPendingFunctionCalls, {
+        threadId: providedThreadId,
+      })) as any[];
+
+      const toolResultMessages: any[] = [];
+      const replayedCallIds: string[] = [];
+
+      if (replayCalls && replayCalls.length > 0) {
+        console.log("🔄 [REPLAY] Found calls to replay", { count: replayCalls.length });
+
+        const toolResults = replayCalls.map((call) => {
+          replayedCallIds.push(call._id);
+          return {
+            type: "tool-result",
+            toolCallId: call.callId,
+            toolName: call.functionName,
+            result:
+              call.status === "rejected"
+                ? JSON.stringify({ error: "User rejected this action." })
+                : call.result,
+          };
+        });
+
+        toolResultMessages.push({
+          role: "tool" as const,
+          content: toolResults,
+        });
+      }
+
       let response;
       try {
         response = await agent.streamText(
@@ -228,17 +299,27 @@ export const internalDoStreaming = internalAction({
           { userId: args.userClerkId, threadId: agentThreadId },
           {
             system: systemInstructions,
-            messages: [{ role: "user" as const, content: userMessageContent }],
+            messages: [
+              ...toolResultMessages,
+              { role: "user" as const, content: userMessageContent },
+            ],
             toolChoice: "auto" as const, // Allow AI to decide when to use tools
           },
           {
-          saveStreamDeltas: {
-            chunking: "word",
-            // throttleMs: 50,
-          },
+            saveStreamDeltas: {
+              chunking: "word",
+              // throttleMs: 50,
+            },
           },
         );
         console.log("✅ [STREAMING INITIATED]");
+
+        // Mark calls as replayed to prevent duplicate processing
+        if (replayedCallIds.length > 0) {
+          await ctx.runMutation(internal.ai.threads.markFunctionCallsAsReplayed, {
+            callIds: replayedCallIds as any,
+          });
+        }
       } catch (err) {
         console.error("❌ [STREAMING FAILED]", err);
         throw err;
@@ -295,7 +376,7 @@ export const internalDoStreaming = internalAction({
 
         fullResponse = latestStepText;
       }
-      
+
       // Fallback to response.text if steps didn't have content
       if (!fullResponse) {
         fullResponse = await response.text;
@@ -305,7 +386,7 @@ export const internalDoStreaming = internalAction({
       const allToolCalls: any[] = [];
       const allToolResults: any[] = [];
       const toolResultMap = new Map<string, any>();
-      
+
       // Collect tool calls and results from the response steps
       if (steps && Array.isArray(steps)) {
         for (let i = 0; i < steps.length; i++) {
@@ -360,13 +441,13 @@ export const internalDoStreaming = internalAction({
         // Tools that should NOT create pending items (read-only/search tools)
         const readOnlyTools = new Set([
           'search_tasks',
-          'search_shopping_items', 
+          'search_shopping_items',
           'search_notes',
           'search_surveys',
           'search_contacts',
           'load_full_project_context',
         ]);
-        
+
         const functionCalls: Array<{
           callId: string;
           functionName: string;
@@ -387,8 +468,12 @@ export const internalDoStreaming = internalAction({
           edit_shopping_section: { type: 'shoppingSection', operation: 'edit' },
           edit_survey: { type: 'survey', operation: 'edit' },
           edit_contact: { type: 'contact', operation: 'edit' },
+          create_multiple_tasks: { type: 'task', operation: 'bulk_create' },
+          create_multiple_notes: { type: 'note', operation: 'bulk_create' },
+          create_multiple_shopping_items: { type: 'shopping', operation: 'bulk_create' },
+          create_multiple_surveys: { type: 'survey', operation: 'bulk_create' },
         };
-        
+
         for (let i = 0; i < allToolCalls.length; i++) {
           const toolCall = allToolCalls[i] as any;
           // Create function call record - handle different property names
@@ -397,12 +482,12 @@ export const internalDoStreaming = internalAction({
 
           const toolName = toolCall.toolName || toolCall.name || "unknown";
           const toolArgs = toolCall.args || toolCall.input || toolCall.arguments || {};
-          
+
           // Skip read-only tools - they shouldn't create pending items
           if (readOnlyTools.has(toolName)) {
             continue;
           }
-          
+
           // Parse tool result to verify it's an action item and persist full payload
           const resultValue = toolResult?.result || toolResult?.output || toolResult;
           let payload: any = undefined;
@@ -410,8 +495,8 @@ export const internalDoStreaming = internalAction({
           // Try parsing tool result first
           if (resultValue) {
             try {
-              const parsed = typeof resultValue === 'string' 
-                ? JSON.parse(resultValue) 
+              const parsed = typeof resultValue === 'string'
+                ? JSON.parse(resultValue)
                 : resultValue;
               if (parsed && typeof parsed === 'object') {
                 payload = parsed;
@@ -428,11 +513,16 @@ export const internalDoStreaming = internalAction({
               ? (() => { try { return JSON.parse(toolArgs); } catch { return toolArgs; } })()
               : toolArgs;
 
+            // Handle case where parsing returns a string (double JSON stringified)
+            const finalArgs = typeof normalizedArgs === 'string'
+              ? (() => { try { return JSON.parse(normalizedArgs); } catch { return normalizedArgs; } })()
+              : normalizedArgs;
+
             payload = {
               ...(payload && typeof payload === 'object' ? payload : {}),
               type: payload?.type ?? defaults?.type ?? toolName,
               operation: payload?.operation ?? defaults?.operation,
-              data: payload?.data ?? normalizedArgs ?? {},
+              data: payload?.data ?? finalArgs ?? {},
             };
           } else if (!payload.data) {
             payload.data = toolArgs ?? {};
@@ -447,38 +537,12 @@ export const internalDoStreaming = internalAction({
             });
           }
         }
-        
+
         const pendingCalls = await ctx.runQuery(api.ai.threads.listPendingItems, {
           threadId: providedThreadId,
         });
 
-        const lowerMessage = args.message.toLowerCase();
-        const hasUpdateKeyword = [
-          "assign",
-          "przypisz",
-          "do mnie",
-          "ustaw",
-          "termin",
-          "deadline",
-          "due",
-          "priorytet",
-          "priority",
-          "tag",
-        ].some((keyword) => lowerMessage.includes(keyword));
-        const hasCreateKeyword = [
-          "dodaj",
-          "utworz",
-          "stworz",
-          "create",
-          "add",
-          "nowy",
-          "kolejny",
-          "another",
-          "next",
-        ].some((keyword) => lowerMessage.includes(keyword));
         const shouldReplacePending =
-          hasUpdateKeyword &&
-          !hasCreateKeyword &&
           pendingCalls.length === 1 &&
           functionCalls.length === 1;
 
@@ -640,10 +704,10 @@ export const internalDoStreaming = internalAction({
       const tokenUsage = {
         inputTokens: totalInputTokens || Math.ceil(userPrompt.length / 4),
         outputTokens: totalOutputTokens || Math.ceil(fullResponse.length / 4),
-        totalTokens: (totalInputTokens || Math.ceil(userPrompt.length / 4)) + 
-                     (totalOutputTokens || Math.ceil(fullResponse.length / 4)),
-        estimatedCostUSD: calculateCost(AI_MODEL, 
-          totalInputTokens || Math.ceil(userPrompt.length / 4), 
+        totalTokens: (totalInputTokens || Math.ceil(userPrompt.length / 4)) +
+          (totalOutputTokens || Math.ceil(fullResponse.length / 4)),
+        estimatedCostUSD: calculateCost(AI_MODEL,
+          totalInputTokens || Math.ceil(userPrompt.length / 4),
           totalOutputTokens || Math.ceil(fullResponse.length / 4)
         ),
       };

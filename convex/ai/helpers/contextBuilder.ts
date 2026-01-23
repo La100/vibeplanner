@@ -83,17 +83,27 @@ export const buildSystemInstructions = (
   currentDate: string,
   teamMembersContext: string,
   currentUserClerkId?: string,
+  timezone?: string,
 ): string => {
   const currentUserSection = currentUserClerkId
     ? `\n\nCURRENT USER (who sent this message): Clerk ID ${currentUserClerkId}\nWhen the user says "assign to me" or "przypisz do mnie", use this Clerk ID in the assignedTo field.`
     : "";
 
+  const timezoneInfo = timezone ? `\nTIMEZONE: ${timezone}` : "";
+
   return `${systemPrompt}
+  
+CURRENT DATE AND TIME: ${currentDateTime} (${currentDate})${timezoneInfo}
 
-CURRENT DATE AND TIME: ${currentDateTime} (${currentDate})
-When setting due dates, use this as reference for "today", "tomorrow", "next week", etc.${teamMembersContext}${currentUserSection}
+${teamMembersContext}${currentUserSection}
 
-When the user asks for multiple types of content, prepare a balanced mix across tasks, notes, shopping items/sections, surveys, and contacts unless they explicitly specify quantities for each.`;
+When the user asks for multiple types of content, prepare a balanced mix across tasks, notes, shopping items/sections, surveys, and contacts unless they explicitly specify quantities for each.
+
+CRITICAL INSTRUCTION ON TIMEZONES:
+If a TIMEZONE is provided above, you MUST convert any user-requested local times to UTC before setting them in startDate/endDate.
+The user's request is in LOCAL time. The stored time must be in UTC.
+Example: User asks for "14:00" in "Europe/Warsaw" (UTC+1). You must set the ISO string to T13:00:00Z.
+DO NOT use the local time as the UTC time. YOU MUST SUBTRACT THE OFFSET.`;
 };
 
 export const buildUserMessage = (contextSnapshot: string, message: string, summary: string | null): string => {
@@ -106,31 +116,31 @@ export const buildCreationSummary = (message: string): string | null => {
     label: string;
     keywords: string[];
   }> = [
-    {
-      label: "tasks",
-      keywords: ["task", "tasks", "zadań", "zadania", "tasków"],
-    },
-    {
-      label: "notes",
-      keywords: ["note", "notes", "notatek", "notatki", "notatka"],
-    },
-    {
-      label: "shopping items",
-      keywords: ["shopping item", "shopping items", "pozycji", "pozycje", "zakup", "zakupów"],
-    },
-    {
-      label: "shopping sections",
-      keywords: ["shopping section", "shopping sections", "sekcja", "sekcje", "sekcji"],
-    },
-    {
-      label: "surveys",
-      keywords: ["survey", "surveys", "ankieta", "ankiety"],
-    },
-    {
-      label: "contacts",
-      keywords: ["contact", "contacts", "kontakt", "kontakty"],
-    },
-  ];
+      {
+        label: "tasks",
+        keywords: ["task", "tasks", "zadań", "zadania", "tasków"],
+      },
+      {
+        label: "notes",
+        keywords: ["note", "notes", "notatek", "notatki", "notatka"],
+      },
+      {
+        label: "shopping items",
+        keywords: ["shopping item", "shopping items", "pozycji", "pozycje", "zakup", "zakupów"],
+      },
+      {
+        label: "shopping sections",
+        keywords: ["shopping section", "shopping sections", "sekcja", "sekcje", "sekcji"],
+      },
+      {
+        label: "surveys",
+        keywords: ["survey", "surveys", "ankieta", "ankiety"],
+      },
+      {
+        label: "contacts",
+        keywords: ["contact", "contacts", "kontakt", "kontakty"],
+      },
+    ];
 
   const lower = message.toLowerCase();
   const summary: string[] = [];
@@ -172,9 +182,45 @@ export const buildCreationSummary = (message: string): string | null => {
   return summary.join("\n");
 };
 
-export const getCurrentDateTime = (): { currentDate: string; currentDateTime: string } => {
-  const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-  const currentDateTime = new Date().toLocaleString('en-US', {
+export const getCurrentDateTime = (timezone?: string): { currentDate: string; currentDateTime: string } => {
+  const now = new Date();
+
+  if (timezone) {
+    try {
+      // Use Intl.DateTimeFormat to get date/time in specific timezone
+      const dateOptions: Intl.DateTimeFormatOptions = {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      };
+      const timeOptions: Intl.DateTimeFormatOptions = {
+        timeZone: timezone,
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      };
+
+      // Format: YYYY-MM-DD
+      const parts = new Intl.DateTimeFormat('en-CA', dateOptions).formatToParts(now);
+      const year = parts.find(p => p.type === 'year')?.value;
+      const month = parts.find(p => p.type === 'month')?.value;
+      const day = parts.find(p => p.type === 'day')?.value;
+
+      const currentDate = `${year}-${month}-${day}`;
+      const currentDateTime = new Intl.DateTimeFormat('en-US', timeOptions).format(now);
+
+      return { currentDate, currentDateTime };
+    } catch (e) {
+      console.warn(`Invalid timezone: ${timezone}, falling back to UTC/Server time`);
+    }
+  }
+
+  const currentDate = now.toISOString().split('T')[0]; // YYYY-MM-DD format
+  const currentDateTime = now.toLocaleString('en-US', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',

@@ -58,12 +58,12 @@ interface UsePendingItemsReturn {
   handleContentEdit: (updatedItem: { data: Record<string, unknown> }) => void;
   handleContentDialogClose: () => void;
   handleConfirmAll: () => Promise<void>;
-  handleConfirmItem: (index: number) => Promise<void>;
-  handleRejectItem: (index: number) => Promise<void>;
+  handleConfirmItem: (index: number | string) => Promise<void>;
+  handleRejectItem: (index: number | string) => Promise<void>;
   handleRejectAll: () => Promise<void>;
   handleAutoRejectPendingItems: () => Promise<number>;
-  handleEditItem: (index: number) => void;
-  handleUpdatePendingItem: (index: number, updates: Partial<PendingItem>) => void;
+  handleEditItem: (index: number | string) => void;
+  handleUpdatePendingItem: (index: number | string, updates: Partial<PendingItem>) => void;
   resetPendingState: () => void;
 }
 
@@ -81,6 +81,12 @@ export const usePendingItems = ({
   const [isCreatingContent, setIsCreatingContent] = useState(false);
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (pendingItems.length > 0) {
+      console.log("🔍 [usePendingItems] Current Pending Items:", JSON.stringify(pendingItems, null, 2));
+    }
+  }, [pendingItems]);
 
   // Queries
   const pendingFunctionCalls = useQuery(
@@ -129,9 +135,15 @@ export const usePendingItems = ({
 
   // Load pending items from DB
   useEffect(() => {
+    // Don't restore pending items when threadId is undefined (e.g., after "New Chat")
+    if (!threadId) {
+      return;
+    }
+
     if (pendingFunctionCalls && pendingFunctionCalls.length > 0) {
       const pendingItemsFromDB = pendingFunctionCalls.map((call) => {
         try {
+          console.log(`[usePendingItems] Raw call arguments for ${call.functionName}:`, call.arguments);
           const parsed = JSON.parse(call.arguments);
           const parsedTypeValue = typeof parsed?.type === "string" ? parsed.type : undefined;
           const parsedType = isPendingItemType(parsedTypeValue) ? parsedTypeValue : undefined;
@@ -151,6 +163,7 @@ export const usePendingItems = ({
               arguments: call.arguments,
             },
             responseId: call.responseId,
+            status: (call.status === "confirmed" || call.status === "rejected") ? call.status : undefined,
           };
         } catch (e) {
           console.error("Failed to parse pending item:", e);
@@ -166,7 +179,30 @@ export const usePendingItems = ({
           ...item,
           clientId: item.clientId ?? `${item.functionCall?.callId ?? "pending"}-${index}`,
         }));
-        setPendingItems(withClientIds);
+
+        setPendingItems(prev => {
+          const prevMap = new Map(prev.map(p => [p.clientId, p]));
+
+          // 1. Process new items from server (preserving local confirmation status if they exist in prev)
+          const newItems = withClientIds.map(newItem => {
+            const prevItem = prevMap.get(newItem.clientId!);
+            if (prevItem && (prevItem.status === 'confirmed' || prevItem.status === 'rejected')) {
+              return { ...newItem, status: prevItem.status };
+            }
+            return newItem;
+          });
+
+          // 2. Find resolved items in prev that are NOT in newItems (preserved items)
+          const newIds = new Set(newItems.map(i => i.clientId));
+          const preservedItems = prev.filter((p) => {
+            if (p.status !== "confirmed" && p.status !== "rejected") return false;
+            if (!p.clientId) return true;
+            return !newIds.has(p.clientId);
+          });
+
+          // 3. Combine
+          return [...newItems, ...preservedItems];
+        });
         setCurrentItemIndex(0);
 
         // Don't auto-open dialogs - let inline confirmations in StreamingMessage handle display
@@ -175,17 +211,14 @@ export const usePendingItems = ({
         setIsConfirmationDialogOpen(false);
       }
     } else if (pendingFunctionCalls && pendingFunctionCalls.length === 0 && pendingItems.length > 0) {
-      const hasResolvedItems = pendingItems.some(
-        (item) => item.status === "confirmed" || item.status === "rejected"
-      );
-      if (!hasResolvedItems) {
-        setPendingItems([]);
-        setShowConfirmationGrid(false);
-        setIsConfirmationDialogOpen(false);
-      }
+      // If server returns empty, keep only resolved items (receipts), remove any stale pending ones
+      setPendingItems(prev => prev.filter(item => item.status === "confirmed" || item.status === "rejected"));
+
+      // Close dialogs if they were open (optional, but good UX if the item we were acting on is gone)
+      setShowConfirmationGrid(false);
+      setIsConfirmationDialogOpen(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingFunctionCalls, pendingItems.length]);
+  }, [threadId, pendingFunctionCalls, pendingItems.length]);
 
   const scheduleResolvedRemoval = useCallback((clientId?: string) => {
     // Intentionally left blank - keep resolved items visible in the UI.
@@ -572,38 +605,84 @@ export const usePendingItems = ({
       }
     } else if (item.operation === 'delete') {
       switch (item.type) {
-        case 'task':
-          await deleteTask({ taskId: item.data.taskId as Id<"tasks"> });
+        case 'task': {
+          // Support both legacy format (taskId) and new format (itemId)
+          const taskId = (item.data.taskId ?? item.data.itemId) as Id<"tasks">;
+          if (!taskId) {
+            throw new Error("Missing taskId or itemId for task deletion");
+          }
+          await deleteTask({ taskId });
           result = { success: true, message: "Task deleted successfully" };
           break;
-        case 'note':
-          await deleteNote({ noteId: item.data.noteId as Id<"notes"> });
+        }
+        case 'note': {
+          // Support both legacy format (noteId) and new format (itemId)
+          const noteId = (item.data.noteId ?? item.data.itemId) as Id<"notes">;
+          if (!noteId) {
+            throw new Error("Missing noteId or itemId for note deletion");
+          }
+          await deleteNote({ noteId });
           result = { success: true, message: "Note deleted successfully" };
           break;
-        case 'shopping':
-          await deleteShoppingItem({ itemId: item.data.itemId as Id<"shoppingListItems"> });
+        }
+        case 'shopping': {
+          // itemId is consistent across both formats
+          const itemId = item.data.itemId as Id<"shoppingListItems">;
+          if (!itemId) {
+            throw new Error("Missing itemId for shopping item deletion");
+          }
+          await deleteShoppingItem({ itemId });
           result = { success: true, message: "Shopping item deleted successfully" };
           break;
-        case 'shoppingSection':
-          await deleteShoppingSection({ sectionId: item.data.sectionId as Id<"shoppingListSections"> });
+        }
+        case 'shoppingSection': {
+          const sectionId = item.data.sectionId as Id<"shoppingListSections">;
+          if (!sectionId) {
+            throw new Error("Missing sectionId for shopping section deletion");
+          }
+          await deleteShoppingSection({ sectionId });
           result = { success: true, message: "Shopping section deleted successfully" };
           break;
-        case 'survey':
-          await deleteSurvey({ surveyId: item.data.surveyId as Id<"surveys"> });
+        }
+        case 'survey': {
+          // Support both legacy format (surveyId) and new format (itemId)
+          const surveyId = (item.data.surveyId ?? item.data.itemId) as Id<"surveys">;
+          if (!surveyId) {
+            throw new Error("Missing surveyId or itemId for survey deletion");
+          }
+          await deleteSurvey({ surveyId });
           result = { success: true, message: "Survey deleted successfully" };
           break;
-        case 'contact':
-          await deleteContact({ contactId: item.data.contactId as Id<"contacts"> });
+        }
+        case 'contact': {
+          // Support both legacy format (contactId) and new format (itemId)
+          const contactId = (item.data.contactId ?? item.data.itemId) as Id<"contacts">;
+          if (!contactId) {
+            throw new Error("Missing contactId or itemId for contact deletion");
+          }
+          await deleteContact({ contactId });
           result = { success: true, message: "Contact deleted successfully" };
           break;
-        case 'labor':
-          await deleteLaborItem({ itemId: item.data.itemId as Id<"laborItems"> });
+        }
+        case 'labor': {
+          // itemId is consistent across both formats
+          const itemId = item.data.itemId as Id<"laborItems">;
+          if (!itemId) {
+            throw new Error("Missing itemId for labor item deletion");
+          }
+          await deleteLaborItem({ itemId });
           result = { success: true, message: "Labor item deleted successfully" };
           break;
-        case 'laborSection':
-          await deleteLaborSection({ sectionId: item.data.sectionId as Id<"laborSections"> });
+        }
+        case 'laborSection': {
+          const sectionId = item.data.sectionId as Id<"laborSections">;
+          if (!sectionId) {
+            throw new Error("Missing sectionId for labor section deletion");
+          }
+          await deleteLaborSection({ sectionId });
           result = { success: true, message: "Labor section deleted successfully" };
           break;
+        }
         default:
           throw new Error(`Unknown content type for deletion: ${item.type}`);
       }
@@ -923,7 +1002,239 @@ export const usePendingItems = ({
     updateLaborSection,
   ]);
 
-  // Handlers
+  // Handlers - Helper functions defined first to avoid ReferenceErrors
+  const handleConfirmItem = useCallback(async (indexOrCallId: number | string) => {
+    // Resolve index if callId is passed
+    let index = typeof indexOrCallId === 'number' ? indexOrCallId : -1;
+    if (typeof indexOrCallId === 'string') {
+      index = pendingItems.findIndex(i => i.functionCall?.callId === indexOrCallId);
+    }
+
+    // If not found in pending items, we might be clicking a "retry" on a historical item
+    // For now, we only support confirming current pending items.
+    // If the item is not in pendingItems, it might be that the view thinks it is, but state is cleared.
+    if (index === -1) {
+      console.warn("Item not found in pending items");
+      return;
+    }
+
+    const item = pendingItems[index];
+    try {
+      const result = await confirmSingleItem(item);
+
+      if (item.functionCall && item.responseId && threadId) {
+        try {
+          await markFunctionCallsAsConfirmed({
+            threadId,
+            responseId: item.responseId,
+            results: [{
+              callId: item.functionCall.callId,
+              result: JSON.stringify({
+                ...item,
+                status: 'confirmed',
+                outcome: result
+              }),
+            }]
+          });
+        } catch (e) {
+          console.error("Failed to mark function call as confirmed", e);
+        }
+      }
+
+      const resolvedId = item.clientId;
+      setPendingItems((prev) =>
+        prev.map((entry) =>
+          entry.clientId === resolvedId ? { ...entry, status: "confirmed" } : entry
+        )
+      );
+
+      let successMessage = result.message || `${item.type} created successfully`;
+      if ('taskId' in result && result.taskId) {
+        const title = (item.data as { title?: string }).title || 'Untitled';
+        successMessage = `Task "${title}" created`;
+      } else if ('noteId' in result && result.noteId) {
+        const title = (item.data as { title?: string }).title || 'Untitled';
+        successMessage = `Note "${title}" created`;
+      } else if ('itemId' in result && result.itemId) {
+        const name = (item.data as { name?: string }).name || 'Unnamed';
+        if (item.type === 'labor') {
+          successMessage = `Labor item "${name}" created`;
+        } else {
+          successMessage = `Shopping item "${name}" created`;
+        }
+      } else if ('surveyId' in result && result.surveyId) {
+        const title = (item.data as { title?: string }).title || 'Untitled';
+        successMessage = `Survey "${title}" created`;
+      } else if ('contactId' in result && result.contactId) {
+        const name = (item.data as { name?: string }).name || 'Unnamed';
+        successMessage = `Contact "${name}" created`;
+      }
+
+      toast.success(successMessage);
+
+      if (pendingItems.length === 1) {
+        setShowConfirmationGrid(false);
+      }
+      scheduleResolvedRemoval(resolvedId);
+    } catch (error) {
+      toast.error(`Failed to create ${item.type}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [pendingItems, threadId, confirmSingleItem, markFunctionCallsAsConfirmed, scheduleResolvedRemoval]);
+
+  const handleRejectItem = useCallback(async (indexOrCallId: number | string) => {
+    // Resolve index
+    let index = typeof indexOrCallId === 'number' ? indexOrCallId : -1;
+    if (typeof indexOrCallId === 'string') {
+      index = pendingItems.findIndex(i => i.functionCall?.callId === indexOrCallId);
+    }
+
+    if (index === -1) {
+      console.warn("Item not found in pending items");
+      return;
+    }
+
+    const item = pendingItems[index];
+    const resolvedId = item.clientId;
+    setPendingItems((prev) =>
+      prev.map((entry) =>
+        entry.clientId === resolvedId ? { ...entry, status: "rejected" } : entry
+      )
+    );
+
+    if (pendingItems.length === 1) {
+      setShowConfirmationGrid(false);
+    }
+
+    toast.info(`${item.type} creation cancelled`);
+
+    if (item.functionCall && item.responseId && threadId) {
+      try {
+        await markFunctionCallsAsConfirmed({
+          threadId,
+          responseId: item.responseId,
+          results: [{
+            callId: item.functionCall.callId,
+            status: 'rejected',
+            result: "User rejected this action."
+          }],
+        });
+      } catch (error) {
+        console.error("Failed to mark function call as rejected", error);
+      }
+    }
+
+    setChatHistory(prev => [
+      ...prev,
+      {
+        role: "assistant",
+        content: `❌ Rejected ${item.type} suggestion${item.data?.title ? `: "${item.data.title}"` : ""}.`,
+      },
+    ]);
+    scheduleResolvedRemoval(resolvedId);
+  }, [pendingItems, threadId, markFunctionCallsAsConfirmed, setChatHistory, scheduleResolvedRemoval]);
+
+  const handleRejectAll = useCallback(async () => {
+    const itemsToReject = [...pendingItems];
+    const resolvedIds = itemsToReject.map((item) => item.clientId).filter(Boolean) as string[];
+    setPendingItems((prev) =>
+      prev.map((item) => ({
+        ...item,
+        status: "rejected",
+      }))
+    );
+    setShowConfirmationGrid(false);
+    toast.info("All item creations cancelled");
+
+    if (threadId) {
+      const groupedResults = new Map<string, { callId: string; result: string | undefined; status?: "rejected" }[]>();
+      for (const item of itemsToReject) {
+        if (item.functionCall && item.responseId) {
+          if (!groupedResults.has(item.responseId)) {
+            groupedResults.set(item.responseId, []);
+          }
+          groupedResults.get(item.responseId)!.push({
+            callId: item.functionCall.callId,
+            result: "User rejected this action.",
+            status: 'rejected',
+          });
+        }
+      }
+
+      for (const [responseId, results] of groupedResults.entries()) {
+        try {
+          await markFunctionCallsAsConfirmed({
+            threadId,
+            responseId,
+            results,
+          });
+        } catch (error) {
+          console.error("Failed to mark function calls as rejected", error);
+        }
+      }
+    }
+
+    setChatHistory(prev => [
+      ...prev,
+      {
+        role: "assistant",
+        content: "❌ Rejected all pending AI suggestions.",
+      },
+    ]);
+    resolvedIds.forEach((id) => scheduleResolvedRemoval(id));
+  }, [pendingItems, threadId, markFunctionCallsAsConfirmed, setChatHistory, scheduleResolvedRemoval]);
+
+  const handleAutoRejectPendingItems = useCallback(async () => {
+    const itemsToReject = pendingItems.filter(
+      (item) => item.status !== "confirmed" && item.status !== "rejected"
+    );
+    if (itemsToReject.length === 0) return 0;
+
+    const resolvedIds = itemsToReject.map((item) => item.clientId).filter(Boolean) as string[];
+    setPendingItems((prev) =>
+      prev.map((item) =>
+        resolvedIds.includes(item.clientId ?? "") ? { ...item, status: "rejected" } : item
+      )
+    );
+    setShowConfirmationGrid(false);
+    setIsConfirmationDialogOpen(false);
+
+    if (threadId) {
+      const groupedResults = new Map<string, { callId: string; result: string | undefined; status?: "rejected" }[]>();
+      for (const item of itemsToReject) {
+        if (item.functionCall && item.responseId) {
+          if (!groupedResults.has(item.responseId)) {
+            groupedResults.set(item.responseId, []);
+          }
+          groupedResults.get(item.responseId)!.push({
+            callId: item.functionCall.callId,
+            result: "User rejected this action.",
+            status: 'rejected',
+          });
+        }
+      }
+
+      for (const [responseId, results] of groupedResults.entries()) {
+        try {
+          await markFunctionCallsAsConfirmed({
+            threadId,
+            responseId,
+            results,
+          });
+        } catch (error) {
+          console.error("Failed to auto-reject function calls", error);
+        }
+      }
+    }
+
+    resolvedIds.forEach((id) => scheduleResolvedRemoval(id));
+    return itemsToReject.length;
+  }, [
+    pendingItems,
+    threadId,
+    markFunctionCallsAsConfirmed,
+    scheduleResolvedRemoval,
+  ]);
+
   const handleContentConfirm = useCallback(async () => {
     if (!projectId || pendingItems.length === 0) return;
 
@@ -943,7 +1254,11 @@ export const usePendingItems = ({
               responseId: currentItem.responseId,
               results: [{
                 callId: currentItem.functionCall.callId,
-                result: JSON.stringify(result),
+                result: JSON.stringify({
+                  ...currentItem,
+                  status: 'confirmed',
+                  outcome: result
+                }),
               }]
             });
           } catch (e) {
@@ -977,19 +1292,19 @@ export const usePendingItems = ({
     }
   }, [projectId, pendingItems, currentItemIndex, threadId, confirmSingleItem, markFunctionCallsAsConfirmed, setChatHistory]);
 
-  const handleContentCancel = useCallback(() => {
+  const handleContentCancel = useCallback(async () => {
     const currentItem = pendingItems[currentItemIndex];
+    if (currentItem) {
+      await handleRejectItem(currentItemIndex);
+    }
 
     if (currentItemIndex < pendingItems.length - 1) {
       setCurrentItemIndex(prev => prev + 1);
     } else {
       setIsConfirmationDialogOpen(false);
-      setPendingItems([]);
       setCurrentItemIndex(0);
     }
-
-    toast.info(`${currentItem?.type || 'Item'} creation cancelled`);
-  }, [pendingItems, currentItemIndex]);
+  }, [pendingItems, currentItemIndex, handleRejectItem]);
 
   const handleContentEdit = useCallback((updatedItem: { data: Record<string, unknown> }) => {
     setPendingItems(prev => {
@@ -1052,7 +1367,11 @@ export const usePendingItems = ({
             }
             resultsByResponseId.get(item.responseId)!.push({
               callId: item.functionCall.callId,
-              result: JSON.stringify(result),
+              result: JSON.stringify({
+                ...item,
+                status: 'confirmed',
+                outcome: result
+              }),
             });
           }
         } catch (error) {
@@ -1108,217 +1427,19 @@ export const usePendingItems = ({
     }
   }, [pendingItems, threadId, confirmSingleItem, markFunctionCallsAsConfirmed, setChatHistory, scheduleResolvedRemoval]);
 
-  const handleConfirmItem = useCallback(async (index: number) => {
-    const item = pendingItems[index];
-    try {
-      const result = await confirmSingleItem(item);
 
-      if (item.functionCall && item.responseId && threadId) {
-        try {
-          await markFunctionCallsAsConfirmed({
-            threadId,
-            responseId: item.responseId,
-            results: [{
-              callId: item.functionCall.callId,
-              result: JSON.stringify(result),
-            }]
-          });
-        } catch (e) {
-          console.error("Failed to mark function call as confirmed", e);
-        }
-      }
 
-      const resolvedId = item.clientId;
-      setPendingItems((prev) =>
-        prev.map((entry) =>
-          entry.clientId === resolvedId ? { ...entry, status: "confirmed" } : entry
-        )
-      );
+  const handleEditItem = useCallback((indexOrCallId: number | string) => {
+    const index = typeof indexOrCallId === "number"
+      ? indexOrCallId
+      : pendingItems.findIndex((item) => item.functionCall?.callId === indexOrCallId);
 
-      let successMessage = result.message || `${item.type} created successfully`;
-      if ('taskId' in result && result.taskId) {
-        const title = (item.data as { title?: string }).title || 'Untitled';
-        successMessage = `Task "${title}" created`;
-      } else if ('noteId' in result && result.noteId) {
-        const title = (item.data as { title?: string }).title || 'Untitled';
-        successMessage = `Note "${title}" created`;
-      } else if ('itemId' in result && result.itemId) {
-        const name = (item.data as { name?: string }).name || 'Unnamed';
-        if (item.type === 'labor') {
-          successMessage = `Labor item "${name}" created`;
-        } else {
-          successMessage = `Shopping item "${name}" created`;
-        }
-      } else if ('surveyId' in result && result.surveyId) {
-        const title = (item.data as { title?: string }).title || 'Untitled';
-        successMessage = `Survey "${title}" created`;
-      } else if ('contactId' in result && result.contactId) {
-        const name = (item.data as { name?: string }).name || 'Unnamed';
-        successMessage = `Contact "${name}" created`;
-      }
-
-      toast.success(successMessage);
-
-      setChatHistory(prev => [...prev, {
-        role: 'assistant',
-        content: `✅ ${successMessage}`
-      }]);
-
-      if (pendingItems.length === 1) {
-        setShowConfirmationGrid(false);
-      }
-      scheduleResolvedRemoval(resolvedId);
-    } catch (error) {
-      toast.error(`Failed to create ${item.type}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }, [pendingItems, threadId, confirmSingleItem, markFunctionCallsAsConfirmed, setChatHistory, scheduleResolvedRemoval]);
-
-  const handleRejectItem = useCallback(async (index: number) => {
-    const item = pendingItems[index];
-    const resolvedId = item.clientId;
-    setPendingItems((prev) =>
-      prev.map((entry) =>
-        entry.clientId === resolvedId ? { ...entry, status: "rejected" } : entry
-      )
-    );
-
-    if (pendingItems.length === 1) {
-      setShowConfirmationGrid(false);
-    }
-
-    toast.info(`${item.type} creation cancelled`);
-
-    if (item.functionCall && item.responseId && threadId) {
-      try {
-        await markFunctionCallsAsConfirmed({
-          threadId,
-          responseId: item.responseId,
-          results: [{
-            callId: item.functionCall.callId,
-            result: undefined,
-          }],
-        });
-      } catch (error) {
-        console.error("Failed to mark function call as rejected", error);
-      }
-    }
-
-    setChatHistory(prev => [
-      ...prev,
-      {
-        role: "assistant",
-        content: `❌ Rejected ${item.type} suggestion${item.data?.title ? `: "${item.data.title}"` : ""}.`,
-      },
-    ]);
-    scheduleResolvedRemoval(resolvedId);
-  }, [pendingItems, threadId, markFunctionCallsAsConfirmed, setChatHistory, scheduleResolvedRemoval]);
-
-  const handleRejectAll = useCallback(async () => {
-    const itemsToReject = [...pendingItems];
-    const resolvedIds = itemsToReject.map((item) => item.clientId).filter(Boolean) as string[];
-    setPendingItems((prev) =>
-      prev.map((item) => ({
-        ...item,
-        status: "rejected",
-      }))
-    );
-    setShowConfirmationGrid(false);
-    toast.info("All item creations cancelled");
-
-    if (threadId) {
-      const groupedResults = new Map<string, { callId: string; result: string | undefined }[]>();
-      for (const item of itemsToReject) {
-        if (item.functionCall && item.responseId) {
-          if (!groupedResults.has(item.responseId)) {
-            groupedResults.set(item.responseId, []);
-          }
-          groupedResults.get(item.responseId)!.push({
-            callId: item.functionCall.callId,
-            result: undefined,
-          });
-        }
-      }
-
-      for (const [responseId, results] of groupedResults.entries()) {
-        try {
-          await markFunctionCallsAsConfirmed({
-            threadId,
-            responseId,
-            results,
-          });
-        } catch (error) {
-          console.error("Failed to mark function calls as rejected", error);
-        }
-      }
-    }
-
-    setChatHistory(prev => [
-      ...prev,
-      {
-        role: "assistant",
-        content: "❌ Rejected all pending AI suggestions.",
-      },
-    ]);
-    resolvedIds.forEach((id) => scheduleResolvedRemoval(id));
-  }, [pendingItems, threadId, markFunctionCallsAsConfirmed, setChatHistory, scheduleResolvedRemoval]);
-
-  const handleAutoRejectPendingItems = useCallback(async () => {
-    const itemsToReject = pendingItems.filter(
-      (item) => item.status !== "confirmed" && item.status !== "rejected"
-    );
-    if (itemsToReject.length === 0) return 0;
-
-    const resolvedIds = itemsToReject.map((item) => item.clientId).filter(Boolean) as string[];
-    setPendingItems((prev) =>
-      prev.map((item) =>
-        resolvedIds.includes(item.clientId ?? "") ? { ...item, status: "rejected" } : item
-      )
-    );
-    setShowConfirmationGrid(false);
-    setIsConfirmationDialogOpen(false);
-
-    if (threadId) {
-      const groupedResults = new Map<string, { callId: string; result: string | undefined }[]>();
-      for (const item of itemsToReject) {
-        if (item.functionCall && item.responseId) {
-          if (!groupedResults.has(item.responseId)) {
-            groupedResults.set(item.responseId, []);
-          }
-          groupedResults.get(item.responseId)!.push({
-            callId: item.functionCall.callId,
-            result: undefined,
-          });
-        }
-      }
-
-      for (const [responseId, results] of groupedResults.entries()) {
-        try {
-          await markFunctionCallsAsConfirmed({
-            threadId,
-            responseId,
-            results,
-          });
-        } catch (error) {
-          console.error("Failed to auto-reject function calls", error);
-        }
-      }
-    }
-
-    resolvedIds.forEach((id) => scheduleResolvedRemoval(id));
-    return itemsToReject.length;
-  }, [
-    pendingItems,
-    threadId,
-    markFunctionCallsAsConfirmed,
-    scheduleResolvedRemoval,
-  ]);
-
-  const handleEditItem = useCallback((index: number) => {
+    if (index < 0) return;
     setEditingItemIndex(index);
     setShowConfirmationGrid(false);
     setIsConfirmationDialogOpen(true);
     setCurrentItemIndex(index);
-  }, []);
+  }, [pendingItems]);
 
   const resetPendingState = useCallback(() => {
     setPendingItems([]);
@@ -1328,13 +1449,19 @@ export const usePendingItems = ({
     setEditingItemIndex(null);
   }, []);
 
-  const handleUpdatePendingItem = useCallback((index: number, updates: Partial<PendingItem>) => {
+  const handleUpdatePendingItem = useCallback((indexOrCallId: number | string, updates: Partial<PendingItem>) => {
     setPendingItems((prev) => {
-      const newItems = [...prev];
-      if (index >= 0 && index < newItems.length) {
-        newItems[index] = { ...newItems[index], ...updates };
+      let index = typeof indexOrCallId === 'number' ? indexOrCallId : -1;
+      if (typeof indexOrCallId === 'string') {
+        index = prev.findIndex(i => i.functionCall?.callId === indexOrCallId);
       }
-      return newItems;
+
+      if (index >= 0 && index < prev.length) {
+        const newItems = [...prev];
+        newItems[index] = { ...newItems[index], ...updates };
+        return newItems;
+      }
+      return prev;
     });
   }, []);
 
@@ -1367,10 +1494,6 @@ export const usePendingItems = ({
 };
 
 export default usePendingItems;
-
-
-
-
 
 
 

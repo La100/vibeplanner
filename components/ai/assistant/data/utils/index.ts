@@ -98,14 +98,14 @@ export const formatShoppingSectionDisplay = (item: PendingItem): PendingItem => 
         item.operation === "delete"
           ? `Delete section: ${name}`
           : item.operation === "edit"
-          ? `Update section: ${name}`
-          : `Create section: ${name}`,
+            ? `Update section: ${name}`
+            : `Create section: ${name}`,
       description:
         item.operation === "edit" && originalName && originalName !== name
           ? `Rename from "${originalName}" to "${name}"`
           : item.operation === "delete"
-          ? "The section will be removed; assigned items stay unsectioned."
-          : "New shopping list section",
+            ? "The section will be removed; assigned items stay unsectioned."
+            : "New shopping list section",
     },
   } satisfies PendingItem;
 };
@@ -113,7 +113,7 @@ export const formatShoppingSectionDisplay = (item: PendingItem): PendingItem => 
 export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
   items.map((originalItem) => {
     const normalizeTypeAndOperation = (item: PendingItem) => {
-      let type = item.type;
+      let type: string = item.type;
       let operation = item.operation;
 
       if (TOOL_NAME_MAPPING[type]) {
@@ -142,6 +142,10 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
         case "create_contact":
           type = "contact";
           operation = operation ?? "create";
+          break;
+        case "create_multiple_items":
+          type = (item.data?.type as string) || "task";
+          operation = operation ?? "bulk_create";
           break;
         case "create_multiple_tasks":
           type = "task";
@@ -175,10 +179,29 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
           break;
       }
 
+      const finalType = isPendingItemType(type) ? type : item.type;
+      const finalOperation = operation ?? item.operation ?? "create";
+
+      // Auto-detect bulk data that was mistakenly categorized as single create
+      if (finalOperation === "create" && item.data) {
+        const data = item.data as Record<string, unknown>;
+        const hasBulkTasks = Array.isArray(data.tasks) || (Array.isArray(data.items) && finalType === "task");
+        const hasBulkNotes = Array.isArray(data.notes) || (Array.isArray(data.items) && finalType === "note");
+        const hasBulkShopping = Array.isArray(data.items) && finalType === "shopping";
+
+        if (hasBulkTasks || hasBulkNotes || hasBulkShopping) {
+          return {
+            ...item,
+            type: finalType,
+            operation: "bulk_create",
+          } satisfies PendingItem;
+        }
+      }
+
       return {
         ...item,
-        type,
-        operation: operation ?? item.operation ?? "create",
+        type: finalType,
+        operation: finalOperation,
       } satisfies PendingItem;
     };
 
@@ -214,8 +237,8 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
               tasks.length === 0
                 ? "Review tasks before confirming."
                 : [preview, remaining > 0 ? `+${remaining} more` : null]
-                    .filter(Boolean)
-                    .join(" • "),
+                  .filter(Boolean)
+                  .join(" • "),
           },
         };
       }
@@ -229,40 +252,40 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
           Array.isArray(item.selection?.taskIds)
             ? (item.selection!.taskIds as string[]).length
             : Array.isArray(item.data?.tasks)
-            ? (item.data!.tasks as unknown[]).length
-            : 0;
+              ? (item.data!.tasks as unknown[]).length
+              : 0;
 
         const summaryPreview =
           changeSummary.length > 0
             ? changeSummary.slice(0, 3).join(" • ")
             : (() => {
-                const updatesSource = item.updates || (item.data?.updates as Record<string, unknown>) || {};
-                const updateKeys = Object.keys(updatesSource).filter((key) => updatesSource[key] !== undefined);
-                if (updateKeys.length === 0) {
-                  return "Review bulk changes before confirming.";
+              const updatesSource = item.updates || (item.data?.updates as Record<string, unknown>) || {};
+              const updateKeys = Object.keys(updatesSource).filter((key) => updatesSource[key] !== undefined);
+              if (updateKeys.length === 0) {
+                return "Review bulk changes before confirming.";
+              }
+              const labels = updateKeys.map((key) => {
+                switch (key) {
+                  case "status":
+                    return `Status → ${updatesSource[key]}`;
+                  case "priority":
+                    return `Priority → ${updatesSource[key]}`;
+                  case "assignedTo":
+                    return "Assigned user updated";
+                  case "tags":
+                    return Array.isArray(updatesSource[key])
+                      ? `Tags → ${(updatesSource[key] as string[]).join(", ")}`
+                      : "Tags updated";
+                  case "title":
+                    return `Title → ${updatesSource[key]}`;
+                  case "description":
+                    return "Description updated";
+                  default:
+                    return `${key} updated`;
                 }
-                const labels = updateKeys.map((key) => {
-                  switch (key) {
-                    case "status":
-                      return `Status → ${updatesSource[key]}`;
-                    case "priority":
-                      return `Priority → ${updatesSource[key]}`;
-                    case "assignedTo":
-                      return "Assigned user updated";
-                    case "tags":
-                      return Array.isArray(updatesSource[key])
-                        ? `Tags → ${(updatesSource[key] as string[]).join(", ")}`
-                        : "Tags updated";
-                    case "title":
-                      return `Title → ${updatesSource[key]}`;
-                    case "description":
-                      return "Description updated";
-                    default:
-                      return `${key} updated`;
-                  }
-                });
-                return labels.join(" • ");
-              })();
+              });
+              return labels.join(" • ");
+            })();
 
         return {
           ...item,
@@ -281,8 +304,8 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
             item.operation === "delete"
               ? `Delete task: ${title}`
               : item.operation === "edit"
-              ? `Update task: ${title}`
-              : `Create task: ${title}`,
+                ? `Update task: ${title}`
+                : `Create task: ${title}`,
           description: (item.data?.description as string) || "Review task details before confirming.",
         },
       };
@@ -307,8 +330,8 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
               notes.length === 0
                 ? "Review notes before confirming."
                 : [preview, remaining > 0 ? `+${remaining} more` : null]
-                    .filter(Boolean)
-                    .join(" • "),
+                  .filter(Boolean)
+                  .join(" • "),
           },
         };
       }
@@ -321,8 +344,8 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
             item.operation === "delete"
               ? `Delete note: ${title}`
               : item.operation === "edit"
-              ? `Update note: ${title}`
-              : `Create note: ${title}`,
+                ? `Update note: ${title}`
+                : `Create note: ${title}`,
           description: (item.data?.content as string)?.slice(0, 120) || "Review note before confirming.",
         },
       };
@@ -347,8 +370,8 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
               items.length === 0
                 ? "Review shopping items before confirming."
                 : [preview, remaining > 0 ? `+${remaining} more` : null]
-                    .filter(Boolean)
-                    .join(" • "),
+                  .filter(Boolean)
+                  .join(" • "),
           },
         };
       }
@@ -361,8 +384,8 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
             item.operation === "delete"
               ? `Delete item: ${name}`
               : item.operation === "edit"
-              ? `Update item: ${name}`
-              : `Create item: ${name}`,
+                ? `Update item: ${name}`
+                : `Create item: ${name}`,
           description: `Quantity: ${item.data?.quantity ?? item.originalItem?.quantity ?? 1}`,
         },
       };
@@ -387,8 +410,8 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
               surveys.length === 0
                 ? "Review surveys before confirming."
                 : [preview, remaining > 0 ? `+${remaining} more` : null]
-                    .filter(Boolean)
-                    .join(" • "),
+                  .filter(Boolean)
+                  .join(" • "),
           },
         };
       }
@@ -401,8 +424,8 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
             item.operation === "delete"
               ? `Delete survey: ${title}`
               : item.operation === "edit"
-              ? `Update survey: ${title}`
-              : `Create survey: ${title}`,
+                ? `Update survey: ${title}`
+                : `Create survey: ${title}`,
           description: (item.data?.description as string) || "Review survey details before confirming.",
         },
       };
@@ -417,8 +440,8 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
             item.operation === "delete"
               ? `Delete contact: ${name}`
               : item.operation === "edit"
-              ? `Update contact: ${name}`
-              : `Create contact: ${name}`,
+                ? `Update contact: ${name}`
+                : `Create contact: ${name}`,
           description: (item.data?.companyName as string) || (item.data?.email as string) || "Review contact details.",
         },
       };
@@ -443,8 +466,8 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
               items.length === 0
                 ? "Review labor items before confirming."
                 : [preview, remaining > 0 ? `+${remaining} more` : null]
-                    .filter(Boolean)
-                    .join(" • "),
+                  .filter(Boolean)
+                  .join(" • "),
           },
         };
       }
@@ -457,8 +480,8 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
             item.operation === "delete"
               ? `Delete work: ${name}`
               : item.operation === "edit"
-              ? `Update work: ${name}`
-              : `Create work: ${name}`,
+                ? `Update work: ${name}`
+                : `Create work: ${name}`,
           description: `${item.data?.quantity ?? item.originalItem?.quantity ?? 1} ${item.data?.unit ?? item.originalItem?.unit ?? "m²"}`,
         },
       };
@@ -475,14 +498,14 @@ export const normalizePendingItems = (items: PendingItem[]): PendingItem[] =>
             item.operation === "delete"
               ? `Delete section: ${name}`
               : item.operation === "edit"
-              ? `Update section: ${name}`
-              : `Create section: ${name}`,
+                ? `Update section: ${name}`
+                : `Create section: ${name}`,
           description:
             item.operation === "edit" && originalName && originalName !== name
               ? `Rename from "${originalName}" to "${name}"`
               : item.operation === "delete"
-              ? "The section will be removed; assigned items stay unsectioned."
-              : "New labor list section",
+                ? "The section will be removed; assigned items stay unsectioned."
+                : "New labor list section",
         },
       } satisfies PendingItem;
     }
@@ -499,8 +522,16 @@ export const expandBulkEditItems = (items: PendingItem[]): PendingItem[] => {
     }
 
     if (item.operation === 'bulk_create') {
-      const tasks = Array.isArray(item.data?.tasks) ? (item.data.tasks as TaskInput[]) : [];
-      const notes = Array.isArray(item.data?.notes) ? (item.data.notes as NoteInput[]) : [];
+      const tasks = Array.isArray(item.data?.tasks)
+        ? (item.data.tasks as TaskInput[])
+        : Array.isArray(item.data?.items) && item.type === 'task'
+          ? (item.data.items as TaskInput[])
+          : [];
+      const notes = Array.isArray(item.data?.notes)
+        ? (item.data.notes as NoteInput[])
+        : Array.isArray(item.data?.items) && item.type === 'note'
+          ? (item.data.items as NoteInput[])
+          : [];
       const shoppingItems = item.type === 'shopping' && Array.isArray(item.data?.items) ? (item.data.items as ShoppingItemInput[]) : [];
       const laborItems = item.type === 'labor' && Array.isArray(item.data?.items) ? (item.data.items as LaborItemInput[]) : [];
       const surveys = Array.isArray(item.data?.surveys) ? (item.data.surveys as Array<Record<string, unknown>>) : [];
@@ -591,11 +622,11 @@ export const expandBulkEditItems = (items: PendingItem[]): PendingItem[] => {
     if (item.type === 'task' && item.operation === 'bulk_edit') {
       const taskDetails = Array.isArray(item.data?.taskDetails)
         ? (item.data!.taskDetails as Array<{
-            taskId: string;
-            original?: Record<string, unknown>;
-            updates: Record<string, unknown>;
-            changeSummary?: string;
-          }>)
+          taskId: string;
+          original?: Record<string, unknown>;
+          updates: Record<string, unknown>;
+          changeSummary?: string;
+        }>)
         : [];
 
       if (taskDetails.length > 0) {
@@ -715,8 +746,6 @@ export const resolveSectionName = (rawSectionName?: unknown, rawCategory?: unkno
   const normalizedCategory = typeof rawCategory === "string" ? rawCategory.trim() : "";
   return normalizedCategory.length > 0 ? normalizedCategory : undefined;
 };
-
-
 
 
 
