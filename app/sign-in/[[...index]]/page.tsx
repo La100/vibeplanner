@@ -15,7 +15,7 @@ export default function SignInPage() {
         strategy: "oauth_google",
         redirectUrl: "/sso-callback",
         redirectUrlComplete: "/dashboard",
-        // @ts-ignore
+        // @ts-expect-error -- Scope is missing in the type definition but required by Google
         scope: "https://www.googleapis.com/auth/calendar.events",
       });
     } catch (error) {

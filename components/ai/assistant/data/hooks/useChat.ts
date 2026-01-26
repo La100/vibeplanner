@@ -255,8 +255,8 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
       let partsChanged = false;
 
       for (const part of parts) {
-        if (part.type === "text" && typeof (part as any).text === "string") {
-          const text = (part as any).text as string;
+        if (part.type === "text" && typeof (part as unknown as { text: string }).text === "string") {
+          const text = (part as unknown as { text: string }).text as string;
 
           // Check if text contains <thinking> tags
           if (text.includes("<thinking>")) {
@@ -283,7 +283,7 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
               processedParts.push({
                 type: "reasoning",
                 text: match[1]
-              } as any);
+              } as MessagePart);
 
               lastIndex = thinkingRegex.lastIndex;
             }
@@ -308,7 +308,7 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
               processedParts.push({
                 type: "reasoning",
                 text: openMatch[1]
-              } as any);
+              } as MessagePart);
             } else {
               // Just push remaining text if not empty
               if (remaining.length > 0) {
@@ -342,8 +342,8 @@ export const useAIChat = ({ projectId, userClerkId }: UseAIChatProps): UseAIChat
       // in the main bubble, causing duplication.
       if (partsChanged) {
         const newText = parts
-          .filter(p => p.type === "text" && typeof (p as any).text === "string")
-          .map(p => (p as any).text)
+          .filter(p => p.type === "text" && typeof (p as unknown as { text: string }).text === "string")
+          .map(p => (p as unknown as { text: string }).text)
           .join("");
 
         return {

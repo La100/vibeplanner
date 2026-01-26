@@ -64,9 +64,7 @@ export default function OnboardingStep2Page() {
         }
     };
 
-    const handleSkip = () => {
-        router.push("/onboarding/step3");
-    };
+
 
     if (!isSignInLoaded || !isUserLoaded) {
         return null; // Or a loading spinner
