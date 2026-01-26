@@ -77,6 +77,10 @@ export const getSession = query({
   },
 });
 
+import { r2 } from "../files";
+
+// ... existing imports ...
+
 // Get messages for a session
 export const getSessionMessages = query({
   args: {
@@ -95,7 +99,26 @@ export const getSessionMessages = query({
       .order("asc")
       .collect();
 
-    return messages;
+    // Generate fresh signed URLs for images
+    const messagesWithUrls = await Promise.all(
+      messages.map(async (msg) => {
+        if (msg.imageStorageKey) {
+          try {
+            const url = await r2.getUrl(msg.imageStorageKey, {
+              expiresIn: 60 * 60 * 24, // 24 hours
+            });
+            if (url) {
+              return { ...msg, imageUrl: url };
+            }
+          } catch (error) {
+            console.error("Failed to generate URL for image:", error);
+          }
+        }
+        return msg;
+      })
+    );
+
+    return messagesWithUrls;
   },
 });
 

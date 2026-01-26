@@ -113,7 +113,7 @@ export function SmartDashboard() {
         <p className="text-muted-foreground">
           {organizations.length >= 1
             ? "Redirecting to your organization..."
-            : "Redirecting to organisation..."}
+            : "Redirecting to onboarding..."}
         </p>
       </div>
     </div>

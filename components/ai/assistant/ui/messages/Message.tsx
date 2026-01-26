@@ -317,7 +317,7 @@ export const PurePreviewMessage = ({
   }, [message.parts]);
 
   const toolParts = useMemo(
-    () => message.parts?.filter((part) => part.type.startsWith("tool-") && "toolName" in part) ?? [],
+    () => message.parts?.filter((part) => part.type.startsWith("tool-") && ("toolName" in part || "name" in part)) ?? [],
     [message.parts]
   );
 
@@ -385,7 +385,7 @@ export const PurePreviewMessage = ({
               <ChainOfThoughtHeader>Chain of Thought</ChainOfThoughtHeader>
               <ChainOfThoughtContent>
                 {toolParts.map((part, index) => {
-                  const toolName = (part as { toolName?: string }).toolName;
+                  const toolName = (part as { toolName?: string; name?: string }).toolName || (part as { toolName?: string; name?: string }).name;
                   const config = toolName ? getToolConfig(toolName) : null;
                   return (
                     <ChainOfThoughtStep

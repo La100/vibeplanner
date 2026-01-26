@@ -27,13 +27,14 @@ import { ChatInput } from "@/components/ai/assistant/ui/ChatInput";
 export default function VisualizationsPage() {
   const { organization } = useOrganization();
   const [message, setMessage] = useState("");
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatingSessionId, setGeneratingSessionId] = useState<string | null>(null);
+  const isGenerating = !!generatingSessionId;
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
 
   // Session state
   const [currentSessionId, setCurrentSessionId] = useState<Id<"aiVisualizationSessions"> | null>(null);
-  const [showHistory, setShowHistory] = useState(true);
+  const [showHistory, setShowHistory] = useState(false);
 
   // Lightbox state
   const [selectedLightbox, setSelectedLightbox] = useState<{
@@ -166,7 +167,8 @@ export default function VisualizationsPage() {
 
     const userPrompt = message;
     setMessage("");
-    setIsGenerating(true);
+    // Track generation for current session (or "new" if creating one)
+    setGeneratingSessionId(currentSessionId || "new");
 
     const filesToUpload = [...selectedFiles];
     setSelectedFiles([]);
@@ -174,7 +176,6 @@ export default function VisualizationsPage() {
     try {
       let sessionId = currentSessionId;
 
-      // Create a new session if we don't have one
       if (!sessionId) {
         sessionId = await createSession({
           teamId: team._id,
@@ -182,6 +183,8 @@ export default function VisualizationsPage() {
         });
         setCurrentSessionId(sessionId);
       }
+      // Update generating session ID to the real one
+      setGeneratingSessionId(sessionId);
 
       // Upload reference images if any
       const uploadedRefs: Array<{ storageKey: string; mimeType: string; name: string; base64?: string }> = [];
@@ -243,7 +246,7 @@ export default function VisualizationsPage() {
       toast.error("Generation failed");
       console.error(error);
     } finally {
-      setIsGenerating(false);
+      setGeneratingSessionId(null);
     }
   };
 
@@ -516,8 +519,8 @@ export default function VisualizationsPage() {
                   ))}
                 </AnimatePresence>
 
-                {/* Generating indicator */}
-                {isGenerating && (
+                {/* Generating indicator - only show if for this session */}
+                {isGenerating && (generatingSessionId === currentSessionId || (generatingSessionId === "new" && !currentSessionId)) && (
                   <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}

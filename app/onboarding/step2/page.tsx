@@ -17,6 +17,9 @@ export default function OnboardingStep2Page() {
         setIsLoading(true);
         setError(null);
         try {
+            console.log("Reloading user data...");
+            await user.reload();
+
             console.log("Checking for existing Google account...");
             const googleAccount = user.externalAccounts.find(
                 (account) => account.provider === "google" || account.verification?.strategy === "oauth_google"
@@ -25,7 +28,6 @@ export default function OnboardingStep2Page() {
             if (googleAccount) {
                 console.log("Found Google account:", googleAccount.id);
                 // Check if scope is already granted
-                // We check for both short and long form to be safe
                 const scopes = googleAccount.approvedScopes || "";
                 const hasCalendarScope = scopes.includes("calendar.events") || scopes.includes("https://www.googleapis.com/auth/calendar.events");
 
@@ -35,16 +37,16 @@ export default function OnboardingStep2Page() {
                     return;
                 }
 
-                console.log("Re-linking account to force scope update...");
-                // WORKAROUND: reauthorize() can hang if configured scopes changed in Dashboard.
-                // We disconnect and immediately reconnect to force a fresh permission request.
-                await googleAccount.destroy();
-
-                await user.createExternalAccount({
-                    strategy: "oauth_google",
-                    redirectUrl: "/onboarding/step3",
+                console.log("Attempting to add scope via reauthorize...");
+                // Safer approach: use reauthorize to add scopes to existing connection
+                const res = await googleAccount.reauthorize({
                     additionalScopes: ["https://www.googleapis.com/auth/calendar.events"],
+                    redirectUrl: "/onboarding/step3",
                 });
+
+                if (res.verification?.status === 'verified') {
+                    router.push("/onboarding/step3");
+                }
             } else {
                 console.log("No Google account found, creating external account...");
                 // If not connected, we connect it
@@ -83,7 +85,6 @@ export default function OnboardingStep2Page() {
                     <div className="text-xs font-semibold uppercase tracking-[0.24em] text-[#2a2a2a]">
                         Step 2 of 2
                     </div>
-                    {/* Optional: Add user info or logout if needed, similar to step 1 */}
                 </div>
 
                 <div className="mt-10 flex flex-1 items-center justify-center">
@@ -117,13 +118,6 @@ export default function OnboardingStep2Page() {
                                         <span>Connect Google Calendar</span>
                                     </>
                                 )}
-                            </button>
-
-                            <button
-                                onClick={handleSkip}
-                                className="mt-4 text-sm font-medium text-[#666] hover:text-[#1b1b1b] transition-colors underline-offset-4 hover:underline"
-                            >
-                                Skip for now
                             </button>
                         </div>
 

@@ -9,7 +9,6 @@
  */
 
 import type * as activityLog from "../activityLog.js";
-import type * as adminFunctions from "../adminFunctions.js";
 import type * as ai_actions from "../ai/actions.js";
 import type * as ai_agent from "../ai/agent.js";
 import type * as ai_config from "../ai/config.js";
@@ -81,7 +80,6 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   activityLog: typeof activityLog;
-  adminFunctions: typeof adminFunctions;
   "ai/actions": typeof ai_actions;
   "ai/agent": typeof ai_agent;
   "ai/config": typeof ai_config;

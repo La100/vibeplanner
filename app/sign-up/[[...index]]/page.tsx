@@ -15,6 +15,8 @@ export default function SignUpPage() {
         strategy: "oauth_google",
         redirectUrl: "/sso-callback",
         redirectUrlComplete: "/dashboard",
+        // @ts-ignore
+        scope: "https://www.googleapis.com/auth/calendar.events",
       });
     } catch (error) {
       console.error("Error signing up with Google:", error);
@@ -26,12 +28,12 @@ export default function SignUpPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#e8e4de] flex">
+    <div className="min-h-screen bg-background flex">
       {/* Left Panel - Image */}
       <div className="hidden lg:flex flex-1 p-4">
         <div className="relative w-full rounded-[24px] overflow-hidden">
           <Image
-            src="/sunflowers.png"
+            src="/auth-image.jpg"
             alt="VibePlanner"
             fill
             className="object-cover"
@@ -39,19 +41,7 @@ export default function SignUpPage() {
           />
 
           {/* Content overlay */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            {/* Badge */}
-            <div className="mb-4">
-              <span className="inline-flex px-6 py-2 rounded-full border-2 border-white/60 text-white text-sm font-medium tracking-wide">
-                VibePlanner
-              </span>
-            </div>
 
-            {/* Main text */}
-            <h1 className="text-white text-4xl font-medium text-center leading-tight max-w-md drop-shadow-lg">
-              Architektoniczny<br />Project Manager.
-            </h1>
-          </div>
         </div>
       </div>
 
@@ -60,7 +50,7 @@ export default function SignUpPage() {
         <div className="w-full max-w-[340px] flex flex-col items-center">
           {/* Logo/Title */}
           <h1 className="text-3xl font-medium text-gray-900 mb-2">VibePlanner</h1>
-          <p className="text-gray-500 text-base mb-10">Architektoniczny Project Manager.</p>
+          <p className="text-gray-500 text-base mb-10">Architectural Project Manager.</p>
 
           {/* Google Sign Up Button */}
           <button

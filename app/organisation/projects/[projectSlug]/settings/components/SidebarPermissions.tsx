@@ -7,9 +7,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { 
+import {
   LayoutDashboard,
-  Settings, 
+  Settings,
   Calendar,
   ShoppingCart,
   CheckSquare,
@@ -34,51 +34,51 @@ interface PermissionSection {
 }
 
 const sidebarSections: PermissionSection[] = [
-  { 
-    key: "overview", 
-    label: "Overview", 
+  {
+    key: "overview",
+    label: "Overview",
     icon: LayoutDashboard,
     description: "Project overview and statistics"
   },
-  { 
-    key: "tasks", 
-    label: "Tasks", 
+  {
+    key: "tasks",
+    label: "Tasks",
     icon: CheckSquare,
     description: "Task management and tracking"
   },
-  { 
-    key: "notes", 
-    label: "Notes", 
+  {
+    key: "notes",
+    label: "Notes",
     icon: StickyNote,
     description: "Project notes and documentation"
   },
-  { 
-    key: "contacts", 
-    label: "Contacts", 
+  {
+    key: "contacts",
+    label: "Contacts",
     icon: Contact,
     description: "Project contacts and stakeholders"
   },
-  { 
-    key: "calendar", 
-    label: "Calendar", 
+  {
+    key: "calendar",
+    label: "Calendar",
     icon: Calendar,
     description: "Project calendar and scheduling"
   },
-  { 
-    key: "files", 
-    label: "Files", 
+  {
+    key: "files",
+    label: "Files",
     icon: Files,
     description: "File management and sharing"
   },
-  { 
-    key: "shopping_list", 
-    label: "Shopping List", 
+  {
+    key: "shopping_list",
+    label: "Shopping List",
     icon: ShoppingCart,
     description: "Project shopping and procurement"
   },
-  { 
-    key: "settings", 
-    label: "Settings", 
+  {
+    key: "settings",
+    label: "Settings",
     icon: Settings,
     description: "Project configuration (usually restricted for clients)"
   },
@@ -87,7 +87,7 @@ const sidebarSections: PermissionSection[] = [
 export default function SidebarPermissions({ projectId }: SidebarPermissionsProps) {
   const project = useQuery(apiAny.projects.getProject, { projectId });
   const updatePermissions = useMutation(apiAny.projects.updateProjectSidebarPermissions);
-  
+
   const [permissions, setPermissions] = useState<Record<string, { visible: boolean }>>({});
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -125,7 +125,7 @@ export default function SidebarPermissions({ projectId }: SidebarPermissionsProp
         projectId,
         sidebarPermissions: permissions,
       });
-      
+
       toast.success("Permissions Updated", {
         description: "Sidebar permissions have been updated successfully.",
       });
@@ -171,7 +171,7 @@ export default function SidebarPermissions({ projectId }: SidebarPermissionsProp
           {sidebarSections.map((section) => {
             const sectionPermissions = permissions[section.key] || { visible: true };
             const Icon = section.icon;
-            
+
             return (
               <div key={section.key} className="space-y-3">
                 <div className="flex items-start gap-3">
@@ -183,7 +183,7 @@ export default function SidebarPermissions({ projectId }: SidebarPermissionsProp
                       <h4 className="text-sm font-medium">{section.label}</h4>
                       <p className="text-xs text-muted-foreground">{section.description}</p>
                     </div>
-                    
+
                     <div className="flex items-center gap-2">
                       <input
                         type="checkbox"
@@ -199,7 +199,7 @@ export default function SidebarPermissions({ projectId }: SidebarPermissionsProp
                     </div>
                   </div>
                 </div>
-                
+
                 {section.key !== sidebarSections[sidebarSections.length - 1].key && (
                   <Separator className="my-4" />
                 )}
@@ -224,7 +224,7 @@ export default function SidebarPermissions({ projectId }: SidebarPermissionsProp
                 </>
               )}
             </Button>
-            
+
             <Button
               variant="outline"
               onClick={resetToDefaults}
@@ -234,7 +234,7 @@ export default function SidebarPermissions({ projectId }: SidebarPermissionsProp
               Reset to Defaults
             </Button>
           </div>
-          
+
           {hasChanges && (
             <p className="text-xs text-muted-foreground mt-2">
               You have unsaved changes. Click "Save Changes" to apply them.
