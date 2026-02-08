@@ -1,0 +1,76 @@
+import Link from "next/link";
+import Logo from "../Logo";
+
+const footerLinks = [
+  {
+    title: "Product",
+    links: [
+      { label: "AI Assistants", href: "#ai-assistants" },
+      { label: "Features", href: "#features" },
+      { label: "Pricing", href: "#pricing" },
+      { label: "FAQ", href: "#faq" },
+    ],
+  },
+  {
+    title: "Company",
+    links: [
+      { label: "About", href: "/about" },
+      { label: "Blog", href: "/blog" },
+      { label: "Careers", href: "/careers" },
+      { label: "Contact", href: "/contact" },
+    ],
+  },
+  {
+    title: "Legal",
+    links: [
+      { label: "Privacy", href: "/privacy" },
+      { label: "Terms", href: "/terms" },
+    ],
+  },
+];
+
+export function Footer() {
+  return (
+    <footer className="border-t border-border/40 pt-16 pb-10 px-6">
+      <div className="container max-w-5xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-16">
+          <div className="md:col-span-1">
+            <div className="mb-5">
+              <Logo />
+            </div>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Build habits that stick with AI-powered guidance.
+            </p>
+          </div>
+
+          {footerLinks.map((column) => (
+            <div key={column.title} className="md:col-span-1">
+              <h4 className="text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-5">
+                {column.title}
+              </h4>
+              <ul className="space-y-3">
+                {column.links.map((link) => (
+                  <li key={link.label}>
+                    <Link
+                      href={link.href}
+                      className="text-sm text-foreground/70 hover:text-foreground transition-colors"
+                    >
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex flex-col md:flex-row justify-between items-center pt-6 border-t border-border/30">
+          <p className="text-xs text-muted-foreground">
+            &copy; {new Date().getFullYear()} VibePlanner Inc. All rights
+            reserved.
+          </p>
+        </div>
+      </div>
+    </footer>
+  );
+}

@@ -1,0 +1,147 @@
+import { Doc } from "@/convex/_generated/dataModel";
+
+export type Task = Doc<"tasks">;
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  description?: string;
+  type: 'task' | 'deadline' | 'milestone';
+  startTime: Date;
+  endTime: Date;
+  isAllDay: boolean;
+  color: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  status: 'planned' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
+  assignedTo?: string;
+  assignedToName?: string;
+  assignedToImageUrl?: string;
+  project?: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  sourceType: 'task';
+  sourceData: Task;
+}
+
+export function transformTaskToEvent(task: Task & { 
+  assignedToName?: string; 
+  assignedToImageUrl?: string;
+  project?: { id: string; name: string; slug: string; }
+}): CalendarEvent | null {
+  // Only include tasks with dates (either startDate or endDate)
+  if (!task.startDate && !task.endDate) {
+    return null;
+  }
+
+  // Determine event type and dates based on what's provided
+  let startTime: Date;
+  let endTime: Date;
+  let eventType: 'task' | 'deadline' | 'milestone';
+  let isAllDay: boolean;
+
+  if (task.startDate && task.endDate) {
+    // Has both dates - analyze the type
+    startTime = new Date(task.startDate);
+    endTime = new Date(task.endDate);
+    
+    const isSameDay = startTime.toDateString() === endTime.toDateString();
+    const isSameTimestamp = task.startDate === task.endDate;
+    
+    // Check if all-day: times are at midnight UTC
+    const startIsAllDay = startTime.getUTCHours() === 0 && startTime.getUTCMinutes() === 0;
+    const endIsAllDay = endTime.getUTCHours() === 0 && endTime.getUTCMinutes() === 0;
+    isAllDay = startIsAllDay && endIsAllDay;
+    
+    if (isSameDay && isSameTimestamp) {
+      // Single point in time
+      eventType = isAllDay ? 'deadline' : 'milestone';
+    } else if (isSameDay && !isAllDay) {
+      // Same day with time range (e.g., meeting 2pm-4pm)
+      eventType = 'milestone';
+    } else {
+      // Multi-day or different days = task
+      eventType = 'task';
+    }
+    
+  } else if (task.endDate) {
+    // Only endDate - it's a deadline
+    endTime = new Date(task.endDate);
+    startTime = endTime; // Show on the deadline date
+    eventType = 'deadline';
+    isAllDay = endTime.getUTCHours() === 0 && endTime.getUTCMinutes() === 0;
+    
+  } else {
+    // Only startDate - it's a milestone/start point
+    startTime = new Date(task.startDate!);
+    endTime = startTime;
+    eventType = 'milestone';
+    isAllDay = startTime.getUTCHours() === 0 && startTime.getUTCMinutes() === 0;
+  }
+
+  return {
+    id: task._id,
+    title: task.title,
+    description: task.description,
+    type: eventType,
+    startTime,
+    endTime,
+    isAllDay,
+    color: getPriorityColor(task.priority),
+    priority: task.priority || 'medium',
+    status: mapTaskStatusToEventStatus(task.status),
+    assignedTo: task.assignedTo || undefined,
+    assignedToName: task.assignedToName,
+    assignedToImageUrl: task.assignedToImageUrl,
+    project: task.project,
+    sourceType: 'task',
+    sourceData: task
+  };
+}
+
+function getPriorityColor(priority?: string | null): string {
+  switch (priority) {
+    case 'urgent':
+      return '#ef4444'; // red-500
+    case 'high':
+      return '#f97316'; // orange-500
+    case 'medium':
+      return '#eab308'; // yellow-500
+    case 'low':
+      return '#22c55e'; // green-500
+    default:
+      return '#6b7280'; // gray-500
+  }
+}
+
+function mapTaskStatusToEventStatus(status: string): CalendarEvent['status'] {
+  switch (status) {
+    case 'todo':
+      return 'planned';
+    case 'in_progress':
+      return 'in_progress';
+    case 'review':
+      return 'confirmed';
+    case 'done':
+      return 'completed';
+    default:
+      return 'planned';
+  }
+}
+
+export function transformDataToEvents(
+  tasks: (Task & { assignedToName?: string; assignedToImageUrl?: string; project?: { id: string; name: string; slug: string; } })[] = []
+): CalendarEvent[] {
+  const events: CalendarEvent[] = [];
+  
+  // Transform tasks
+  tasks.forEach(task => {
+    const event = transformTaskToEvent(task);
+    if (event) {
+      events.push(event);
+    }
+  });
+  
+  return events;
+}
