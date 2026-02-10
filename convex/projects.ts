@@ -764,6 +764,15 @@ export const deleteProject = mutation({
       throw new Error("Insufficient permissions to delete this project. Only admin can delete projects.");
     }
 
+    // Unregister Telegram webhook before deleting the project
+    if (project.telegramBotToken) {
+      await ctx.scheduler.runAfter(
+        0,
+        internalAny.messaging.telegramActions.deleteTelegramWebhook,
+        { botToken: project.telegramBotToken }
+      );
+    }
+
     const r2AccessKeyId = process.env.R2_ACCESS_KEY_ID;
     const r2Bucket = process.env.R2_BUCKET;
     const r2Endpoint = process.env.R2_ENDPOINT;

@@ -59,11 +59,6 @@ const SOUL_SOURCES = [
     source: "convex/ai/souls/assistants/custom/soul.md",
   },
   {
-    id: "martin",
-    constName: "MARTIN_ASSISTANT_SOUL",
-    source: "convex/ai/souls/assistants/martin/soul.md",
-  },
-  {
     id: "buddha",
     constName: "BUDDHA_ASSISTANT_SOUL",
     source: "convex/ai/souls/assistants/buddha/soul.md",
@@ -72,11 +67,6 @@ const SOUL_SOURCES = [
     id: "marcus",
     constName: "MARCUS_AURELIUS_SOUL",
     source: "convex/ai/souls/assistants/marcus/soul.md",
-  },
-  {
-    id: "startup",
-    constName: "STARTUP_ASSISTANT_SOUL",
-    source: "convex/ai/souls/assistants/startup/soul.md",
   },
 ];
 

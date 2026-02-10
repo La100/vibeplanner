@@ -725,3 +725,12 @@ export const getTeamPayments = query({
     return payments.sort((a, b) => b.created - a.created);
   },
 });
+
+export const getSubscriptionConfig = query({
+  args: {},
+  handler: async () => {
+    return {
+      proPriceId: process.env.STRIPE_AI_PRICE_ID,
+    };
+  },
+});

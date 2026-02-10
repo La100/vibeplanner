@@ -1,29 +1,23 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
+import { useUser } from "@clerk/nextjs";
 import { apiAny } from "@/lib/convexApiAny";
 import { toast } from "sonner";
-
-
 import {
-  Sparkles,
-  AlertCircle,
-  DollarSign,
-  CreditCard,
   Settings,
-  Coins,
   Clock3,
-  HardDrive,
-  FolderOpen,
   Check,
-  ChevronsUpDown
+  ChevronsUpDown,
+  User,
+  Mail
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { formatTokens } from "@/lib/aiPricing";
 import { cn } from "@/lib/utils";
 import {
   Command,
@@ -40,48 +34,23 @@ import {
 } from "@/components/ui/popover";
 
 export default function CompanySettings() {
-  // Loading actual data from backend
+  const { user, isLoaded: isUserLoaded } = useUser();
   const teamData = useQuery(apiAny.teams.getMyTeamSettings);
-
-  const teamId = teamData?.teamId;
-
-  const aiAccess = useQuery(apiAny.stripe.checkTeamAIAccess, teamId ? { teamId } : "skip");
-  const subscription = useQuery(apiAny.stripe.getTeamSubscription, teamId ? { teamId } : "skip");
-  const usageBreakdown = useQuery(apiAny.ai.usage.getTeamUsageBreakdown, teamId ? { teamId } : "skip");
-  const storageUsage = useQuery(apiAny.files.getTeamStorageUsage, teamId ? { teamId } : "skip");
-  const resourceUsage = useQuery(apiAny.teams.getTeamResourceUsage, teamId ? { teamId } : "skip");
-
-
-  const ensureBillingWindow = useMutation(apiAny.stripe.ensureBillingWindow);
-  const createBillingPortalSession = useAction(apiAny.stripeActions.createBillingPortalSession);
-  const ensureSubscriptionSynced = useAction(apiAny.stripeActions.ensureSubscriptionSynced);
-  const teamPayments = useQuery(apiAny.stripe.getTeamPayments, teamId ? { teamId } : "skip");
+  const userProfile = useQuery(apiAny.users.getMyOnboardingProfile);
   const updateTeamTimezone = useMutation(apiAny.teams.updateTeamTimezone);
+  const saveProfile = useMutation(apiAny.users.saveMyOnboardingProfile);
 
-  // Local state for team settings
-  const [portalLoading, setPortalLoading] = useState(false);
-  const billingWindowEnsuredRef = useRef(false);
+  const [preferredName, setPreferredName] = useState("");
+  const [isUpdatingName, setIsUpdatingName] = useState(false);
   const timezoneAutoSetRef = useRef(false);
 
   useEffect(() => {
-    if (subscription && subscription.stripeCustomerId && subscription.subscriptionPlan === "free") {
-      ensureSubscriptionSynced({ teamId: subscription.teamId }).catch(console.error);
+    if (userProfile && userProfile.preferredName) {
+      setPreferredName(userProfile.preferredName);
+    } else if (user?.firstName) {
+      setPreferredName(user.firstName);
     }
-  }, [subscription, ensureSubscriptionSynced]);
-
-  useEffect(() => {
-    if (!subscription || !teamData?.teamId || billingWindowEnsuredRef.current) return;
-
-    const start = subscription.currentPeriodStart;
-    const end = subscription.currentPeriodEnd;
-    const now = Date.now();
-    const invalidWindow = !start || !end || end <= start || end < now;
-
-    if (invalidWindow) {
-      billingWindowEnsuredRef.current = true;
-      ensureBillingWindow({ teamId: teamData.teamId }).catch(console.error);
-    }
-  }, [subscription, teamData?.teamId, ensureBillingWindow]);
+  }, [userProfile, user]);
 
   useEffect(() => {
     if (!teamData?.teamId || teamData.timezone || timezoneAutoSetRef.current) return;
@@ -91,7 +60,22 @@ export default function CompanySettings() {
     updateTeamTimezone({ teamId: teamData.teamId, timezone: browserTimezone }).catch(console.error);
   }, [teamData?.teamId, teamData?.timezone, updateTeamTimezone]);
 
-  if (!teamData) {
+  const handleUpdateName = async () => {
+    setIsUpdatingName(true);
+    try {
+      await saveProfile({
+        preferredName: preferredName,
+      });
+      toast.success("Preferred name updated");
+    } catch (error) {
+      console.error("Failed to update name:", error);
+      toast.error("Failed to update name");
+    } finally {
+      setIsUpdatingName(false);
+    }
+  };
+
+  if (!teamData || !isUserLoaded || userProfile === undefined) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -99,53 +83,6 @@ export default function CompanySettings() {
       </div>
     );
   }
-
-  const handleManageSubscription = async () => {
-    if (!teamData?.teamId) return;
-
-    setPortalLoading(true);
-    try {
-      const result = await createBillingPortalSession({
-        teamId: teamData.teamId,
-      });
-
-      if (result.url) {
-        window.location.href = result.url;
-      } else {
-        toast.error("Failed to open billing portal");
-      }
-    } catch (error) {
-      console.error("Error creating billing portal session:", error);
-      toast.error("Error opening billing portal");
-    } finally {
-      setPortalLoading(false);
-    }
-  };
-
-  const remainingCredits = aiAccess?.remainingTokens ?? 0;
-  const totalCredits = aiAccess?.totalTokens ?? remainingCredits;
-  const usedCredits = usageBreakdown?.totalTokens ?? Math.max(0, totalCredits - remainingCredits);
-  const usagePercent = totalCredits > 0 ? Math.min(100, Math.round((usedCredits / totalCredits) * 100)) : 0;
-  const totalInputTokens = usageBreakdown?.totalInputTokens ?? 0;
-  const totalOutputTokens = usageBreakdown?.totalOutputTokens ?? 0;
-  const inputCostUSD = usageBreakdown?.inputCostUSD ?? 0;
-  const outputCostUSD = usageBreakdown?.outputCostUSD ?? 0;
-  const totalCostUSD = usageBreakdown?.totalCostUSD ?? 0;
-  const planStatus = subscription?.subscriptionStatus;
-  const subscriptionLabel = planStatus === "trialing" ? "Trial" : subscription?.planDetails?.name || "Free";
-  let subscriptionSubtext = "No active subscription";
-  if (planStatus === "trialing") {
-    subscriptionSubtext = "Active trial subscription";
-  } else if (planStatus === "active") {
-    subscriptionSubtext = "Active subscription";
-  }
-  const formatUSD = (value: number) =>
-    new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(value);
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -159,101 +96,62 @@ export default function CompanySettings() {
             </div>
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-              <p className="text-sm text-muted-foreground">Manage your preferences and billing.</p>
+              <p className="text-sm text-muted-foreground">Manage your personal preferences and team configuration.</p>
             </div>
           </div>
         </div>
 
         <div className="space-y-6">
           <div className="flex flex-col gap-1">
-            <h2 className="text-lg font-medium">Credits & Billing</h2>
+            <h2 className="text-lg font-medium">Personalization</h2>
             <p className="text-sm text-muted-foreground">
-              Manage your credits and view transaction history.
+              Manage your personal profile settings.
             </p>
           </div>
 
-          <div className="grid gap-6 md:grid-cols-2">
-            <Card className="border-border/40 shadow-sm">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-base font-medium flex items-center gap-2">
-                  <Coins className="h-4 w-4" />
-                  Available Credits
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="text-4xl font-semibold tracking-tight tabular-nums">
-                  {remainingCredits.toLocaleString()} credits
-                </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  {aiAccess?.hasAccess ? "Active balance" : "No active credits"}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/40 shadow-sm">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-base font-medium flex items-center gap-2">
-                  <CreditCard className="h-4 w-4" />
-                  Subscription
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 pt-0">
-                <div className="space-y-1">
-                  <div className="text-2xl font-semibold tracking-tight">{subscriptionLabel}</div>
-                  <p className="text-sm text-muted-foreground">{subscriptionSubtext}</p>
-                </div>
-                <Button
-                  onClick={handleManageSubscription}
-                  disabled={portalLoading}
-                  className="w-full"
-                >
-                  {portalLoading ? "Opening..." : "Manage Subscription"}
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-
           <Card className="border-border/40 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-base font-medium">Transaction History</CardTitle>
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base font-medium flex items-center gap-2">
+                <User className="h-4 w-4" />
+                Profile Details
+              </CardTitle>
             </CardHeader>
-            <CardContent>
-              {teamPayments && teamPayments.length > 0 ? (
-                <div className="space-y-4">
-                  {teamPayments.map((payment) => {
-                    const amount = payment.amount / 100;
-                    const formatted = amount.toFixed(2);
-                    const createdAt = new Date(payment.created * 1000).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    });
+            <CardContent className="space-y-4 max-w-md">
+              <div className="space-y-2">
+                <Label htmlFor="preferredName">Preferred Name</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="preferredName"
+                    value={preferredName}
+                    onChange={(e) => setPreferredName(e.target.value)}
+                    placeholder="Enter your name"
+                  />
+                  <Button
+                    onClick={handleUpdateName}
+                    disabled={isUpdatingName}
+                    size="sm"
+                  >
+                    {isUpdatingName ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+              </div>
 
-                    return (
-                      <div
-                        key={payment.stripePaymentIntentId}
-                        className="flex flex-col gap-1 rounded-lg border border-border/40 px-4 py-3 text-sm"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium">{formatted}</span>
-                          <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                            {payment.status}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{createdAt}</span>
-                          <span>{payment.stripePaymentIntentId.slice(-8)}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Mail className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="email"
+                      value={user?.primaryEmailAddress?.emailAddress || ""}
+                      readOnly
+                      disabled
+                      className="pl-9 bg-muted/50"
+                    />
+                  </div>
                 </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center gap-2 py-8 text-muted-foreground">
-                  <Clock3 className="h-6 w-6" />
-                  <p className="text-sm">No transactions yet</p>
-                </div>
-              )}
+                <p className="text-[10px] text-muted-foreground">Email address is managed by your account provider.</p>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -294,256 +192,6 @@ export default function CompanySettings() {
                       });
                   }}
                 />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Separator />
-
-        <div className="space-y-6">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-lg font-medium">Usage</h2>
-            <p className="text-sm text-muted-foreground">
-              Monitor your usage, costs, and resource consumption across all services.
-            </p>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            <Card className="border-border/40 shadow-sm">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-medium flex items-center gap-2">
-                  <Coins className="h-4 w-4 text-blue-500" />
-                  AI Credits
-                </CardTitle>
-                <CardDescription>
-                  {usageBreakdown?.periodStart
-                    ? new Date(usageBreakdown.periodStart).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-                    : "Current period"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <div className="text-xl font-semibold tabular-nums">{formatTokens(usedCredits)}</div>
-                  <p className="text-xs text-muted-foreground">credits used this billing period</p>
-                </div>
-                <div>
-                  <div className="text-xl font-semibold tabular-nums">{formatTokens(remainingCredits)}</div>
-                  <p className="text-xs text-muted-foreground">credits remaining</p>
-                </div>
-                <div className="space-y-2 pt-2">
-                  <Progress
-                    value={usagePercent}
-                    className="h-2 bg-muted/30"
-                    indicatorClassName={
-                      usagePercent >= 90
-                        ? "bg-red-500"
-                        : usagePercent >= 75
-                          ? "bg-orange-500"
-                          : "bg-blue-500"
-                    }
-                  />
-                  <p className="text-xs text-muted-foreground">{usagePercent}% used</p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/40 shadow-sm">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-medium flex items-center gap-2">
-                  <DollarSign className="h-4 w-4 text-amber-500" />
-                  AI Token Costs
-                </CardTitle>
-                <CardDescription>
-                  Input vs output for this billing period
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground">Input tokens</p>
-                    <div className="text-lg font-semibold tabular-nums">{formatTokens(totalInputTokens)}</div>
-                    <p className="text-xs text-muted-foreground">{formatUSD(inputCostUSD)}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground">Output tokens</p>
-                    <div className="text-lg font-semibold tabular-nums">{formatTokens(totalOutputTokens)}</div>
-                    <p className="text-xs text-muted-foreground">{formatUSD(outputCostUSD)}</p>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between border-t border-border/40 pt-3 text-sm">
-                  <span className="text-muted-foreground">Total cost</span>
-                  <span className="font-medium tabular-nums">{formatUSD(totalCostUSD)}</span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Rates: $1.75 / 1M input, $14 / 1M output
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/40 shadow-sm">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-medium flex items-center gap-2">
-                  <HardDrive className="h-4 w-4 text-emerald-500" />
-                  Storage
-                </CardTitle>
-                <CardDescription>
-                  All projects combined
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <div className="text-xl font-semibold tabular-nums">
-                    {storageUsage?.usedGB.toFixed(2) ?? "0.00"} GB
-                  </div>
-                  <p className="text-xs text-muted-foreground">used of {storageUsage?.limitGB ?? 0} GB total</p>
-                </div>
-                <div className="space-y-2 pt-2">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>{storageUsage?.usedGB.toFixed(2) ?? "0.00"} GB used</span>
-                    <span>{storageUsage?.limitGB ?? 0} GB total</span>
-                  </div>
-                  <Progress
-                    value={storageUsage?.percentUsed ?? 0}
-                    className="h-2 bg-muted/30"
-                    indicatorClassName={
-                      (storageUsage?.percentUsed ?? 0) >= 90
-                        ? "bg-red-500"
-                        : (storageUsage?.percentUsed ?? 0) >= 75
-                          ? "bg-orange-500"
-                          : "bg-emerald-500"
-                    }
-                  />
-                  <p className="text-xs text-muted-foreground">{storageUsage?.percentUsed.toFixed(1) ?? "0.0"}% used</p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/40 shadow-sm">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-medium flex items-center gap-2">
-                  <FolderOpen className="h-4 w-4 text-purple-500" />
-                  Assistants
-                </CardTitle>
-                <CardDescription>
-                  Active projects
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <div className="text-xl font-semibold tabular-nums">
-                    {resourceUsage?.projectsUsed ?? 0} projects
-                  </div>
-                  <p className="text-xs text-muted-foreground">of {resourceUsage?.projectsLimit ?? 0} total</p>
-                </div>
-                <div className="space-y-2 pt-2">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>{resourceUsage?.projectsUsed ?? 0} used</span>
-                    <span>{resourceUsage?.projectsLimit ?? 0} total</span>
-                  </div>
-                  <Progress
-                    value={resourceUsage?.projectsPercentUsed ?? 0}
-                    className="h-2 bg-muted/30"
-                    indicatorClassName={
-                      (resourceUsage?.projectsPercentUsed ?? 0) >= 90
-                        ? "bg-red-500"
-                        : (resourceUsage?.projectsPercentUsed ?? 0) >= 75
-                          ? "bg-orange-500"
-                          : "bg-purple-500"
-                    }
-                  />
-                  <p className="text-xs text-muted-foreground">{resourceUsage?.projectsPercentUsed ?? 0}% used</p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/40 shadow-sm md:col-span-2 lg:col-span-1">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-medium flex items-center gap-2">
-                  Subscription Plan
-                  <span className="text-muted-foreground" title="Limits reset with each billing period.">
-                    <AlertCircle className="h-3.5 w-3.5" />
-                  </span>
-                </CardTitle>
-                <CardDescription>
-                  {usageBreakdown?.periodEnd
-                    ? `Next billing: ${new Date(usageBreakdown.periodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
-                    : "Billing period"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Plan</span>
-                  <span className="font-medium">{subscriptionLabel}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Monthly Cost</span>
-                  <span className="font-medium">
-                    {subscription?.planDetails?.price ? `$${subscription.planDetails.price}` : "Free"}
-                  </span>
-                </div>
-                <div className="pt-2">
-                  <Button
-                    onClick={handleManageSubscription}
-                    disabled={portalLoading}
-                    variant="outline"
-                    className="w-full"
-                  >
-                    {portalLoading ? "Opening..." : "Manage Subscription"}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card className="border-border/40 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-medium">Credit Breakdown</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between text-sm text-muted-foreground">
-                <span>Credits Used</span>
-                <span>
-                  {formatTokens(usedCredits)} of {formatTokens(totalCredits)} credits
-                </span>
-              </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-muted/30 flex">
-                {[
-                  { key: "assistant", color: "bg-blue-500" },
-                  { key: "other", color: "bg-amber-500" },
-                ].map((segment) => {
-                  const tokens = usageBreakdown?.byFeature?.[segment.key] || 0;
-                  const percent = usedCredits > 0 ? (tokens / usedCredits) * 100 : 0;
-                  if (percent <= 0) return null;
-                  return (
-                    <div
-                      key={segment.key}
-                      className={segment.color}
-                      style={{ width: `${percent}%` }}
-                    />
-                  );
-                })}
-              </div>
-              <div className="space-y-3">
-                {[
-                  { key: "assistant", label: "AI Assistant", icon: Sparkles, color: "text-blue-500" },
-                  { key: "other", label: "Other", icon: AlertCircle, color: "text-amber-500" },
-                ].map((item) => {
-                  const tokens = usageBreakdown?.byFeature?.[item.key] || 0;
-                  const percent = usedCredits > 0 ? (tokens / usedCredits) * 100 : 0;
-                  const Icon = item.icon;
-                  return (
-                    <div key={item.key} className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2">
-                        <Icon className={`h-4 w-4 ${item.color}`} />
-                        <span>{item.label}</span>
-                      </div>
-                      <div className="text-muted-foreground">
-                        {formatTokens(tokens)} credits ({percent.toFixed(1)}%)
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             </CardContent>
           </Card>

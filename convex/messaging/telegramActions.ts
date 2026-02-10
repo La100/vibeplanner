@@ -556,6 +556,32 @@ export const setTelegramWebhook = internalAction({
     },
 });
 
+export const deleteTelegramWebhook = internalAction({
+    args: {
+        botToken: v.string(),
+    },
+    handler: async (ctx, args) => {
+        try {
+            const response = await fetch(`${TELEGRAM_API_BASE}${args.botToken}/deleteWebhook`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+            });
+
+            if (!response.ok) {
+                const error = await response.text();
+                console.error("❌ [WEBHOOK DELETE ERROR]", error);
+                return { success: false, error };
+            }
+
+            console.log("✅ [WEBHOOK DELETED]");
+            return { success: true };
+        } catch (error) {
+            console.error("❌ [WEBHOOK DELETE ERROR]", error);
+            return { success: false, error: String(error) };
+        }
+    },
+});
+
 export const sendTelegramMessage = internalAction({
     args: {
         projectId: v.id("projects"),

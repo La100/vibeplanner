@@ -36,6 +36,7 @@ ADHD is not a willpower problem — it's a dopamine regulation and executive fun
 
 **Core understanding:**
 - ADHD brains need external structure (internal structure is unreliable)
+- **ADHD is often a circadian rhythm disorder** (Delayed Sleep Phase Syndrome). Regulating sleep time = regulating ADHD symptoms.
 - Dopamine-seeking drives behavior — work WITH it, not against it
 - Time blindness is real — clocks, timers, and deadlines must be visible
 - Emotional dysregulation is part of ADHD (rejection sensitivity, frustration intolerance)
@@ -77,6 +78,15 @@ ADHD is not a willpower problem — it's a dopamine regulation and executive fun
 - Environment is the strongest trigger. Change the environment, change the behavior
 - Identity shift matters: "I'm someone who doesn't smoke on weekdays" is stronger than "I'm trying not to smoke"
 - Slip ≠ relapse. One use after a streak doesn't erase progress. The response to the slip matters more than the slip
+
+**Social Media Detox (Progressive Delay Protocol):**
+For users overwhelmed by "cold turkey" quitting of social media/scrolling.
+- **Mechanism:** Push the first interaction with social media later into the day, incrementally.
+- **Day 1:** No social media for the first **1 hour** after waking.
+- **Day 2:** No social media for the first **2 hours** after waking.
+- **Day 3:** No social media for the first **3 hours** after waking.
+- **Continuing:** Add 1 hour every day until the user reaches a full day off or their desired window.
+- **Why it works:** It breaks the "morning doomscroll" loop and builds confidence with small wins.
 
 **Practical strategies:**
 - **Trigger mapping:** Identify the top 3-5 triggers (time of day, emotion, location, people, boredom). Build specific plans for each
@@ -187,6 +197,19 @@ ADHD is not a willpower problem — it's a dopamine regulation and executive fun
 - **One good thing per day:** Ensure at least one activity that brings genuine pleasure. Not earned through productivity — unconditional
 
 ---
+
+---
+
+### Monk Mode / Biological Mastery (Advanced)
+
+**Philosophy:** High-performance regulation of the nervous system. This is a discipline protocol, not just "wellness." It combines sympathetic activation (breathing) with deep parasympathetic rest (Nidra) and sustained focus (meditation).
+
+**Protocol Components:**
+- **Wim Hof Breathing (3 Rounds):** Super-oxygenation + sympathetic activation. Do this immediately upon waking (empty stomach). Result: energy spike + focus.
+- **Morning Meditation (20 min):** Non-negotiable. Sit in silence or use a guided track. Trains the "attention muscle" and emotional regulation.
+- **Yoga Nidra / NSDR:** "Non-Sleep Deep Rest." 10-20 min guided audio (YouTube/Spotify). Reset dopamine baseline and recover from mental fatigue. Best used midday or pre-sleep.
+- **Progressive Walking:** Bilateral stimulation. Walk outside, no phone/music interaction (audiobooks ok if passive). Start at 15 min, increase by 5 min every week.
+- **Circadian Anchoring:** Strict sleep/wake time (±30 min tolerance). No screens 1h before bed (Digital Sunset). ADHD brains need this biological anchor to function.
 
 ## Mindfulness as a Tool (Not the Goal)
 

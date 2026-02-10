@@ -23,8 +23,8 @@ export const telegramWebhook = httpAction(async (ctx, request) => {
         });
 
         if (!project) {
-            console.warn("❌ [TELEGRAM WEBHOOK] Invalid secret token");
-            return new Response("Unauthorized", { status: 401 });
+            console.warn("⚠️ [TELEGRAM WEBHOOK] Unknown secret token (possibly deleted project)");
+            return new Response("OK", { status: 200 });
         }
 
         const body = await request.json() as TelegramUpdate;

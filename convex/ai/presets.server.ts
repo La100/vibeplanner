@@ -8,10 +8,8 @@
 import {
     WORKOUT_COACH_SOUL,
     CUSTOM_ASSISTANT_SOUL,
-    MARTIN_ASSISTANT_SOUL,
     BUDDHA_ASSISTANT_SOUL,
     MARCUS_AURELIUS_SOUL,
-    STARTUP_ASSISTANT_SOUL,
 } from "./souls";
 
 export interface AssistantPreset {
@@ -42,14 +40,6 @@ export const ASSISTANT_PRESETS: AssistantPreset[] = [
         defaultSoul: CUSTOM_ASSISTANT_SOUL,
     },
     {
-        id: "martin",
-        name: "Martin",
-        description: "Personal assistant for habits, focus blocks, and routines.",
-        icon: "MT",
-        color: "bg-orange-500/10 text-orange-600 border-orange-200 dark:border-orange-800",
-        defaultSoul: MARTIN_ASSISTANT_SOUL,
-    },
-    {
         id: "buddha",
         name: "Monk",
         description: "Mindfulness assistant for calm, clarity, and daily practice.",
@@ -64,14 +54,6 @@ export const ASSISTANT_PRESETS: AssistantPreset[] = [
         icon: "MA",
         color: "bg-stone-500/10 text-stone-700 border-stone-200 dark:border-stone-800",
         defaultSoul: MARCUS_AURELIUS_SOUL,
-    },
-    {
-        id: "startup",
-        name: "Startup Mentor",
-        description: "SaaS-focused mentor for validation, product, and execution.",
-        icon: "SU",
-        color: "bg-amber-500/10 text-amber-700 border-amber-200 dark:border-amber-800",
-        defaultSoul: STARTUP_ASSISTANT_SOUL,
     },
 ];
 

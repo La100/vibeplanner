@@ -53,7 +53,7 @@ const plans = [
       "Dedicated account manager",
     ],
     cta: "Contact Sales",
-    href: "/contact",
+    href: "/sign-up",
     highlighted: false,
   },
 ];

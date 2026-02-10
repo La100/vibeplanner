@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Sparkles } from "lucide-react";
 import Link from "next/link";
+import { SignedIn, SignedOut } from "@clerk/nextjs";
 
 const meshBlobs = [
   { color: "#C06A3D", size: 300, top: "10%", left: "-5%", delay: 0 },
@@ -71,16 +72,30 @@ export function FinalCTA() {
           transition={{ duration: 0.6, delay: 0.3 }}
           className="mt-12 flex flex-col sm:flex-row gap-4 justify-center items-center"
         >
-          <Button
-            asChild
-            size="lg"
-            className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 px-10 h-14 text-base font-medium shadow-[0_8px_30px_rgba(44,42,37,0.2)] hover:shadow-[0_16px_50px_rgba(44,42,37,0.25)] transition-all duration-300 hover:-translate-y-0.5 animate-glow-pulse"
-          >
-            <Link href="/sign-up">
-              Start Building Habits — Free
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Link>
-          </Button>
+          <SignedOut>
+            <Button
+              asChild
+              size="lg"
+              className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 px-10 h-14 text-base font-medium shadow-[0_8px_30px_rgba(44,42,37,0.2)] hover:shadow-[0_16px_50px_rgba(44,42,37,0.25)] transition-all duration-300 hover:-translate-y-0.5 animate-glow-pulse"
+            >
+              <Link href="/sign-up">
+                Start Building Habits — Free
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </SignedOut>
+          <SignedIn>
+            <Button
+              asChild
+              size="lg"
+              className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 px-10 h-14 text-base font-medium shadow-[0_8px_30px_rgba(44,42,37,0.2)] hover:shadow-[0_16px_50px_rgba(44,42,37,0.25)] transition-all duration-300 hover:-translate-y-0.5 animate-glow-pulse"
+            >
+              <Link href="/organisation">
+                Go to Dashboard
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </SignedIn>
 
           <Button
             asChild
