@@ -6,7 +6,7 @@ import { v } from "convex/values";
 // app will continue to work.
 // The schema provides more precise TypeScript types.
 export default defineSchema({
-  // Personal workspaces (single-user)
+  // Personal workspaces (single-user, lightweight container for projects)
   teams: defineTable({
     name: v.string(),
     ownerUserId: v.optional(v.string()), // Clerk user ID
@@ -14,15 +14,14 @@ export default defineSchema({
     slug: v.string(),
     imageUrl: v.optional(v.string()),
     createdBy: v.optional(v.string()),
-
     taskStatusSettings: v.optional(v.object({
       todo: v.object({ name: v.string(), color: v.string() }),
       in_progress: v.object({ name: v.string(), color: v.string() }),
       review: v.optional(v.object({ name: v.string(), color: v.string() })),
       done: v.object({ name: v.string(), color: v.string() }),
     })),
-    // Stripe subscription fields
-    stripeCustomerId: v.optional(v.string()), // Stripe customer ID
+    // DEPRECATED: billing fields moved to users table (kept for backward compat during migration)
+    stripeCustomerId: v.optional(v.string()),
     subscriptionStatus: v.optional(v.union(
       v.literal("active"),
       v.literal("past_due"),
@@ -33,7 +32,7 @@ export default defineSchema({
       v.literal("unpaid"),
       v.null()
     )),
-    subscriptionId: v.optional(v.string()), // Stripe subscription ID
+    subscriptionId: v.optional(v.string()),
     subscriptionPlan: v.optional(v.union(
       v.literal("free"),
       v.literal("basic"),
@@ -42,10 +41,10 @@ export default defineSchema({
       v.literal("pro"),
       v.literal("enterprise")
     )),
-    subscriptionPriceId: v.optional(v.string()), // Stripe price ID
-    currentPeriodStart: v.optional(v.number()), // Unix timestamp
-    currentPeriodEnd: v.optional(v.number()), // Unix timestamp
-    trialEnd: v.optional(v.number()), // Unix timestamp
+    subscriptionPriceId: v.optional(v.string()),
+    currentPeriodStart: v.optional(v.number()),
+    currentPeriodEnd: v.optional(v.number()),
+    trialEnd: v.optional(v.number()),
     cancelAtPeriodEnd: v.optional(v.boolean()),
     subscriptionLimits: v.optional(v.object({
       id: v.string(),
@@ -56,13 +55,12 @@ export default defineSchema({
       hasAdvancedFeatures: v.boolean(),
       hasAIFeatures: v.optional(v.boolean()),
       price: v.number(),
-      aiMonthlyTokens: v.optional(v.number()), // Monthly AI tokens
-      aiMonthlySpendLimitCents: v.optional(v.number()), // Legacy cost-based limit
-      aiImageGenerationsLimit: v.optional(v.number()), // Legacy image generation limit
+      aiMonthlyTokens: v.optional(v.number()),
+      aiMonthlySpendLimitCents: v.optional(v.number()),
+      aiImageGenerationsLimit: v.optional(v.number()),
     })),
-    // Simple AI tokens field - manually editable in dashboard
-    aiTokens: v.optional(v.number()), // Total tokens available for this team
-    timezone: v.optional(v.string()), // Team timezone (e.g. "Europe/Warsaw")
+    aiTokens: v.optional(v.number()),
+    timezone: v.optional(v.string()),
   })
     .index("by_owner", ["ownerUserId"])
     .index("by_slug", ["slug"])
@@ -343,9 +341,51 @@ export default defineSchema({
     )),
     workModeOther: v.optional(v.union(v.string(), v.null())),
     onboardingCompletedAt: v.optional(v.number()),
+    // Subscription & billing (migrated from teams)
+    stripeCustomerId: v.optional(v.string()),
+    subscriptionStatus: v.optional(v.union(
+      v.literal("active"),
+      v.literal("past_due"),
+      v.literal("canceled"),
+      v.literal("incomplete"),
+      v.literal("incomplete_expired"),
+      v.literal("trialing"),
+      v.literal("unpaid"),
+      v.null()
+    )),
+    subscriptionId: v.optional(v.string()),
+    subscriptionPlan: v.optional(v.union(
+      v.literal("free"),
+      v.literal("basic"),
+      v.literal("ai"),
+      v.literal("ai_scale"),
+      v.literal("pro"),
+      v.literal("enterprise")
+    )),
+    subscriptionPriceId: v.optional(v.string()),
+    currentPeriodStart: v.optional(v.number()),
+    currentPeriodEnd: v.optional(v.number()),
+    trialEnd: v.optional(v.number()),
+    cancelAtPeriodEnd: v.optional(v.boolean()),
+    subscriptionLimits: v.optional(v.object({
+      id: v.string(),
+      name: v.string(),
+      maxProjects: v.number(),
+      maxTeamMembers: v.number(),
+      maxStorageGB: v.number(),
+      hasAdvancedFeatures: v.boolean(),
+      hasAIFeatures: v.optional(v.boolean()),
+      price: v.number(),
+      aiMonthlyTokens: v.optional(v.number()),
+      aiMonthlySpendLimitCents: v.optional(v.number()),
+      aiImageGenerationsLimit: v.optional(v.number()),
+    })),
+    aiTokens: v.optional(v.number()),
+    timezone: v.optional(v.string()),
   })
     .index("by_clerk_user_id", ["clerkUserId"])
-    .index("by_email", ["email"]),
+    .index("by_email", ["email"])
+    .index("by_stripe_customer_id", ["stripeCustomerId"]),
 
   // AI Token Usage Tracking
   aiTokenUsage: defineTable({

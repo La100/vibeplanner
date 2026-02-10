@@ -6,7 +6,6 @@ import { AI_MODEL, calculateCost } from "./ai/config";
 
 const DEFAULT_BILLING_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
-// Token system - direct token usage tracking
 // Stripe subscription plans configuration
 export const SUBSCRIPTION_PLANS = {
   free: {
@@ -40,7 +39,7 @@ export const SUBSCRIPTION_PLANS = {
     hasAdvancedFeatures: true,
     hasAIFeatures: true,
     price: 39,
-    aiMonthlyTokens: 5000000, // 5M tokens monthly
+    aiMonthlyTokens: 5000000,
   },
   ai_scale: {
     id: "ai_scale",
@@ -51,7 +50,7 @@ export const SUBSCRIPTION_PLANS = {
     hasAdvancedFeatures: true,
     hasAIFeatures: true,
     price: 99,
-    aiMonthlyTokens: 25000000, // 25M tokens monthly
+    aiMonthlyTokens: 25000000,
   },
   pro: {
     id: "pro",
@@ -62,7 +61,7 @@ export const SUBSCRIPTION_PLANS = {
     hasAdvancedFeatures: true,
     hasAIFeatures: true,
     price: 49,
-    aiMonthlyTokens: 5000000, // 5M tokens (same as AI Pro)
+    aiMonthlyTokens: 5000000,
   },
   enterprise: {
     id: "enterprise",
@@ -73,14 +72,24 @@ export const SUBSCRIPTION_PLANS = {
     hasAdvancedFeatures: true,
     hasAIFeatures: true,
     price: 199,
-    aiMonthlyTokens: 12500000, // 12.5M tokens monthly
+    aiMonthlyTokens: 12500000,
   },
 } as const;
 
-function getEffectiveLimits(team: any) {
-  const plan = (team.subscriptionPlan || "free") as keyof typeof SUBSCRIPTION_PLANS;
+// Helper: get authenticated user doc
+async function getAuthenticatedUser(ctx: any) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) return null;
+  return await ctx.db
+    .query("users")
+    .withIndex("by_clerk_user_id", (q: any) => q.eq("clerkUserId", identity.subject))
+    .unique();
+}
+
+function getEffectiveLimits(source: any) {
+  const plan = (source.subscriptionPlan || "free") as keyof typeof SUBSCRIPTION_PLANS;
   const defaultLimits = SUBSCRIPTION_PLANS[plan];
-  const storedLimits = team.subscriptionLimits;
+  const storedLimits = source.subscriptionLimits;
 
   if (plan === "free") {
     return {
@@ -96,17 +105,25 @@ function getEffectiveLimits(team: any) {
   return storedLimits || defaultLimits;
 }
 
-export function getBillingWindow(team: any) {
+export function getBillingWindow(source: any) {
   const now = Date.now();
-  const start = typeof team?.currentPeriodStart === "number"
-    ? team.currentPeriodStart
+  const start = typeof source?.currentPeriodStart === "number"
+    ? source.currentPeriodStart
     : now - DEFAULT_BILLING_WINDOW_MS;
-
-  const end = typeof team?.currentPeriodEnd === "number"
-    ? team.currentPeriodEnd
+  const end = typeof source?.currentPeriodEnd === "number"
+    ? source.currentPeriodEnd
     : now + DEFAULT_BILLING_WINDOW_MS;
-
   return { start, end };
+}
+
+// Helper: find user by team ownership
+async function getUserByTeam(ctx: any, teamId: Id<"teams">) {
+  const team = await ctx.db.get(teamId);
+  if (!team?.ownerUserId) return null;
+  return await ctx.db
+    .query("users")
+    .withIndex("by_clerk_user_id", (q: any) => q.eq("clerkUserId", team.ownerUserId))
+    .unique();
 }
 
 export const ensureBillingWindow = mutation({
@@ -117,167 +134,81 @@ export const ensureBillingWindow = mutation({
     currentPeriodEnd: v.number(),
   }),
   async handler(ctx, args) {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const team = await ctx.db.get(args.teamId);
-    if (!team) {
-      throw new Error("Team not found");
-    }
-
-    const membership = await ctx.db
-      .query("teamMembers")
-      .withIndex("by_team_and_user", (q) =>
-        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
-      )
-      .unique();
-
-    if (!membership || !membership.isActive) {
-      throw new Error("Not authorized");
-    }
+    const user = await getAuthenticatedUser(ctx);
+    if (!user) throw new Error("Not authenticated");
 
     const now = Date.now();
-    const hasStart = typeof team.currentPeriodStart === "number";
-    const hasEnd = typeof team.currentPeriodEnd === "number";
-    const start = hasStart ? team.currentPeriodStart! : now;
-    const end = hasEnd ? team.currentPeriodEnd! : now + DEFAULT_BILLING_WINDOW_MS;
+    const hasStart = typeof user.currentPeriodStart === "number";
+    const hasEnd = typeof user.currentPeriodEnd === "number";
+    const start = hasStart ? user.currentPeriodStart! : now;
+    const end = hasEnd ? user.currentPeriodEnd! : now + DEFAULT_BILLING_WINDOW_MS;
 
     const canOverride =
-      !team.stripeCustomerId ||
-      (team.subscriptionStatus !== "active" && team.subscriptionStatus !== "trialing");
+      !user.stripeCustomerId ||
+      (user.subscriptionStatus !== "active" && user.subscriptionStatus !== "trialing");
     const needsUpdate =
       canOverride &&
-      (!hasStart ||
-        !hasEnd ||
-        !Number.isFinite(start) ||
-        !Number.isFinite(end) ||
-        end <= start ||
-        end < now);
+      (!hasStart || !hasEnd || !Number.isFinite(start) || !Number.isFinite(end) || end <= start || end < now);
 
     if (!needsUpdate) {
-      return {
-        updated: false,
-        currentPeriodStart: start,
-        currentPeriodEnd: end,
-      };
+      return { updated: false, currentPeriodStart: start, currentPeriodEnd: end };
     }
 
     const currentPeriodStart = now;
     const currentPeriodEnd = now + DEFAULT_BILLING_WINDOW_MS;
-
-    await ctx.db.patch(args.teamId, {
-      currentPeriodStart,
-      currentPeriodEnd,
-    });
-
-    return {
-      updated: true,
-      currentPeriodStart,
-      currentPeriodEnd,
-    };
+    await ctx.db.patch(user._id, { currentPeriodStart, currentPeriodEnd });
+    return { updated: true, currentPeriodStart, currentPeriodEnd };
   },
 });
 
-
-async function evaluateAIAccess(ctx: any, team: any) {
+async function evaluateAIAccess(ctx: any, user: any) {
   // BYPASS for now as requested
   return {
     allowed: true,
     message: "AI features available (Bypassed)",
-    currentPlan: team.subscriptionPlan || "free",
-    subscriptionStatus: team.subscriptionStatus || null,
+    currentPlan: user.subscriptionPlan || "free",
+    subscriptionStatus: user.subscriptionStatus || null,
     totalTokens: 1000000000,
     usedTokens: 0,
     remainingTokens: 1000000000,
   };
 }
 
-
-// Add tokens to team (can be called by admin)
 export const addAITokens = mutation({
   args: {
     teamId: v.id("teams"),
-    tokens: v.number(), // tokens to add
+    tokens: v.number(),
   },
   async handler(ctx, args) {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    const user = await getAuthenticatedUser(ctx);
+    if (!user) throw new Error("Not authenticated");
 
-    // Only team admin can add tokens
-    const membership = await ctx.db
-      .query("teamMembers")
-      .withIndex("by_team_and_user", (q) =>
-        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
-      )
-      .unique();
-
-    if (!membership || membership.role !== "admin") {
-      throw new Error("Only admins can add AI tokens");
-    }
-
-    const team = await ctx.db.get(args.teamId);
-    if (!team) {
-      throw new Error("Team not found");
-    }
-
-    const currentTokens = team.aiTokens || 0;
+    const currentTokens = user.aiTokens || 0;
     const newTokens = currentTokens + Math.max(args.tokens, 0);
-
-    await ctx.db.patch(args.teamId, {
-      aiTokens: newTokens,
-    });
-
-    return {
-      success: true,
-      aiTokens: newTokens,
-    };
+    await ctx.db.patch(user._id, { aiTokens: newTokens });
+    return { success: true, aiTokens: newTokens };
   },
 });
 
-// Get subscription info for a team
+// Get subscription info (reads from user)
 export const getTeamSubscription = query({
   args: { teamId: v.id("teams") },
   async handler(ctx, args) {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    const user = await getAuthenticatedUser(ctx);
+    if (!user) throw new Error("Not authenticated");
 
-    const team = await ctx.db.get(args.teamId);
-    if (!team) {
-      throw new Error("Team not found");
-    }
-
-    // Check if user is member of this team
-    const membership = await ctx.db
-      .query("teamMembers")
-      .withIndex("by_team_and_user", (q) =>
-        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
-      )
-      .unique();
-
-    if (!membership || !membership.isActive) {
-      throw new Error("Not authorized to view this team");
-    }
-
-    const plan = (team.subscriptionPlan || "free") as keyof typeof SUBSCRIPTION_PLANS;
-    const subscriptionLimits = getEffectiveLimits(team);
-
+    const plan = (user.subscriptionPlan || "free") as keyof typeof SUBSCRIPTION_PLANS;
     return {
       teamId: args.teamId,
-      subscriptionStatus: team.subscriptionStatus || null,
+      subscriptionStatus: user.subscriptionStatus || null,
       subscriptionPlan: plan,
-      subscriptionId: team.subscriptionId,
-      stripeCustomerId: team.stripeCustomerId,
-      currentPeriodStart: team.currentPeriodStart,
-      currentPeriodEnd: team.currentPeriodEnd,
-      trialEnd: team.trialEnd,
-      cancelAtPeriodEnd: team.cancelAtPeriodEnd || false,
-      limits: subscriptionLimits,
+      subscriptionId: user.subscriptionId,
+      stripeCustomerId: user.stripeCustomerId,
+      currentPeriodStart: user.currentPeriodStart,
+      currentPeriodEnd: user.currentPeriodEnd,
+      trialEnd: user.trialEnd,
+      cancelAtPeriodEnd: user.cancelAtPeriodEnd || false,
+      limits: getEffectiveLimits(user),
       planDetails: SUBSCRIPTION_PLANS[plan] || SUBSCRIPTION_PLANS.free,
     };
   },
@@ -291,20 +222,22 @@ export const getTeamForStripe = internalQuery({
   },
 });
 
-// Internal mutation to update team's Stripe customer ID
+// Internal: update team's Stripe customer ID (also updates user)
 export const updateTeamStripeCustomer = internalMutation({
   args: {
     teamId: v.id("teams"),
     stripeCustomerId: v.string(),
   },
   async handler(ctx, args) {
-    await ctx.db.patch(args.teamId, {
-      stripeCustomerId: args.stripeCustomerId,
-    });
+    await ctx.db.patch(args.teamId, { stripeCustomerId: args.stripeCustomerId });
+    const user = await getUserByTeam(ctx, args.teamId);
+    if (user) {
+      await ctx.db.patch(user._id, { stripeCustomerId: args.stripeCustomerId });
+    }
   },
 });
 
-// Internal mutation to sync team subscription from Stripe
+// Internal: sync subscription from Stripe (writes to both team + user)
 export const syncTeamSubscriptionFromStripe = internalMutation({
   args: {
     teamId: v.string(),
@@ -312,24 +245,19 @@ export const syncTeamSubscriptionFromStripe = internalMutation({
     userId: v.optional(v.string()),
   },
   async handler(ctx, args) {
-    // Get subscription from Stripe component's database
     const subscription = await ctx.runQuery(
       components.stripe.public.getSubscription,
       { stripeSubscriptionId: args.stripeSubscriptionId }
     );
-
     if (!subscription) {
       console.log(`Subscription ${args.stripeSubscriptionId} not found in Stripe component`);
       return;
     }
 
-    // Determine plan from price ID
     const plan = determinePlanFromPriceId(subscription.priceId);
     const planKey = plan as keyof typeof SUBSCRIPTION_PLANS;
     const limits = SUBSCRIPTION_PLANS[planKey] || SUBSCRIPTION_PLANS.free;
-
-    // Update team with subscription data
-    await ctx.db.patch(args.teamId as Id<"teams">, {
+    const patch = {
       subscriptionId: subscription.stripeSubscriptionId,
       subscriptionStatus: subscription.status as any,
       subscriptionPlan: planKey,
@@ -337,41 +265,62 @@ export const syncTeamSubscriptionFromStripe = internalMutation({
       currentPeriodEnd: subscription.currentPeriodEnd,
       cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
       subscriptionLimits: limits,
-    });
+    };
 
-    console.log(`Team ${args.teamId} subscription synced: plan=${plan}, status=${subscription.status}`);
+    // Update team
+    await ctx.db.patch(args.teamId as Id<"teams">, patch);
+
+    // Update user
+    const team = await ctx.db.get(args.teamId as Id<"teams">);
+    const clerkUserId = args.userId || team?.ownerUserId;
+    if (clerkUserId) {
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", clerkUserId))
+        .unique();
+      if (user) await ctx.db.patch(user._id, patch);
+    }
+
+    console.log(`Subscription synced: plan=${plan}, status=${subscription.status}`);
   },
 });
 
-// Helper function to determine plan from Stripe price ID
 function determinePlanFromPriceId(priceId: string): string {
   const aiPriceId = process.env.STRIPE_AI_PRICE_ID;
   const aiScalePriceId = process.env.STRIPE_AI_SCALE_PRICE_ID;
-
   if (aiScalePriceId && priceId === aiScalePriceId) return "ai_scale";
   if (aiPriceId && priceId === aiPriceId) return "ai";
-  return "ai"; // Default to base AI plan if unknown
+  return "ai";
 }
 
-// Update team to free plan
 export const updateTeamToFree = internalMutation({
   args: { teamId: v.string() },
   async handler(ctx, args) {
-    await ctx.db.patch(args.teamId as Id<"teams">, {
-      subscriptionStatus: null,
-      subscriptionId: undefined,
-      subscriptionPlan: "free",
-      subscriptionPriceId: undefined,
-      currentPeriodStart: undefined,
-      currentPeriodEnd: undefined,
-      trialEnd: undefined,
+    const freePatch = {
+      subscriptionStatus: null as null,
+      subscriptionId: undefined as undefined,
+      subscriptionPlan: "free" as const,
+      subscriptionPriceId: undefined as undefined,
+      currentPeriodStart: undefined as undefined,
+      currentPeriodEnd: undefined as undefined,
+      trialEnd: undefined as undefined,
       cancelAtPeriodEnd: false,
       subscriptionLimits: SUBSCRIPTION_PLANS.free,
-    });
+    };
+
+    await ctx.db.patch(args.teamId as Id<"teams">, freePatch);
+
+    const team = await ctx.db.get(args.teamId as Id<"teams">);
+    if (team?.ownerUserId) {
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", team.ownerUserId!))
+        .unique();
+      if (user) await ctx.db.patch(user._id, freePatch);
+    }
   },
 });
 
-// Direct subscription sync mutation (for manual sync from Stripe API)
 export const syncSubscriptionDirectly = internalMutation({
   args: {
     teamId: v.id("teams"),
@@ -385,8 +334,7 @@ export const syncSubscriptionDirectly = internalMutation({
     const plan = determinePlanFromPriceId(args.priceId);
     const planKey = plan as keyof typeof SUBSCRIPTION_PLANS;
     const limits = SUBSCRIPTION_PLANS[planKey] || SUBSCRIPTION_PLANS.free;
-
-    await ctx.db.patch(args.teamId, {
+    const patch = {
       subscriptionId: args.subscriptionId,
       subscriptionStatus: args.status as any,
       subscriptionPlan: planKey,
@@ -394,73 +342,46 @@ export const syncSubscriptionDirectly = internalMutation({
       currentPeriodEnd: args.currentPeriodEnd,
       cancelAtPeriodEnd: args.cancelAtPeriodEnd,
       subscriptionLimits: limits,
-    });
+    };
 
-    console.log(`Team ${args.teamId} subscription synced directly: plan=${plan}, status=${args.status}`);
+    await ctx.db.patch(args.teamId, patch);
+    const user = await getUserByTeam(ctx, args.teamId);
+    if (user) await ctx.db.patch(user._id, patch);
+
+    console.log(`Subscription synced directly: plan=${plan}, status=${args.status}`);
     return { success: true, plan, status: args.status };
   },
 });
 
-// Fix team AI access (one-time fix for existing teams)
 export const fixTeamAIAccess = internalMutation({
   args: { teamId: v.string() },
   async handler(ctx, args) {
     const team = await ctx.db.get(args.teamId as Id<"teams">);
-    if (!team) {
-      throw new Error("Team not found");
-    }
+    if (!team) throw new Error("Team not found");
 
     const plan = team.subscriptionPlan || "free";
     const planKey = plan as keyof typeof SUBSCRIPTION_PLANS;
     const limits = SUBSCRIPTION_PLANS[planKey] || SUBSCRIPTION_PLANS.free;
-
-    await ctx.db.patch(args.teamId as Id<"teams">, {
-      subscriptionLimits: limits,
-    });
-
+    await ctx.db.patch(args.teamId as Id<"teams">, { subscriptionLimits: limits });
     return { success: true, plan, limits };
   },
 });
 
-// Public mutation to refresh team subscription limits (syncs with current plan definitions)
 export const refreshTeamLimits = mutation({
   args: { teamId: v.id("teams") },
   async handler(ctx, args) {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    const user = await getAuthenticatedUser(ctx);
+    if (!user) throw new Error("Not authenticated");
 
-    const team = await ctx.db.get(args.teamId);
-    if (!team) {
-      throw new Error("Team not found");
-    }
-
-    // Check if user is admin of this team
-    const membership = await ctx.db
-      .query("teamMembers")
-      .withIndex("by_team_and_user", (q) =>
-        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
-      )
-      .unique();
-
-    if (!membership || !membership.isActive || membership.role !== "admin") {
-      throw new Error("Not authorized - admin access required");
-    }
-
-    const plan = team.subscriptionPlan || "free";
+    const plan = user.subscriptionPlan || "free";
     const planKey = plan as keyof typeof SUBSCRIPTION_PLANS;
     const limits = SUBSCRIPTION_PLANS[planKey] || SUBSCRIPTION_PLANS.free;
-
-    await ctx.db.patch(args.teamId, {
-      subscriptionLimits: limits,
-    });
-
+    await ctx.db.patch(user._id, { subscriptionLimits: limits });
+    await ctx.db.patch(args.teamId, { subscriptionLimits: limits });
     return { success: true, plan, limits };
   },
 });
 
-// Check if team can perform an action based on subscription limits
 export const checkTeamLimits = query({
   args: {
     teamId: v.id("teams"),
@@ -474,91 +395,39 @@ export const checkTeamLimits = query({
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const team = await ctx.db.get(args.teamId);
-    if (!team) {
-      throw new Error("Team not found");
-    }
-
+    if (!identity) throw new Error("Not authenticated");
     // BYPASS limits for now as requested
     return { allowed: true };
   },
 });
 
-// Internal query to check AI feature access by project ID
 export const checkAIFeatureAccessByProject = internalQuery({
   args: { projectId: v.id("projects") },
   async handler(ctx, args) {
-    const identity = await ctx.auth.getUserIdentity();
     const project = await ctx.db.get(args.projectId);
-    if (!project) {
-      return {
-        allowed: false,
-        message: "Project not found",
-      };
-    }
+    if (!project) return { allowed: false, message: "Project not found" };
 
-    const team = await ctx.db.get(project.teamId);
-    if (!team) {
-      return {
-        allowed: false,
-        message: "Team not found",
-      };
-    }
+    const user = await getUserByTeam(ctx, project.teamId);
+    const source = user || await ctx.db.get(project.teamId);
+    if (!source) return { allowed: false, message: "Team not found" };
 
-    if (identity) {
-      const membership = await ctx.db
-        .query("teamMembers")
-        .withIndex("by_team_and_user", (q) =>
-          q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
-        )
-        .unique();
-
-    }
-
-    const access = await evaluateAIAccess(ctx, team);
-    return {
-      ...access,
-      limits: getEffectiveLimits(team),
-    };
+    const access = await evaluateAIAccess(ctx, source);
+    return { ...access, limits: getEffectiveLimits(source) };
   },
 });
 
-// Internal query to check AI feature access
 export const checkAIFeatureAccess = internalQuery({
   args: { teamId: v.id("teams") },
   async handler(ctx, args) {
-    const identity = await ctx.auth.getUserIdentity();
-    const team = await ctx.db.get(args.teamId);
-    if (!team) {
-      return {
-        allowed: false,
-        message: "Team not found",
-      };
-    }
+    const user = await getUserByTeam(ctx, args.teamId);
+    const source = user || await ctx.db.get(args.teamId);
+    if (!source) return { allowed: false, message: "Team not found" };
 
-    if (identity) {
-      const membership = await ctx.db
-        .query("teamMembers")
-        .withIndex("by_team_and_user", (q) =>
-          q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
-        )
-        .unique();
-
-    }
-
-    const access = await evaluateAIAccess(ctx, team);
-    return {
-      ...access,
-      limits: getEffectiveLimits(team),
-    };
+    const access = await evaluateAIAccess(ctx, source);
+    return { ...access, limits: getEffectiveLimits(source) };
   },
 });
 
-// Public query to check AI access for a team (by teamId)
 export const checkTeamAIAccess = query({
   args: { teamId: v.id("teams") },
   returns: v.object({
@@ -577,59 +446,23 @@ export const checkTeamAIAccess = query({
       v.null()
     )),
     subscriptionLimits: v.optional(v.any()),
-    // Simple token balance
     totalTokens: v.optional(v.number()),
     usedTokens: v.optional(v.number()),
     remainingTokens: v.optional(v.number()),
   }),
   async handler(ctx, args) {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return {
-        hasAccess: false,
-        message: "Not authenticated",
-        currentPlan: "free",
-        subscriptionStatus: null,
-      };
+    const user = await getAuthenticatedUser(ctx);
+    if (!user) {
+      return { hasAccess: false, message: "Not authenticated", currentPlan: "free", subscriptionStatus: null };
     }
 
-    const team = await ctx.db.get(args.teamId);
-    if (!team) {
-      return {
-        hasAccess: false,
-        message: "Team not found",
-        currentPlan: "free",
-        subscriptionStatus: null,
-      };
-    }
-
-    // Check membership
-    const membership = await ctx.db
-      .query("teamMembers")
-      .withIndex("by_team_and_user", (q) =>
-        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
-      )
-      .unique();
-
-    if (!membership || !membership.isActive) {
-      return {
-        hasAccess: false,
-        message: "Not a member of this team",
-        currentPlan: "free",
-        subscriptionStatus: null,
-      };
-    }
-
-    const access = await evaluateAIAccess(ctx, team);
-    const hasAccess = access.allowed;
-
+    const access = await evaluateAIAccess(ctx, user);
     return {
-      hasAccess,
-      message: access.message || (hasAccess ? "AI features available" : "AI features unavailable"),
-      currentPlan: team.subscriptionPlan || "free",
-      subscriptionStatus: team.subscriptionStatus || null,
-      subscriptionLimits: getEffectiveLimits(team),
-      // Simple token balance
+      hasAccess: access.allowed,
+      message: access.message || (access.allowed ? "AI features available" : "AI features unavailable"),
+      currentPlan: user.subscriptionPlan || "free",
+      subscriptionStatus: user.subscriptionStatus || null,
+      subscriptionLimits: getEffectiveLimits(user),
       totalTokens: access.totalTokens,
       usedTokens: access.usedTokens,
       remainingTokens: access.remainingTokens,
@@ -637,91 +470,48 @@ export const checkTeamAIAccess = query({
   },
 });
 
-// Query to get user's subscriptions from Stripe component
 export const getUserSubscriptions = query({
   args: {},
   async handler(ctx) {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
-
-    return await ctx.runQuery(
-      components.stripe.public.listSubscriptionsByUserId,
-      { userId: identity.subject }
-    );
+    return await ctx.runQuery(components.stripe.public.listSubscriptionsByUserId, { userId: identity.subject });
   },
 });
 
-// Query to get user's payments from Stripe component  
 export const getUserPayments = query({
   args: {},
   async handler(ctx) {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
-
-    return await ctx.runQuery(
-      components.stripe.public.listPaymentsByUserId,
-      { userId: identity.subject }
-    );
+    return await ctx.runQuery(components.stripe.public.listPaymentsByUserId, { userId: identity.subject });
   },
 });
 
-// Query to get user's invoices from Stripe component
 export const getUserInvoices = query({
   args: {},
   async handler(ctx) {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
-
-    return await ctx.runQuery(
-      components.stripe.public.listInvoicesByUserId,
-      { userId: identity.subject }
-    );
+    return await ctx.runQuery(components.stripe.public.listInvoicesByUserId, { userId: identity.subject });
   },
 });
 
-// Query to get team's subscriptions from Stripe component (by org ID)
 export const getTeamSubscriptionsFromStripe = query({
   args: { teamId: v.id("teams") },
   async handler(ctx, args) {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return [];
-
-    const team = await ctx.db.get(args.teamId);
-    if (!team || !team.stripeCustomerId) return [];
-
-    return await ctx.runQuery(
-      components.stripe.public.listSubscriptions,
-      { stripeCustomerId: team.stripeCustomerId }
-    );
+    const user = await getAuthenticatedUser(ctx);
+    if (!user || !user.stripeCustomerId) return [];
+    return await ctx.runQuery(components.stripe.public.listSubscriptions, { stripeCustomerId: user.stripeCustomerId });
   },
 });
 
-// Query to get team's payments from Stripe component (by org ID)
 export const getTeamPayments = query({
   args: { teamId: v.id("teams") },
   async handler(ctx, args) {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return [];
-
-    const team = await ctx.db.get(args.teamId);
-    if (!team) return [];
-
-    const membership = await ctx.db
-      .query("teamMembers")
-      .withIndex("by_team_and_user", (q) =>
-        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
-      )
-      .unique();
-
-    if (!membership || !membership.isActive) return [];
-
-    if (!team.stripeCustomerId) return [];
-
-    const payments = await ctx.runQuery(
-      components.stripe.public.listPayments,
-      { stripeCustomerId: team.stripeCustomerId }
-    );
-
+    const user = await getAuthenticatedUser(ctx);
+    if (!user || !user.stripeCustomerId) return [];
+    const payments = await ctx.runQuery(components.stripe.public.listPayments, { stripeCustomerId: user.stripeCustomerId });
     return payments.sort((a, b) => b.created - a.created);
   },
 });
@@ -729,8 +519,6 @@ export const getTeamPayments = query({
 export const getSubscriptionConfig = query({
   args: {},
   handler: async () => {
-    return {
-      proPriceId: process.env.STRIPE_AI_PRICE_ID,
-    };
+    return { proPriceId: process.env.STRIPE_AI_PRICE_ID };
   },
 });

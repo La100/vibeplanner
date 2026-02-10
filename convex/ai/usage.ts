@@ -57,7 +57,16 @@ export const saveTokenUsage = internalMutation({
       feature: resolvedFeature,
     });
 
-    // Decrement aiTokens from team
+    // Decrement aiTokens from user (primary) + team (backward compat)
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", args.userClerkId))
+      .unique();
+    if (user && user.aiTokens !== undefined) {
+      const newBalance = Math.max(0, (user.aiTokens || 0) - args.totalTokens);
+      await ctx.db.patch(user._id, { aiTokens: newBalance });
+    }
+    // Dual-write: also update team for backward compat
     const team = await ctx.db.get(args.teamId);
     if (team && team.aiTokens !== undefined) {
       const newBalance = Math.max(0, (team.aiTokens || 0) - args.totalTokens);
@@ -257,7 +266,12 @@ export const getTeamUsageBreakdown = query({
       throw new Error("Not authorized to view this team");
     }
 
-    const { start, end } = getBillingWindow(team);
+    // Get billing window from user (primary source)
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", identity.subject))
+      .unique();
+    const { start, end } = getBillingWindow(user ?? team);
 
     const usage = await ctx.db
       .query("aiTokenUsage")

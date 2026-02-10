@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { useUser } from "@clerk/nextjs";
 
 import UserOnboardingChat from "@/components/assistant-ui/user-onboarding-chat";
@@ -12,10 +12,20 @@ export default function UserOnboardingPage() {
   const router = useRouter();
   const { user, isLoaded } = useUser();
 
+  const ensureMyTeam = useMutation(apiAny.teams.ensureMyTeam);
+  const ensuredRef = useRef(false);
+
   const onboarding = useQuery(apiAny.users.getMyOnboardingProfile);
   const defaultProject = useQuery(apiAny.projects.getDefaultProjectForOnboarding);
 
   const completed = onboarding?.completed === true;
+
+  // Ensure team + projects exist (may not have been created yet by webhook)
+  useEffect(() => {
+    if (!isLoaded || !user || ensuredRef.current) return;
+    ensuredRef.current = true;
+    ensureMyTeam({}).catch(console.error);
+  }, [isLoaded, user, ensureMyTeam]);
 
   useEffect(() => {
     if (!isLoaded) return;

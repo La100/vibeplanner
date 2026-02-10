@@ -147,10 +147,16 @@ export const getMyTeamSettings = query({
 
     if (!team) return null;
 
+    // Get timezone from user (primary source)
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", identity.subject))
+      .unique();
+
     return {
       teamId: team._id,
       name: team.name,
-      timezone: team.timezone,
+      timezone: user?.timezone ?? team.timezone,
       userRole: "admin",
     };
   },
@@ -183,9 +189,17 @@ export const updateTeamTimezone = mutation({
       throw new Error("Only admins can update team settings");
     }
 
+    // Dual-write: update both team and user
     await ctx.db.patch(args.teamId, {
       timezone: args.timezone,
     });
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", identity.subject))
+      .unique();
+    if (user) {
+      await ctx.db.patch(user._id, { timezone: args.timezone });
+    }
 
     return { success: true };
   },
@@ -320,14 +334,20 @@ export const getTeamResourceUsage = query({
       .collect();
     const membersUsed = members.length;
 
-    const plan = (team.subscriptionPlan || "free") as
+    // Get subscription data from user (primary source)
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", identity.subject))
+      .unique();
+
+    const plan = ((user?.subscriptionPlan || team.subscriptionPlan || "free") as
       | "free"
       | "basic"
       | "ai"
       | "ai_scale"
       | "pro"
-      | "enterprise";
-    const limits = team.subscriptionLimits || {
+      | "enterprise");
+    const limits = (user?.subscriptionLimits || team.subscriptionLimits || {
       maxProjects:
         plan === "free"
           ? 3
@@ -348,7 +368,7 @@ export const getTeamResourceUsage = query({
               : plan === "pro"
                 ? 50
                 : 999,
-    };
+    }) as { maxProjects: number; maxTeamMembers: number };
 
     const projectsLimit = limits.maxProjects;
     const membersLimit = limits.maxTeamMembers;

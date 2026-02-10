@@ -30,7 +30,12 @@ export const createCheckoutSession = action({
       throw new Error("Not authenticated");
     }
 
-    // Get team info
+    // Get user info (primary source for billing)
+    const user: any = await ctx.runQuery(internalAny.users.getUserForStripe, {
+      clerkUserId: identity.subject,
+    });
+
+    // Get team info (for access check + name)
     const team: any = await ctx.runQuery(internalAny.stripe.getTeamForStripe, {
       teamId: args.teamId,
     });
@@ -56,8 +61,8 @@ export const createCheckoutSession = action({
       name: team.name,
     });
 
-    // Update team with customer ID if new
-    if (!team.stripeCustomerId) {
+    // Update user + team with customer ID if new
+    if (!user?.stripeCustomerId) {
       await ctx.runMutation(internalAny.stripe.updateTeamStripeCustomer, {
         teamId: args.teamId,
         stripeCustomerId: customer.customerId,
@@ -105,7 +110,12 @@ export const createBillingPortalSession = action({
       throw new Error("Not authenticated");
     }
 
-    // Get team info
+    // Get user info (primary source for billing)
+    const user: any = await ctx.runQuery(internalAny.users.getUserForStripe, {
+      clerkUserId: identity.subject,
+    });
+
+    // Get team info (for access check)
     const team: any = await ctx.runQuery(internalAny.stripe.getTeamForStripe, {
       teamId: args.teamId,
     });
@@ -114,7 +124,8 @@ export const createBillingPortalSession = action({
       throw new Error("Team not found");
     }
 
-    if (!team.stripeCustomerId) {
+    const stripeCustomerId = user?.stripeCustomerId || team.stripeCustomerId;
+    if (!stripeCustomerId) {
       throw new Error("No Stripe customer found. Please subscribe first.");
     }
 
@@ -132,7 +143,7 @@ export const createBillingPortalSession = action({
 
     // Create portal session using component
     const session = await stripeClient.createCustomerPortalSession(ctx, {
-      customerId: team.stripeCustomerId,
+      customerId: stripeCustomerId,
       returnUrl: `${baseUrl}/organisation/settings`,
     });
 
@@ -165,30 +176,37 @@ export const ensureSubscriptionSynced = action({
       return { synced: false };
     }
 
-    // Get team info
+    // Get user info (primary source for billing)
+    const user: any = await ctx.runQuery(internalAny.users.getUserForStripe, {
+      clerkUserId: identity.subject,
+    });
+
+    // Get team info (fallback)
     const team: any = await ctx.runQuery(internalAny.stripe.getTeamForStripe, {
       teamId: args.teamId,
     });
 
-    if (!team || !team.stripeCustomerId) {
+    const stripeCustomerId = user?.stripeCustomerId || team?.stripeCustomerId;
+    if (!stripeCustomerId) {
       return { synced: false };
     }
 
-    // If team already has active subscription in DB, no need to sync
-    if (team.subscriptionStatus === "active" || team.subscriptionStatus === "trialing") {
+    // If user already has active subscription in DB, no need to sync
+    const subStatus = user?.subscriptionStatus || team?.subscriptionStatus;
+    if (subStatus === "active" || subStatus === "trialing") {
       return { synced: false };
     }
 
     // Check Stripe for active subscription
     const subscriptions = await stripe.subscriptions.list({
-      customer: team.stripeCustomerId,
+      customer: stripeCustomerId,
       status: "active",
       limit: 1,
     });
 
     if (subscriptions.data.length === 0) {
       const trialingSubscriptions = await stripe.subscriptions.list({
-        customer: team.stripeCustomerId,
+        customer: stripeCustomerId,
         status: "trialing",
         limit: 1,
       });
