@@ -360,6 +360,14 @@ function HabitForm({
     onUpdate: (u: Record<string, unknown>) => void;
 }) {
     const frequencyValue = typeof data.frequency === "string" ? data.frequency : "daily";
+    const reminderPlan = Array.isArray(data.reminderPlan)
+        ? (data.reminderPlan as Array<{
+            date?: string;
+            reminderTime?: string;
+            minStartTime?: string;
+            phaseLabel?: string;
+        }>)
+        : [];
 
     return (
         <div className="space-y-4">
@@ -443,6 +451,27 @@ function HabitForm({
                     />
                 </div>
             </div>
+
+            {reminderPlan.length > 0 && (
+                <div className="space-y-1.5 rounded-md border border-border/60 bg-muted/20 p-3">
+                    <Label className="text-xs font-medium text-muted-foreground/80">Phased reminder plan</Label>
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                        {reminderPlan.slice(0, 7).map((entry, index) => {
+                            const date = entry.date || "date";
+                            const time = entry.reminderTime || "--:--";
+                            const phase = entry.phaseLabel ? ` (${entry.phaseLabel})` : "";
+                            return (
+                                <div key={`${date}-${time}-${index}`}>
+                                    {date}: {time}{phase}
+                                </div>
+                            );
+                        })}
+                        {reminderPlan.length > 7 && (
+                            <div>+{reminderPlan.length - 7} more</div>
+                        )}
+                    </div>
+                </div>
+            )}
 
         </div>
     );

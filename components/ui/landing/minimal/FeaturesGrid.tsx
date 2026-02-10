@@ -54,9 +54,9 @@ const features: Feature[] = [
   },
   {
     icon: Users,
-    title: "Team Accountability",
+    title: "Partner Accountability",
     description:
-      "Build habits with friends, family, or teammates. Share progress and celebrate wins as a group.",
+      "Build habits with a friend, coach, or family member. Share progress and celebrate wins together.",
     color: "#C06A3D",
     span: "md:col-span-1 md:row-span-1",
   },

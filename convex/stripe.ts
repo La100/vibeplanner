@@ -1,23 +1,30 @@
 import { v } from "convex/values";
 import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
-import { internal, components } from "./_generated/api";
+import { components } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { AI_MODEL, calculateCost } from "./ai/config";
 
 const DEFAULT_BILLING_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const FREE_TRIAL_AI_BUDGET_USD = 1;
+const PRO_AI_BUDGET_USD = 9;
+const SCALE_AI_BUDGET_USD = 25;
+const TOKEN_EQ_COST_PER_1M_USD = 5;
+
+const tokenBudgetFromUsd = (usd: number) =>
+  Math.max(0, Math.floor((usd / TOKEN_EQ_COST_PER_1M_USD) * 1_000_000));
 
 // Stripe subscription plans configuration
 export const SUBSCRIPTION_PLANS = {
   free: {
     id: "free",
     name: "Free",
-    maxProjects: 3,
+    maxProjects: 1,
     maxTeamMembers: 1,
     maxStorageGB: 1,
     hasAdvancedFeatures: false,
-    hasAIFeatures: false,
+    hasAIFeatures: true,
     price: 0,
-    aiMonthlyTokens: 0,
+    aiMonthlyTokens: tokenBudgetFromUsd(FREE_TRIAL_AI_BUDGET_USD),
   },
   basic: {
     id: "basic",
@@ -33,24 +40,24 @@ export const SUBSCRIPTION_PLANS = {
   ai: {
     id: "ai",
     name: "AI Pro",
-    maxProjects: 20,
+    maxProjects: 4,
     maxTeamMembers: 25,
     maxStorageGB: 50,
     hasAdvancedFeatures: true,
     hasAIFeatures: true,
-    price: 39,
-    aiMonthlyTokens: 5000000,
+    price: 29,
+    aiMonthlyTokens: tokenBudgetFromUsd(PRO_AI_BUDGET_USD),
   },
   ai_scale: {
     id: "ai_scale",
     name: "AI Scale",
-    maxProjects: 20,
+    maxProjects: 10,
     maxTeamMembers: 25,
     maxStorageGB: 50,
     hasAdvancedFeatures: true,
     hasAIFeatures: true,
-    price: 99,
-    aiMonthlyTokens: 25000000,
+    price: 49,
+    aiMonthlyTokens: tokenBudgetFromUsd(SCALE_AI_BUDGET_USD),
   },
   pro: {
     id: "pro",
@@ -162,15 +169,81 @@ export const ensureBillingWindow = mutation({
 });
 
 async function evaluateAIAccess(ctx: any, user: any) {
-  // BYPASS for now as requested
+  const plan = (user.subscriptionPlan || "free") as keyof typeof SUBSCRIPTION_PLANS;
+  const limits = getEffectiveLimits(user);
+  const subscriptionStatus = user.subscriptionStatus || null;
+  const isActive = subscriptionStatus === "active";
+  const isTrialing = subscriptionStatus === "trialing";
+
+  let teamId: Id<"teams"> | null = null;
+  if (user._id && user.clerkUserId) {
+    const team = await ctx.db
+      .query("teams")
+      .withIndex("by_owner", (q: any) => q.eq("ownerUserId", user.clerkUserId))
+      .unique();
+    teamId = team?._id ?? null;
+  } else if (user._id) {
+    teamId = user._id as Id<"teams">;
+  }
+
+  let usedTokens = 0;
+  if (teamId) {
+    const { start, end } = getBillingWindow(user);
+    const usage = await ctx.db
+      .query("aiTokenUsage")
+      .withIndex("by_team", (q: any) => q.eq("teamId", teamId!))
+      .filter((q: any) =>
+        q.and(
+          q.gte(q.field("_creationTime"), start),
+          q.lte(q.field("_creationTime"), end)
+        )
+      )
+      .collect();
+
+    usedTokens = usage.reduce((sum: number, record: any) => sum + (record.totalTokens || 0), 0);
+  }
+
+  // Free and trial plans get starter AI token access.
+  const hasAiAccess = limits.hasAIFeatures || plan === "free" || isTrialing;
+  if (!hasAiAccess) {
+    return {
+      allowed: false,
+      message: "AI features are unavailable for the current subscription.",
+      currentPlan: plan,
+      subscriptionStatus,
+      totalTokens: 0,
+      usedTokens,
+      remainingTokens: 0,
+    };
+  }
+
+  // If subscription is inactive and not in trial, block paid plans.
+  if (plan !== "free" && !isActive && !isTrialing) {
+    return {
+      allowed: false,
+      message: "Subscription inactive. Renew to continue using AI tokens.",
+      currentPlan: plan,
+      subscriptionStatus,
+      totalTokens: limits.aiMonthlyTokens || 0,
+      usedTokens,
+      remainingTokens: 0,
+    };
+  }
+
+  const totalTokens = Math.max(0, limits.aiMonthlyTokens || 0);
+  const remainingTokens = Math.max(0, totalTokens - usedTokens);
+  const allowed = remainingTokens > 0;
+
   return {
-    allowed: true,
-    message: "AI features available (Bypassed)",
-    currentPlan: user.subscriptionPlan || "free",
-    subscriptionStatus: user.subscriptionStatus || null,
-    totalTokens: 1000000000,
-    usedTokens: 0,
-    remainingTokens: 1000000000,
+    allowed,
+    message: allowed
+      ? "AI tokens available."
+      : "Monthly AI token limit reached. Upgrade to continue using AI.",
+    currentPlan: plan,
+    subscriptionStatus,
+    totalTokens,
+    usedTokens,
+    remainingTokens,
   };
 }
 
@@ -396,7 +469,53 @@ export const checkTeamLimits = query({
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
-    // BYPASS limits for now as requested
+
+    const team = await ctx.db.get(args.teamId);
+    if (!team) throw new Error("Team not found");
+
+    const membership = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", (q) =>
+        q.eq("teamId", args.teamId).eq("clerkUserId", identity.subject)
+      )
+      .unique();
+    if (!membership || !membership.isActive) throw new Error("Not authorized");
+
+    const user = await getAuthenticatedUser(ctx);
+    const source = user || team;
+    const limits = getEffectiveLimits(source);
+
+    if (args.action === "create_project") {
+      const projects = await ctx.db
+        .query("projects")
+        .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+        .collect();
+      const used = projects.length;
+      return {
+        allowed: used < limits.maxProjects,
+        used,
+        limit: limits.maxProjects,
+      };
+    }
+
+    if (args.action === "add_member") {
+      const members = await ctx.db
+        .query("teamMembers")
+        .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+        .filter((q) => q.eq(q.field("isActive"), true))
+        .collect();
+      const used = members.length;
+      return {
+        allowed: used < limits.maxTeamMembers,
+        used,
+        limit: limits.maxTeamMembers,
+      };
+    }
+
+    if (args.action === "use_advanced_features") {
+      return { allowed: !!limits.hasAdvancedFeatures };
+    }
+
     return { allowed: true };
   },
 });
@@ -501,8 +620,13 @@ export const getTeamSubscriptionsFromStripe = query({
   args: { teamId: v.id("teams") },
   async handler(ctx, args) {
     const user = await getAuthenticatedUser(ctx);
-    if (!user || !user.stripeCustomerId) return [];
-    return await ctx.runQuery(components.stripe.public.listSubscriptions, { stripeCustomerId: user.stripeCustomerId });
+    if (!user) return [];
+
+    const team = await ctx.db.get(args.teamId);
+    const stripeCustomerId = user.stripeCustomerId || team?.stripeCustomerId;
+    if (!stripeCustomerId) return [];
+
+    return await ctx.runQuery(components.stripe.public.listSubscriptions, { stripeCustomerId });
   },
 });
 
@@ -510,8 +634,13 @@ export const getTeamPayments = query({
   args: { teamId: v.id("teams") },
   async handler(ctx, args) {
     const user = await getAuthenticatedUser(ctx);
-    if (!user || !user.stripeCustomerId) return [];
-    const payments = await ctx.runQuery(components.stripe.public.listPayments, { stripeCustomerId: user.stripeCustomerId });
+    if (!user) return [];
+
+    const team = await ctx.db.get(args.teamId);
+    const stripeCustomerId = user.stripeCustomerId || team?.stripeCustomerId;
+    if (!stripeCustomerId) return [];
+
+    const payments = await ctx.runQuery(components.stripe.public.listPayments, { stripeCustomerId });
     return payments.sort((a, b) => b.created - a.created);
   },
 });
@@ -519,6 +648,11 @@ export const getTeamPayments = query({
 export const getSubscriptionConfig = query({
   args: {},
   handler: async () => {
-    return { proPriceId: process.env.STRIPE_AI_PRICE_ID };
+    return {
+      proPriceId: process.env.STRIPE_AI_PRICE_ID,
+      scalePriceId: process.env.STRIPE_AI_SCALE_PRICE_ID,
+      proMonthlyPrice: SUBSCRIPTION_PLANS.ai.price,
+      scaleMonthlyPrice: SUBSCRIPTION_PLANS.ai_scale.price,
+    };
   },
 });

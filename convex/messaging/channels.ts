@@ -198,6 +198,60 @@ export const updateChannelThreadId = internalMutation({
     },
 });
 
+// Count total Telegram messages tracked for a team (stored in channel metadata)
+export const getTeamTelegramMessageUsage = internalQuery({
+    args: {
+        teamId: v.id("teams"),
+    },
+    returns: v.object({
+        totalMessages: v.number(),
+    }),
+    handler: async (ctx, args) => {
+        const channels = await ctx.db
+            .query("messagingChannels")
+            .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+            .filter((q) => q.eq(q.field("platform"), "telegram"))
+            .collect();
+
+        const totalMessages = channels.reduce((sum, channel) => {
+            const count = Number((channel.metadata as { freeTelegramMessagesCount?: number } | undefined)?.freeTelegramMessagesCount || 0);
+            return sum + (Number.isFinite(count) ? count : 0);
+        }, 0);
+
+        return { totalMessages };
+    },
+});
+
+// Increment Telegram message usage counter for a single channel
+export const incrementTelegramMessageUsage = internalMutation({
+    args: {
+        channelId: v.id("messagingChannels"),
+    },
+    returns: v.object({
+        newCount: v.number(),
+    }),
+    handler: async (ctx, args) => {
+        const channel = await ctx.db.get(args.channelId);
+        if (!channel) {
+            throw new Error("Channel not found");
+        }
+
+        const metadata = (channel.metadata as Record<string, unknown> | undefined) || {};
+        const currentCount = Number(metadata.freeTelegramMessagesCount || 0);
+        const nextCount = (Number.isFinite(currentCount) ? currentCount : 0) + 1;
+
+        await ctx.db.patch(args.channelId, {
+            metadata: {
+                ...metadata,
+                freeTelegramMessagesCount: nextCount,
+            },
+            lastMessageAt: Date.now(),
+        });
+
+        return { newCount: nextCount };
+    },
+});
+
 // List channels for a project (for admin UI)
 export const listChannelsForProject = query({
     args: {

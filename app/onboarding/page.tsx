@@ -20,7 +20,7 @@ export default function UserOnboardingPage() {
 
   const completed = onboarding?.completed === true;
 
-  // Ensure team + projects exist (may not have been created yet by webhook)
+  // Ensure personal team exists (may not have been created yet by webhook)
   useEffect(() => {
     if (!isLoaded || !user || ensuredRef.current) return;
     ensuredRef.current = true;
@@ -34,6 +34,15 @@ export default function UserOnboardingPage() {
       router.replace("/dashboard");
     }
   }, [completed, isLoaded, router, user]);
+
+  useEffect(() => {
+    if (!isLoaded || !user) return;
+    if (onboarding === null) return;
+    if (completed) return;
+    if (defaultProject === null) {
+      router.replace("/dashboard");
+    }
+  }, [completed, defaultProject, isLoaded, onboarding, router, user]);
 
   const projectId = defaultProject?._id;
 

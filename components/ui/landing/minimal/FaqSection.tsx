@@ -30,9 +30,9 @@ const faqs = [
       "No judgment here. Your AI assistant will check in with you, understand why you missed, and help you adjust your plan. VibePlanner is designed to be compassionate — we focus on building resilience, not guilt.",
   },
   {
-    question: "Does VibePlanner work for teams?",
+    question: "Can I use VibePlanner with an accountability partner?",
     answer:
-      "Yes! Our Team plan is designed for groups who want shared accountability. Teams can create joint habits, run challenges, and track collective progress. Many workplace wellness programs use VibePlanner for team health initiatives.",
+      "Yes. You can share progress updates and run lightweight accountability check-ins with a partner while keeping your personal habits and coaching private.",
   },
   {
     question: "Can I cancel anytime?",

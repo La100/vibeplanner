@@ -3,7 +3,7 @@ import { internalMutation } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 
 const internalAny = require("../_generated/api").internal as any;
-import { getNextReminderTimestamp } from "./reminderUtils";
+import { getNextReminderSchedule, normalizeReminderPlan } from "./reminderUtils";
 
 export const scheduleTelegramReminder = internalMutation({
   args: {
@@ -84,7 +84,8 @@ export const scheduleHabitReminder = internalMutation({
     if (!habit) {
       throw new Error("Habit not found");
     }
-    if (!habit.reminderTime || !habit.isActive) {
+    const reminderPlan = normalizeReminderPlan((habit as any).reminderPlan);
+    if ((!habit.reminderTime && reminderPlan.length === 0) || !habit.isActive) {
       return { scheduled: false };
     }
 
@@ -99,35 +100,45 @@ export const scheduleHabitReminder = internalMutation({
     const team = project ? await ctx.db.get(project.teamId) : null;
     const timeZone = team?.timezone;
 
-    const nextTimestamp = getNextReminderTimestamp({
+    const nextSchedule = getNextReminderSchedule({
       timeZone,
       reminderTime: habit.reminderTime,
       scheduleDays: habit.scheduleDays,
+      reminderPlan,
     });
 
-    if (!nextTimestamp) {
+    if (!nextSchedule) {
       console.log("[HABIT REMINDER] No next timestamp", {
         habitId: args.habitId,
         reminderTime: habit.reminderTime,
         scheduleDays: habit.scheduleDays,
+        reminderPlan,
         timeZone,
       });
       return { scheduled: false };
     }
 
-    const delayMs = Math.max(nextTimestamp - Date.now(), 0);
+    const delayMs = Math.max(nextSchedule.timestamp - Date.now(), 0);
     console.log("[HABIT REMINDER] Scheduling", {
       habitId: args.habitId,
-      reminderTime: habit.reminderTime,
+      reminderTime: nextSchedule.reminderTime,
+      source: nextSchedule.source,
+      date: nextSchedule.date,
+      phaseLabel: nextSchedule.planEntry?.phaseLabel,
       scheduleDays: habit.scheduleDays,
       timeZone,
-      scheduledFor: nextTimestamp,
+      scheduledFor: nextSchedule.timestamp,
       delayMs,
     });
     await ctx.scheduler.runAfter(delayMs, internalAny.messaging.remindersActions.sendHabitReminder, {
       habitId: args.habitId,
     });
 
-    return { scheduled: true, scheduledFor: nextTimestamp };
+    return {
+      scheduled: true,
+      scheduledFor: nextSchedule.timestamp,
+      source: nextSchedule.source,
+      date: nextSchedule.date,
+    };
   },
 });

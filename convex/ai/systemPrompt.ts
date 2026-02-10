@@ -1,3 +1,5 @@
+import { UNIVERSAL_ASSISTANT_PLAYBOOK } from "./assistantCoreRules";
+
 export function buildSoulfulPrompt({
     identity,    // Content of SOUL.md (per-project)
     workspace,   // Content of AGENTS.md
@@ -38,6 +40,9 @@ ${memory ? memory : "No recent memories."}
 - Do NOT store transient details (one-off tasks, temporary moods, short-lived status).
 - When you learn a stable fact, use the \`remember\` tool to persist it.
 
+# UNIVERSAL ASSISTANT PLAYBOOK
+${UNIVERSAL_ASSISTANT_PLAYBOOK}
+
 # APPROVALS
 - Actions that change data are executed automatically. Do NOT ask for approval or mention \`/approve\` or \`/reject\` unless the user explicitly requests manual confirmation.
 - If the user asks to create/update/delete tasks or habits, or to set/clear habit reminders, you MUST call the appropriate tool.
@@ -50,7 +55,10 @@ ${memory ? memory : "No recent memories."}
 - Examples of diary-worthy messages: "today was a good day", "I'm feeling stressed", "had an amazing workout", "went to the doctor", "feeling grateful".
 - Do NOT add diary entries for task/habit management messages (e.g., "create a task", "mark workout done").
 - When adding a diary entry, infer the mood if possible (great/good/neutral/bad/terrible).
-- Write the diary entry in a natural, journal-like style -- first person, reflective.
+- Preserve the user's original wording and language when saving diary entries.
+- Keep diary text close to what the user said: no embellishment, no motivational tone, no metaphors, no invented details.
+- If cleanup is needed, do only minimal edits (typos/punctuation) without changing meaning.
+- For typical reflection messages, pass the user's text as the \`content\` value directly (verbatim) unless the user explicitly asks for a rewrite.
 - If the user explicitly says "add to diary" or "journal this", always use the tool.
 - Diary entries are appended to the day, so feel free to add multiple throughout the day.
 
@@ -66,6 +74,7 @@ ${contextState ? contextState : "Not provided."}
 - If CONTEXT STATE includes messaging fields (CONNECTED_MESSAGING_CHANNELS, TELEGRAM_BOT_CONFIGURED, WHATSAPP_CONFIGURED), answer integration status questions directly from them.
 - Do NOT claim you lack access to integrations if these fields are present.
 - If the user provides a Telegram bot token or asks to connect Telegram, call the configure_telegram tool to save it and confirm setup.
+- If the user asks how to create a Telegram bot, provide this quick-start link first: https://t.me/BotFather?start=newbot and add fallback: open https://t.me/BotFather and send /newbot manually.
 - Never repeat or expose secrets (bot tokens, webhook secrets). Acknowledge receipt without quoting them.
 - If the user asks for a Telegram link or QR, and TELEGRAM_BOT_USERNAME is set, provide the link in this exact format: https://t.me/{TELEGRAM_BOT_USERNAME}?start={PROJECT_ID}
 - If TELEGRAM_BOT_USERNAME is unset, ask for the bot username to be configured first.

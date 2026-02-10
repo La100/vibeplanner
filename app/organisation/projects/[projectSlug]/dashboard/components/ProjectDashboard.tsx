@@ -45,6 +45,11 @@ type HabitsTimelinePayload = {
   };
 };
 
+const EMPTY_HABITS: HabitItem[] = [];
+const EMPTY_DATES: string[] = [];
+const EMPTY_COMPLETIONS: Record<string, string[]> = {};
+const EMPTY_TIMELINE_DAYS: HabitsTimelineDay[] = [];
+
 const DOW_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
 type DowKey = (typeof DOW_KEYS)[number];
@@ -102,12 +107,12 @@ export function ProjectDashboard() {
   ) as HabitsTimelinePayload | undefined;
   const toggleHabitCompletion = useMutation(apiAny.habits.toggleHabitCompletion);
 
-  const habits = week?.habits ?? [];
-  const dates = week?.dates ?? [];
+  const habits = week?.habits ?? EMPTY_HABITS;
+  const dates = week?.dates ?? EMPTY_DATES;
   const today = week?.today;
-  const completions = week?.completionsByHabitId ?? {};
+  const completions = week?.completionsByHabitId ?? EMPTY_COMPLETIONS;
   const timelineLoaded = Boolean(timeline);
-  const timelineDays = timeline?.days ?? [];
+  const timelineDays = timeline?.days ?? EMPTY_TIMELINE_DAYS;
   const overallSuccess = timeline?.overall?.percent ?? 0;
   const overallScheduled = timeline?.overall?.scheduled ?? 0;
   const overallCompleted = timeline?.overall?.completed ?? 0;

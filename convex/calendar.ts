@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation, internalQuery } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
+import { getReminderPlanEntryForDate, normalizeReminderPlan, resolveReminderForDate } from "./messaging/reminderUtils";
 
 const internalAny = require("./_generated/api").internal as any;
 
@@ -290,6 +291,8 @@ export const getProjectCalendarData = query({
         _id: h._id,
         name: (h as any).name || (h as any).title || "Habit",
         scheduleDays: h.scheduleDays,
+        reminderTime: h.reminderTime,
+        reminderPlan: normalizeReminderPlan((h as any).reminderPlan),
         frequency: h.frequency,
         isActive: h.isActive,
       }));
@@ -343,6 +346,28 @@ export const getProjectCalendarData = query({
 
 const DOW_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
+const isHabitScheduledForDate = (habit: any, date: string): boolean => {
+  if (!habit?.isActive) return false;
+  const reminderPlan = normalizeReminderPlan((habit as any).reminderPlan);
+  if (reminderPlan.length > 0) {
+    const hasPlanEntry = !!getReminderPlanEntryForDate(reminderPlan, date);
+    if (hasPlanEntry) return true;
+    if (habit.reminderTime) {
+      return !!resolveReminderForDate({
+        date,
+        reminderTime: habit.reminderTime,
+        scheduleDays: habit.scheduleDays,
+        reminderPlan,
+      });
+    }
+    return false;
+  }
+
+  if (!habit.scheduleDays || habit.scheduleDays.length === 0) return true;
+  const dayOfWeek = DOW_KEYS[new Date(date + "T00:00:00").getDay()];
+  return habit.scheduleDays.includes(dayOfWeek);
+};
+
 export const getDayOverviewInternal = internalQuery({
   args: {
     projectId: v.id("projects"),
@@ -384,8 +409,6 @@ export const getDayOverviewInternal = internalQuery({
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .collect();
 
-    const dayOfWeek = DOW_KEYS[new Date(args.date + "T00:00:00").getDay()];
-
     const completions = await ctx.db
       .query("habitCompletions")
       .withIndex("by_project_and_date", (q: any) =>
@@ -399,17 +422,25 @@ export const getDayOverviewInternal = internalQuery({
     }
 
     const dayHabits = habits
-      .filter((h) => {
-        if (!h.isActive) return false;
-        if (!h.scheduleDays || h.scheduleDays.length === 0) return true;
-        return h.scheduleDays.includes(dayOfWeek);
-      })
-      .map((h) => ({
-        _id: String(h._id),
-        name: (h as any).name || (h as any).title || "Habit",
-        completed: completionMap.has(String(h._id)),
-        value: completionMap.get(String(h._id)),
-      }));
+      .filter((h) => isHabitScheduledForDate(h, args.date))
+      .map((h) => {
+        const reminderPlan = normalizeReminderPlan((h as any).reminderPlan);
+        const effectiveReminder = resolveReminderForDate({
+          date: args.date,
+          reminderTime: h.reminderTime,
+          scheduleDays: h.scheduleDays,
+          reminderPlan,
+        });
+        return {
+          _id: String(h._id),
+          name: (h as any).name || (h as any).title || "Habit",
+          completed: completionMap.has(String(h._id)),
+          value: completionMap.get(String(h._id)),
+          reminderTime: effectiveReminder?.reminderTime ?? h.reminderTime,
+          reminderPlan,
+          phaseLabel: effectiveReminder?.planEntry?.phaseLabel,
+        };
+      });
 
     // --- Diary entry ---
     const diaryEntry = await ctx.db

@@ -143,6 +143,12 @@ export type HabitInput = {
   frequency?: "daily" | "weekly";
   scheduleDays?: string[];
   reminderTime?: string;
+  reminderPlan?: Array<{
+    date: string;
+    reminderTime: string;
+    minStartTime?: string;
+    phaseLabel?: string;
+  }>;
   source?: "user" | "assistant" | "gymbro_onboarding";
 };
 

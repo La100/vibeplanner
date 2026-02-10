@@ -58,6 +58,12 @@ const taskFields = z.object({
 });
 
 const weekdayEnum = z.enum(["sun", "mon", "tue", "wed", "thu", "fri", "sat"]);
+const reminderPlanEntrySchema = z.object({
+  date: z.string().describe("Calendar date in YYYY-MM-DD format (project timezone day)."),
+  reminderTime: z.string().describe("Reminder time in local HH:mm format for this date."),
+  minStartTime: z.string().optional().describe("Optional 'not earlier than' time in HH:mm for this date."),
+  phaseLabel: z.string().optional().describe("Optional phase label, e.g. D1-2."),
+});
 
 const habitFields = z.object({
   name: z.string().describe("Habit name"),
@@ -67,6 +73,10 @@ const habitFields = z.object({
   frequency: z.enum(["daily", "weekly"]).optional().describe("Habit frequency"),
   scheduleDays: z.array(weekdayEnum).optional().describe("Days of week for this habit, e.g. ['mon', 'wed', 'fri']"),
   reminderTime: z.string().optional().describe("Reminder time in local HH:mm format"),
+  reminderPlan: z
+    .array(reminderPlanEntrySchema)
+    .optional()
+    .describe("Optional per-date reminder plan for phased schedules (e.g., D1-2 15:00, D3-4 17:00)."),
   source: z.enum(["user", "assistant", "gymbro_onboarding"]).optional().describe("Creation source"),
 });
 
@@ -189,7 +199,7 @@ const getDayOverviewSchema = z.object({
 });
 
 const addDiaryEntrySchema = z.object({
-  content: z.string().describe("The diary entry text. Write naturally, like a journal."),
+  content: z.string().describe("The diary entry text. Prefer the user's exact words; do not embellish, paraphrase heavily, or invent details."),
   date: z.string().optional().describe("Date in YYYY-MM-DD format. Defaults to today."),
   mood: z.enum(["great", "good", "neutral", "bad", "terrible"]).optional()
     .describe("Optional mood for the day, inferred from user's message."),

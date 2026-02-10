@@ -1,27 +1,146 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+
+export const metadata: Metadata = {
+  title: "Terms of Service | VibePlanner",
+  description: "Terms governing your use of VibePlanner.",
+};
+
+const lastUpdated = "February 10, 2026";
+
 export default function TermsOfServicePage() {
-    return (
-        <div className="min-h-screen bg-background flex flex-col items-center justify-center p-8">
-            <div className="max-w-2xl w-full bg-white p-8 rounded-xl shadow-sm">
-                <h1 className="text-3xl font-medium text-gray-900 mb-6">Terms of Service</h1>
-                <div className="prose prose-sm max-w-none text-gray-600">
-                    <p>Last updated: {new Date().toLocaleDateString()}</p>
-                    <p className="mt-4">
-                        Welcome to VibePlanner. By using our services, you agree to these Terms of Service.
-                    </p>
-                    <h2 className="text-xl font-medium text-gray-800 mt-6 mb-2">1. Acceptance of Terms</h2>
-                    <p>
-                        By accessing or using our services, you agree to be bound by these Terms. If you disagree with any part of the terms, then you may not access the service.
-                    </p>
-                    <h2 className="text-xl font-medium text-gray-800 mt-6 mb-2">2. Use License</h2>
-                    <p>
-                        Permission is granted to temporarily download one copy of the materials (information or software) on VibePlanner's website for personal, non-commercial transitory viewing only.
-                    </p>
-                    <h2 className="text-xl font-medium text-gray-800 mt-6 mb-2">3. Disclaimer</h2>
-                    <p>
-                        The materials on VibePlanner's website are provided on an 'as is' basis. VibePlanner makes no warranties, expressed or implied, and hereby disclaims and negates all other warranties including, without limitation, implied warranties or conditions of merchantability, fitness for a particular purpose, or non-infringement of intellectual property or other violation of rights.
-                    </p>
-                </div>
-            </div>
+  return (
+    <div className="min-h-screen bg-background px-6 py-12 md:py-16">
+      <div className="mx-auto max-w-4xl rounded-2xl border border-border bg-card p-8 md:p-10">
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+          Terms of Service
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Last updated: {lastUpdated}
+        </p>
+
+        <div className="mt-8 space-y-7 text-sm leading-7 text-foreground/90">
+          <section className="space-y-3">
+            <h2 className="text-xl font-semibold text-foreground">
+              1. Acceptance of Terms
+            </h2>
+            <p>
+              By accessing or using VibePlanner, you agree to these Terms of
+              Service. If you do not agree, do not use the service.
+            </p>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-xl font-semibold text-foreground">
+              2. Eligibility and Accounts
+            </h2>
+            <p>
+              You are responsible for maintaining the confidentiality of your
+              account credentials and for all activity under your account.
+            </p>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-xl font-semibold text-foreground">
+              3. Subscriptions and Billing
+            </h2>
+            <p>
+              Some features require a paid subscription. Billing and payment
+              processing are handled by Stripe. Fees are non-refundable except
+              where required by law or expressly stated otherwise.
+            </p>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-xl font-semibold text-foreground">
+              4. Acceptable Use
+            </h2>
+            <p>
+              You agree not to misuse the service, interfere with its operation,
+              attempt unauthorized access, or use VibePlanner for unlawful
+              activities.
+            </p>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-xl font-semibold text-foreground">
+              5. AI-Generated Content
+            </h2>
+            <p>
+              VibePlanner may generate assistant responses based on model output.
+              AI output can be inaccurate and should be reviewed before making
+              important decisions.
+            </p>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-xl font-semibold text-foreground">
+              6. Intellectual Property
+            </h2>
+            <p>
+              VibePlanner and its associated content, branding, and software are
+              protected by applicable intellectual property laws. These Terms do
+              not transfer ownership rights to you.
+            </p>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-xl font-semibold text-foreground">
+              7. Termination
+            </h2>
+            <p>
+              We may suspend or terminate access if you violate these Terms or
+              if continued access poses security, legal, or operational risk.
+            </p>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-xl font-semibold text-foreground">
+              8. Disclaimer of Warranties
+            </h2>
+            <p>
+              The service is provided on an &quot;as is&quot; and &quot;as available&quot;
+              basis, without warranties of any kind to the extent permitted by
+              law.
+            </p>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-xl font-semibold text-foreground">
+              9. Limitation of Liability
+            </h2>
+            <p>
+              To the maximum extent permitted by law, VibePlanner will not be
+              liable for indirect, incidental, special, consequential, or
+              punitive damages arising from your use of the service.
+            </p>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-xl font-semibold text-foreground">
+              10. Changes to Terms
+            </h2>
+            <p>
+              We may update these Terms from time to time. If we make material
+              changes, we will update the date above and may provide additional
+              notice in the app.
+            </p>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-xl font-semibold text-foreground">
+              11. Contact
+            </h2>
+            <p>
+              For questions about these Terms, contact us through{" "}
+              <Link className="underline underline-offset-2" href="/help">
+                /help
+              </Link>
+              .
+            </p>
+          </section>
         </div>
-    );
+      </div>
+    </div>
+  );
 }

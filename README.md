@@ -1,26 +1,24 @@
 # VibePlanner
 
-**AI Assistant Workspace for teams**
+**AI Habit Planner with AI Assistants**
 
-VibePlanner łączy projekty, zadania, pliki, kalendarze i czat AI w jednym miejscu, żeby zespoły mogły planować i dowozić pracę w pełnym kontekście.
+VibePlanner pomaga budować nawyki, utrzymywać rytm dnia i domykać cele z pomocą asystentów AI.
 
 ## Szybki kontekst (dla agentów i nowych devów)
 
 ### Stos
 - **Frontend**: Next.js 15 (App Router) + React 19.
 - **Backend**: Convex (queries, mutations, actions).
-- **Auth**: Clerk (Organizations mapowane na Teams).
+- **Auth**: Clerk (Organizations mapowane na wewnętrzne encje organizacyjne).
 - **Billing**: Stripe.
 - **UI**: Tailwind CSS + shadcn/ui.
 
 ### Model domeny (Convex)
 *Autorytatywnie: `convex/schema.ts`.*
 
-1. **Teams**: top-level org, status subskrypcji, ustawienia.
-2. **Projects**: należą do Team; trzymają Tasks/Files/Calendar.
-3. **Tasks**: kanban (todo, in_progress, review, done).
-4. **Files**: zunifikowane przechowywanie + ekstrakcja/analiza AI.
-5. **AI**: wątki i wiadomości + tracking użycia tokenów.
+1. **Legacy nazewnictwo backendu**: utrzymane dla kompatybilności, nie traktuj go jako pozycjonowania produktu.
+2. **Pozycjonowanie produktu**: habits-first (nawyki, rutyny, streaki, check-iny, accountability).
+3. **AI**: wątki i wiadomości + tracking użycia tokenów.
 
 ### Ważne ścieżki
 - `app/`: trasy Next.js (App Router).

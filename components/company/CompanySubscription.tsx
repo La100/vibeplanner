@@ -11,14 +11,14 @@ import {
     CreditCard,
     Coins,
     Clock3,
-    FolderOpen
+    FolderOpen,
+    Check
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { formatTokens } from "@/lib/aiPricing";
-import { cn } from "@/lib/utils";
 
 export default function CompanySubscription() {
     const teamData = useQuery(apiAny.teams.getMyTeamSettings);
@@ -66,37 +66,49 @@ export default function CompanySubscription() {
         );
     }
 
-    const isPro = subscription?.subscriptionStatus === "active" || subscription?.subscriptionStatus === "trialing";
+    const hasPaidSubscription = !!(
+        subscription?.subscriptionId &&
+        (subscription?.subscriptionStatus === "active" || subscription?.subscriptionStatus === "trialing")
+    );
 
     const handleManageSubscription = async () => {
         if (!teamData?.teamId) return;
         setActionLoading(true);
         try {
-            if (isPro) {
-                const result = await createBillingPortalSession({ teamId: teamData.teamId });
-                if (result.url) {
-                    window.location.href = result.url;
-                } else {
-                    toast.error("Failed to open billing portal");
-                }
+            const result = await createBillingPortalSession({ teamId: teamData.teamId });
+            if (result.url) {
+                window.location.href = result.url;
             } else {
-                if (!subConfig?.proPriceId) {
-                    toast.error("Subscription configuration missing");
-                    return;
-                }
-                const result = await createCheckoutSession({
-                    teamId: teamData.teamId,
-                    priceId: subConfig.proPriceId
-                });
-                if (result.url) {
-                    window.location.href = result.url;
-                } else {
-                    toast.error("Failed to start checkout");
-                }
+                toast.error("Failed to open billing portal");
             }
         } catch (error) {
             console.error("Error managing subscription:", error);
-            toast.error(isPro ? "Error opening billing portal" : "Error starting checkout");
+            toast.error("Error opening billing portal");
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleStartCheckout = async (priceId: string | undefined, planLabel: string) => {
+        if (!teamData?.teamId) return;
+        setActionLoading(true);
+        try {
+            if (!priceId) {
+                toast.error(`Missing Stripe price ID for ${planLabel}`);
+                return;
+            }
+            const result = await createCheckoutSession({
+                teamId: teamData.teamId,
+                priceId
+            });
+            if (result.url) {
+                window.location.href = result.url;
+            } else {
+                toast.error("Failed to start checkout");
+            }
+        } catch (error) {
+            console.error("Error starting checkout:", error);
+            toast.error("Error starting checkout");
         } finally {
             setActionLoading(false);
         }
@@ -105,12 +117,8 @@ export default function CompanySubscription() {
     const remainingCredits = aiAccess?.remainingTokens ?? 0;
     const totalCredits = aiAccess?.totalTokens ?? remainingCredits;
     const usedCredits = usageBreakdown?.totalTokens ?? Math.max(0, totalCredits - remainingCredits);
-    const usagePercent = totalCredits > 0 ? Math.min(100, Math.round((usedCredits / totalCredits) * 100)) : 0;
     const totalInputTokens = usageBreakdown?.totalInputTokens ?? 0;
     const totalOutputTokens = usageBreakdown?.totalOutputTokens ?? 0;
-    const inputCostUSD = usageBreakdown?.inputCostUSD ?? 0;
-    const outputCostUSD = usageBreakdown?.outputCostUSD ?? 0;
-    const totalCostUSD = usageBreakdown?.totalCostUSD ?? 0;
     const planStatus = subscription?.subscriptionStatus;
     const subscriptionLabel = planStatus === "trialing" ? "Trial" : subscription?.planDetails?.name || "Free";
     let subscriptionSubtext = "No active subscription";
@@ -119,13 +127,7 @@ export default function CompanySubscription() {
     } else if (planStatus === "active") {
         subscriptionSubtext = "Active subscription";
     }
-    const formatUSD = (value: number) =>
-        new Intl.NumberFormat("en-US", {
-            style: "currency",
-            currency: "USD",
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-        }).format(value);
+    const usagePercent = totalCredits > 0 ? Math.min(100, Math.round((usedCredits / totalCredits) * 100)) : 0;
 
     // Filter relevant usage categories (hide empty ones)
     const usageCategories = [
@@ -147,6 +149,96 @@ export default function CompanySubscription() {
                         </div>
                     </div>
                 </div>
+
+                {!hasPaidSubscription && (
+                    <section className="rounded-3xl border border-border/40 bg-gradient-to-br from-background via-background to-muted/20 p-6 md:p-8">
+                        <div className="mx-auto max-w-3xl text-center">
+                            <h2 className="text-3xl md:text-4xl font-semibold tracking-tight">
+                                Start free. Scale when you&apos;re ready.
+                            </h2>
+                            <p className="mt-3 text-muted-foreground">
+                                Upgrade only when you need a larger monthly AI token quota.
+                            </p>
+                        </div>
+
+                        <div className="mt-8 grid gap-4 lg:grid-cols-3">
+                            <Card className="border-border/50 bg-card/70">
+                                <CardHeader className="pb-3">
+                                    <CardTitle className="text-2xl font-semibold">Free</CardTitle>
+                                    <CardDescription className="text-lg">$0 forever</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    {[
+                                        "Starter AI token quota",
+                                        "AI chat access enabled",
+                                        "Free plan limits apply",
+                                    ].map((feature) => (
+                                        <div key={feature} className="flex items-center gap-2 text-sm text-muted-foreground">
+                                            <Check className="h-4 w-4 text-primary" />
+                                            <span>{feature}</span>
+                                        </div>
+                                    ))}
+                                    <Button disabled className="mt-4 w-full" variant="outline">
+                                        Current plan
+                                    </Button>
+                                </CardContent>
+                            </Card>
+
+                            <Card className="border-border/60 bg-card shadow-sm ring-1 ring-border/40">
+                                <CardHeader className="pb-3">
+                                    <CardTitle className="text-2xl font-semibold">Pro</CardTitle>
+                                    <CardDescription className="text-lg">${subConfig?.proMonthlyPrice ?? 29}/mo</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    {[
+                                        "Larger monthly AI token quota",
+                                        "For frequent assistant usage",
+                                        "Upgrade from Free limits",
+                                    ].map((feature) => (
+                                        <div key={feature} className="flex items-center gap-2 text-sm text-muted-foreground">
+                                            <Check className="h-4 w-4 text-primary" />
+                                            <span>{feature}</span>
+                                        </div>
+                                    ))}
+                                    <Button
+                                        className="mt-4 w-full"
+                                        disabled={actionLoading}
+                                        onClick={() => handleStartCheckout(subConfig?.proPriceId, "Pro")}
+                                    >
+                                        {actionLoading ? "Processing..." : "Start Pro"}
+                                    </Button>
+                                </CardContent>
+                            </Card>
+
+                            <Card className="border-border/50 bg-card/70">
+                                <CardHeader className="pb-3">
+                                    <CardTitle className="text-2xl font-semibold">Scale</CardTitle>
+                                    <CardDescription className="text-lg">${subConfig?.scaleMonthlyPrice ?? 49}/mo</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    {[
+                                        "Largest monthly AI token quota",
+                                        "For heavy AI usage",
+                                        "Maximum token headroom",
+                                    ].map((feature) => (
+                                        <div key={feature} className="flex items-center gap-2 text-sm text-muted-foreground">
+                                            <Check className="h-4 w-4 text-primary" />
+                                            <span>{feature}</span>
+                                        </div>
+                                    ))}
+                                    <Button
+                                        className="mt-4 w-full"
+                                        disabled={actionLoading}
+                                        variant="outline"
+                                        onClick={() => handleStartCheckout(subConfig?.scalePriceId, "Scale")}
+                                    >
+                                        {actionLoading ? "Processing..." : "Go Scale"}
+                                    </Button>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </section>
+                )}
 
                 <div className="space-y-6">
                     <div className="flex flex-col gap-1">
@@ -184,29 +276,20 @@ export default function CompanySubscription() {
                                     <div className="text-2xl font-semibold tracking-tight">{subscriptionLabel}</div>
                                     <p className="text-sm text-muted-foreground">{subscriptionSubtext}</p>
                                 </div>
-                                <Button
-                                    onClick={() => {
-                                        console.log("SubConfig:", subConfig);
-                                        handleManageSubscription();
-                                    }}
-                                    disabled={actionLoading}
-                                    className={cn(
-                                        "w-full relative overflow-hidden transition-all duration-300",
-                                        !isPro && "bg-foreground text-background hover:bg-foreground/90 hover:ring-2 hover:ring-foreground/20 hover:ring-offset-2 ring-offset-background"
-                                    )}
-                                    variant={isPro ? "outline" : "default"}
-                                >
-                                    {actionLoading ? (
-                                        "Processing..."
-                                    ) : isPro ? (
-                                        "Manage Subscription"
-                                    ) : (
-                                        <>
-                                            <span className="relative z-10 font-semibold">Upgrade to Pro</span>
-                                            <span className="absolute inset-0 -z-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.4)_50%,transparent_75%,transparent_100%)] bg-[length:250%_250%,100%_100%] bg-[position:-100%_0,0_0] bg-no-repeat transition-[background-position_0s] duration-0 group-hover:bg-[position:200%_0,0_0] group-hover:duration-[1200ms]" />
-                                        </>
-                                    )}
-                                </Button>
+                                {hasPaidSubscription ? (
+                                    <Button
+                                        onClick={handleManageSubscription}
+                                        disabled={actionLoading}
+                                        className="w-full"
+                                        variant="outline"
+                                    >
+                                        {actionLoading ? "Processing..." : "Manage Subscription"}
+                                    </Button>
+                                ) : (
+                                    <p className="text-sm text-muted-foreground">
+                                        You&apos;re on Free. Choose Pro or Scale from the comparison section above.
+                                    </p>
+                                )}
                             </CardContent>
                         </Card>
                     </div>
@@ -255,7 +338,7 @@ export default function CompanySubscription() {
                 <div className="space-y-6">
                     <div className="flex flex-col gap-1">
                         <h2 className="text-lg font-medium">Usage</h2>
-                        <p className="text-sm text-muted-foreground">Monitor your usage, costs, and resource consumption.</p>
+                        <p className="text-sm text-muted-foreground">Monitor your token usage and resource consumption.</p>
                     </div>
 
                     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -301,28 +384,32 @@ export default function CompanySubscription() {
                             <CardHeader className="pb-3">
                                 <CardTitle className="text-base font-medium flex items-center gap-2">
                                     <DollarSign className="h-4 w-4 text-amber-500" />
-                                    AI Token Costs
+                                    Token Mix
                                 </CardTitle>
-                                <CardDescription>Input vs output for this billing period</CardDescription>
+                                <CardDescription>Input vs output tokens for this billing period</CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-1">
                                         <p className="text-xs text-muted-foreground">Input tokens</p>
                                         <div className="text-lg font-semibold tabular-nums">{formatTokens(totalInputTokens)}</div>
-                                        <p className="text-xs text-muted-foreground">{formatUSD(inputCostUSD)}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                            {usedCredits > 0 ? `${((totalInputTokens / usedCredits) * 100).toFixed(1)}%` : "0%"}
+                                        </p>
                                     </div>
                                     <div className="space-y-1">
                                         <p className="text-xs text-muted-foreground">Output tokens</p>
                                         <div className="text-lg font-semibold tabular-nums">{formatTokens(totalOutputTokens)}</div>
-                                        <p className="text-xs text-muted-foreground">{formatUSD(outputCostUSD)}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                            {usedCredits > 0 ? `${((totalOutputTokens / usedCredits) * 100).toFixed(1)}%` : "0%"}
+                                        </p>
                                     </div>
                                 </div>
                                 <div className="flex items-center justify-between border-t border-border/40 pt-3 text-sm">
-                                    <span className="text-muted-foreground">Total cost</span>
-                                    <span className="font-medium tabular-nums">{formatUSD(totalCostUSD)}</span>
+                                    <span className="text-muted-foreground">Total tokens</span>
+                                    <span className="font-medium tabular-nums">{formatTokens(usedCredits)}</span>
                                 </div>
-                                <p className="text-xs text-muted-foreground">Rates: $1.75 / 1M input, $14 / 1M output</p>
+                                <p className="text-xs text-muted-foreground">Usage shown in token units.</p>
                             </CardContent>
                         </Card>
 
@@ -332,11 +419,11 @@ export default function CompanySubscription() {
                                     <FolderOpen className="h-4 w-4 text-purple-500" />
                                     Assistants
                                 </CardTitle>
-                                <CardDescription>Active projects</CardDescription>
+                                <CardDescription>Active assistants</CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 <div>
-                                    <div className="text-xl font-semibold tabular-nums">{resourceUsage?.projectsUsed ?? 0} projects</div>
+                                    <div className="text-xl font-semibold tabular-nums">{resourceUsage?.projectsUsed ?? 0} assistants</div>
                                     <p className="text-xs text-muted-foreground">of {resourceUsage?.projectsLimit ?? 0} total</p>
                                 </div>
                                 <div className="space-y-2 pt-2">
@@ -364,6 +451,7 @@ export default function CompanySubscription() {
                                 </div>
                             </CardContent>
                         </Card>
+
                     </div>
 
                     <Card className="border-border/40 shadow-sm">

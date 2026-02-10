@@ -43,10 +43,10 @@ export function Hero() {
           transition={{ duration: 0.7, ease: "easeOut" }}
           className="font-[var(--font-display-serif)] text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-normal tracking-tight text-foreground leading-[0.95]"
         >
-          Plan your next{" "}
+          Build your next{" "}
           <br className="hidden sm:block" />
           <em className="text-primary not-italic font-[var(--font-display-serif)]">
-            project
+            habit
           </em>{" "}
           with
           <br className="hidden sm:block" />
@@ -59,8 +59,8 @@ export function Hero() {
           transition={{ duration: 0.6, delay: 0.15, ease: "easeOut" }}
           className="mx-auto mt-8 max-w-xl text-base sm:text-lg text-muted-foreground leading-relaxed"
         >
-          VibePlanner brings AI-powered project planning to your team,
-          turning ideas into actionable plans in minutes.
+          VibePlanner brings AI-powered habit coaching into your day,
+          turning goals into repeatable routines in minutes.
         </motion.p>
 
         <motion.div
@@ -72,7 +72,7 @@ export function Hero() {
           <div className="flex flex-1 items-center gap-3 px-5 py-3">
             <Search className="h-4 w-4 text-muted-foreground shrink-0" />
             <span className="text-sm text-muted-foreground">
-              Start your first project...
+              Start your first habit...
             </span>
           </div>
           <Button

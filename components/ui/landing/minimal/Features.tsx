@@ -5,27 +5,27 @@ import { motion } from "framer-motion";
 const steps = [
   {
     number: "01",
-    title: "Create your team space",
+    title: "Set your habit goal",
     description:
-      "Invite teammates and set your default project structure in seconds.",
+      "Pick one outcome and define a realistic routine you can repeat daily.",
   },
   {
     number: "02",
     title: "Connect your tools",
     description:
-      "Sync calendars, files, and tasks so AI has full context to plan.",
+      "Sync calendar and reminders so AI can coach you in real-world context.",
   },
   {
     number: "03",
-    title: "Pick your project",
+    title: "Choose your routine",
     description:
-      "Choose a workspace folder or import an existing plan to get started.",
+      "Select frequency, preferred time windows, and fallback options.",
   },
   {
     number: "04",
-    title: "Start your first task",
+    title: "Start your first check-in",
     description:
-      "Kick off a thread and let VibePlanner guide the next steps for you.",
+      "Open a thread and let VibePlanner guide your next best action.",
   },
 ];
 
@@ -44,7 +44,7 @@ export function Features() {
             <em className="text-primary not-italic">four steps</em>
           </h2>
           <p className="mt-4 text-muted-foreground text-base max-w-lg mx-auto">
-            From sign-up to your first AI-assisted project in minutes.
+            From sign-up to your first AI-assisted routine in minutes.
           </p>
         </motion.div>
 

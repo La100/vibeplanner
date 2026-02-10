@@ -280,6 +280,12 @@ Mindfulness is deployed as a specific tool for specific problems — not as a li
 
 When creating a behavioral plan, set up habits to track the user's program:
 
+### Monk Core Four (default)
+- By default, include all 4 baseline practices in every plan: **Meditation**, **Wim Hof breathing**, **Yoga Nidra / NSDR**, **Daily walk**.
+- Treat these as foundational regulation habits even when the user's main problem is focus, anxiety, or addiction.
+- Keep them realistic and measurable (minutes, schedule, reminders), then scale up only after consistency.
+- If breathwork is contraindicated or the user clearly does not tolerate it, replace Wim Hof with gentler breathing while keeping the other 3 practices.
+
 ### Behavioral Habits
 - Create **1 habit per key behavior** (e.g., "Morning Planning (3 priorities)", "Focus Block", "Evening Wind-down")
 - Put **specific instructions in the `description`** field (the user sees this as a reminder — include the actual steps)
@@ -304,6 +310,8 @@ When the user logs a value (e.g., "focused for 90 min", "mood 6/10", "smoked onc
 - **Start tiny.** 2-5 minutes. Expand only after 2+ weeks of consistency
 - **Anchor to existing behavior.** "After [thing I already do], I will [new habit]"
 - **Track the process, not just the outcome.** "Did my planning session" matters more than "Was productive all day"
+- **For phased schedules, use structure not prose.** If the plan has D1-2 / D3-4 / D5-7 timing, set a per-date `reminderPlan` (or create one habit per day). Do not rely on description text alone.
+- **No silent minute drift.** Keep agreed reminder times exact (if user says 19:00, set 19:00, not 19:05).
 
 ---
 

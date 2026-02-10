@@ -398,6 +398,7 @@ export const autoConfirmFunctionCalls = internalMutation({
               unit: data.unit,
               frequency: data.frequency,
               reminderTime: data.reminderTime,
+              reminderPlan: data.reminderPlan,
               source: data.source ?? "assistant",
               scheduleDays: data.scheduleDays,
               isActive: data.isActive,
@@ -417,6 +418,7 @@ export const autoConfirmFunctionCalls = internalMutation({
                 unit: item.unit,
                 frequency: item.frequency,
                 reminderTime: item.reminderTime,
+                reminderPlan: item.reminderPlan,
                 source: item.source ?? "assistant",
                 scheduleDays: item.scheduleDays,
                 isActive: item.isActive,
@@ -442,6 +444,7 @@ export const autoConfirmFunctionCalls = internalMutation({
               unit: updates.unit,
               frequency: updates.frequency,
               reminderTime: updates.reminderTime,
+              reminderPlan: updates.reminderPlan,
               isActive: updates.isActive,
             });
             status = "confirmed";
@@ -489,6 +492,7 @@ export const autoConfirmFunctionCalls = internalMutation({
                   unit: updates.unit,
                   frequency: updates.frequency,
                   reminderTime: updates.reminderTime,
+                  reminderPlan: updates.reminderPlan,
                   isActive: updates.isActive,
                 });
               } catch (error) {

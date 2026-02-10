@@ -46,26 +46,26 @@ const AI_FEATURES = [
   {
     icon: Brain,
     title: "Context-Aware",
-    description: "AI that understands your entire project, team, and history"
+    description: "AI that understands your projects, habits, and history"
   },
 ];
 
 export function AISubscriptionWall({ teamId }: AISubscriptionWallProps) {
   const [loading, setLoading] = useState(false);
+  const [scaleLoading, setScaleLoading] = useState(false);
   
   const subscription = useQuery(apiAny.stripe.getTeamSubscription, { teamId });
   const createCheckoutSession = useAction(apiAny.stripeActions.createCheckoutSession);
 
-  const handleSubscribe = async () => {
-    const priceId = process.env.NEXT_PUBLIC_STRIPE_AI_PRICE_ID;
+  const handleSubscribe = async (priceId: string | undefined, planLabel: string, setLocalLoading: (value: boolean) => void) => {
     
     if (!priceId) {
-      toast.error("Stripe price ID not configured. Please contact support.");
-      console.error("NEXT_PUBLIC_STRIPE_AI_PRICE_ID is not set");
+      toast.error(`Stripe price ID for ${planLabel} is not configured. Please contact support.`);
+      console.error(`Stripe price id for ${planLabel} is not set`);
       return;
     }
     
-    setLoading(true);
+    setLocalLoading(true);
     try {
       const result = await createCheckoutSession({
         teamId,
@@ -82,7 +82,7 @@ export function AISubscriptionWall({ teamId }: AISubscriptionWallProps) {
       console.error("Error creating checkout session:", error);
       toast.error("Error redirecting to payment");
     } finally {
-      setLoading(false);
+      setLocalLoading(false);
     }
   };
 
@@ -161,7 +161,7 @@ export function AISubscriptionWall({ teamId }: AISubscriptionWallProps) {
               </Badge>
               
               <div className="flex items-baseline justify-center gap-1">
-                <span className="text-5xl font-bold tracking-tight font-display">$39</span>
+                <span className="text-5xl font-bold tracking-tight font-display">$29</span>
                 <span className="text-muted-foreground text-lg font-normal">/month</span>
               </div>
               
@@ -174,12 +174,12 @@ export function AISubscriptionWall({ teamId }: AISubscriptionWallProps) {
               {/* Benefits list */}
               <div className="space-y-4">
                 {[
-                  "Unlimited AI Assistant access",
-                  "AI credits for text and images",
+                  "Up to 4 active assistants on Pro",
+                  "Up to 10 active assistants on Scale",
+                  "Expanded AI token quota",
                   "Smart task generation",
                   "Context-aware suggestions",
-                  "20 projects included",
-                  "25 team members",
+                  "Unlimited Telegram messages on paid plans",
                   "50 GB storage",
                   "Priority support",
                 ].map((benefit, index) => (
@@ -195,8 +195,8 @@ export function AISubscriptionWall({ teamId }: AISubscriptionWallProps) {
               {/* CTA Button */}
               <div className="space-y-4">
                 <Button
-                  onClick={handleSubscribe}
-                  disabled={loading}
+                  onClick={() => handleSubscribe(process.env.NEXT_PUBLIC_STRIPE_AI_PRICE_ID, "Pro", setLoading)}
+                  disabled={loading || scaleLoading}
                   size="lg"
                   className={cn(
                     "w-full h-14 text-base font-semibold rounded-full",
@@ -212,6 +212,26 @@ export function AISubscriptionWall({ teamId }: AISubscriptionWallProps) {
                   ) : (
                     <>
                       Subscribe Now
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </>
+                  )}
+                </Button>
+
+                <Button
+                  onClick={() => handleSubscribe(process.env.NEXT_PUBLIC_STRIPE_AI_SCALE_PRICE_ID, "Scale", setScaleLoading)}
+                  disabled={scaleLoading || loading}
+                  size="lg"
+                  variant="outline"
+                  className="w-full h-14 text-base font-semibold rounded-full"
+                >
+                  {scaleLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      Choose Scale ($49/mo)
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </>
                   )}

@@ -8,6 +8,7 @@ import { apiAny } from "@/lib/convexApiAny";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
+import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,6 +20,7 @@ import {
   LogOut,
   UserCircle,
   ChevronsUpDown,
+  Menu,
 } from "lucide-react";
 
 function CompanyNavbarContent() {
@@ -58,7 +60,7 @@ function CompanyNavbarContent() {
 
         {/* Right: Actions */}
         <div className="flex items-center gap-2">
-          <div className="hidden md:flex items-center gap-3 mr-3">
+          <div className="mr-3 hidden items-center gap-3 md:flex">
             {!isPro ? (
               <Button asChild size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
                 <Link href="/organisation/subscription">Upgrade</Link>
@@ -84,6 +86,55 @@ function CompanyNavbarContent() {
               Help
             </Link>
           </div>
+
+          <Sheet>
+            <SheetTrigger asChild>
+              <button
+                type="button"
+                aria-label="Open organization navigation"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border/70 bg-card/85 text-foreground shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-card md:hidden"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-[86vw] max-w-xs border-l border-border/60 bg-background px-5 pt-11 pb-6">
+              <SheetTitle className="sr-only">Organization navigation</SheetTitle>
+              <div className="flex flex-col gap-3">
+                {!isPro ? (
+                  <SheetClose asChild>
+                    <Button asChild className="h-11 rounded-full">
+                      <Link href="/organisation/subscription">Upgrade plan</Link>
+                    </Button>
+                  </SheetClose>
+                ) : (
+                  <SheetClose asChild>
+                    <Link
+                      href="/organisation/subscription"
+                      className="rounded-2xl border border-border/50 bg-card/70 px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-card"
+                    >
+                      Subscription
+                    </Link>
+                  </SheetClose>
+                )}
+                <SheetClose asChild>
+                  <Link
+                    href="/organisation/settings"
+                    className="rounded-2xl border border-border/50 bg-card/70 px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-card"
+                  >
+                    Settings
+                  </Link>
+                </SheetClose>
+                <SheetClose asChild>
+                  <Link
+                    href="/help"
+                    className="rounded-2xl border border-border/50 bg-card/70 px-4 py-3 text-sm font-medium text-foreground transition-colors hover:bg-card"
+                  >
+                    Help
+                  </Link>
+                </SheetClose>
+              </div>
+            </SheetContent>
+          </Sheet>
 
           <Separator
             orientation="vertical"

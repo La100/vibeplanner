@@ -17,6 +17,7 @@ interface SubscriptionCardProps {
 
 export function SubscriptionCard({ teamId }: SubscriptionCardProps) {
   const [loading, setLoading] = useState(false);
+  const [scaleLoading, setScaleLoading] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
 
   const subscription = useQuery(apiAny.stripe.getTeamSubscription, { teamId });
@@ -42,6 +43,8 @@ export function SubscriptionCard({ teamId }: SubscriptionCardProps) {
   const isActive = subscription.subscriptionStatus === "active" || subscription.subscriptionStatus === "trialing";
   const isTrial = subscription.subscriptionStatus === "trialing";
   const isPastDue = subscription.subscriptionStatus === "past_due";
+  const proPriceId = process.env.NEXT_PUBLIC_STRIPE_AI_PRICE_ID || "";
+  const scalePriceId = process.env.NEXT_PUBLIC_STRIPE_AI_SCALE_PRICE_ID || "";
 
   const handleUpgrade = async (priceId: string) => {
     if (!priceId) {
@@ -152,7 +155,7 @@ export function SubscriptionCard({ teamId }: SubscriptionCardProps) {
             </div>
             
             <div className="space-y-2">
-               <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">Team Size</span>
+               <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">Seats</span>
                <div className="flex items-center gap-2">
                  <Users className="h-4 w-4 text-muted-foreground" />
                  <span className="text-sm font-medium">{subscription.limits.maxTeamMembers} users</span>
@@ -200,42 +203,57 @@ export function SubscriptionCard({ teamId }: SubscriptionCardProps) {
                  <div className="h-10 w-10 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shadow-lg shadow-primary/20">
                     <Sparkles className="h-5 w-5" />
                  </div>
-                 <h3 className="text-xl font-bold tracking-tight">Upgrade to AI Pro</h3>
+                 <h3 className="text-xl font-bold tracking-tight">Upgrade your AI plan</h3>
                </div>
                <p className="text-muted-foreground font-light leading-relaxed max-w-sm">
-                 Unlock the full power of VibePlanner with AI-driven insights, more storage, and unlimited potential.
+                 Unlock larger AI token quotas and more assistant capacity as your workspace grows.
                </p>
                <div className="flex flex-wrap gap-4 pt-2">
                   <div className="flex items-center gap-2 text-sm">
                     <Check className="h-4 w-4 text-primary" />
-                    <span>20 projects</span>
+                    <span>Up to 4 assistants (Pro)</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Check className="h-4 w-4 text-primary" />
-                    <span>25 team members</span>
+                    <span>Up to 10 assistants (Scale)</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Check className="h-4 w-4 text-primary" />
-                    <span>50 GB storage</span>
+                    <span>Higher AI token quotas</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Check className="h-4 w-4 text-primary" />
-                    <span>AI Assistant</span>
+                    <span>Unlimited Telegram on paid plans</span>
                   </div>
                </div>
             </div>
 
             <div className="flex flex-col items-start md:items-end justify-center gap-4">
                <div className="text-right">
-                  <span className="text-3xl font-bold tracking-tight">$39</span>
-                  <span className="text-muted-foreground ml-1">/ month</span>
+                  <span className="text-3xl font-bold tracking-tight">$29</span>
+                  <span className="text-muted-foreground ml-1">/ month (Pro)</span>
                </div>
-               <Button 
+              <Button 
                 className="w-full md:w-auto h-12 px-8 rounded-full text-base font-medium shadow-xl shadow-primary/20 hover:shadow-primary/30 transition-all"
-                disabled={loading}
-                onClick={() => handleUpgrade(process.env.NEXT_PUBLIC_STRIPE_AI_PRICE_ID || "")}
+                disabled={loading || scaleLoading}
+                onClick={() => handleUpgrade(proPriceId)}
               >
                 {loading ? "Processing..." : "Upgrade Now"}
+              </Button>
+              <Button
+                className="w-full md:w-auto h-12 px-8 rounded-full text-base font-medium"
+                variant="outline"
+                disabled={scaleLoading || loading}
+                onClick={async () => {
+                  setScaleLoading(true);
+                  try {
+                    await handleUpgrade(scalePriceId);
+                  } finally {
+                    setScaleLoading(false);
+                  }
+                }}
+              >
+                {scaleLoading ? "Processing..." : "Choose Scale ($49/mo)"}
               </Button>
             </div>
           </CardContent>

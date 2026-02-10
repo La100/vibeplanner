@@ -81,8 +81,8 @@ export const createCheckoutSession = action({
           quantity: 1,
         },
       ],
-      success_url: `${baseUrl}/organisation/settings?success=true`,
-      cancel_url: `${baseUrl}/organisation/settings?canceled=true`,
+      success_url: `${baseUrl}/organisation/subscription?success=true`,
+      cancel_url: `${baseUrl}/organisation/subscription?canceled=true`,
       allow_promotion_codes: true,
       subscription_data: {
         metadata: {

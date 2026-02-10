@@ -10,6 +10,7 @@
 
 import type * as ai_actions from "../ai/actions.js";
 import type * as ai_agent from "../ai/agent.js";
+import type * as ai_assistantCoreRules from "../ai/assistantCoreRules.js";
 import type * as ai_config from "../ai/config.js";
 import type * as ai_confirmedActions from "../ai/confirmedActions.js";
 import type * as ai_confirmedActions_habits from "../ai/confirmedActions/habits.js";
@@ -77,6 +78,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   "ai/actions": typeof ai_actions;
   "ai/agent": typeof ai_agent;
+  "ai/assistantCoreRules": typeof ai_assistantCoreRules;
   "ai/config": typeof ai_config;
   "ai/confirmedActions": typeof ai_confirmedActions;
   "ai/confirmedActions/habits": typeof ai_confirmedActions_habits;

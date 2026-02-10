@@ -27,7 +27,7 @@ const testimonials = [
     role: "Engineering Manager at Stripe",
     avatar: "/placeholder-avatar-3.png",
     quote:
-      "Our whole team uses VibePlanner for shared accountability. We've seen a 40% improvement in our daily standup attendance since we started building the habit together.",
+      "I use VibePlanner with one accountability partner and it changed my consistency. We improved our daily check-in streak by 40% in six weeks.",
     highlight: "40% improvement",
     color: "#7C5CE0",
   },

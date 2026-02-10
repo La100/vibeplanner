@@ -2,7 +2,43 @@ import { v } from "convex/values";
 import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { getCurrentDateTime } from "./ai/helpers/contextBuilder";
+import {
+  deriveReminderPlanFromDescription,
+  getReminderPlanEntryForDate,
+  normalizeReminderPlan,
+  resolveReminderForDate,
+} from "./messaging/reminderUtils";
 const internalAny = require("./_generated/api").internal as any;
+
+const reminderPlanEntryValidator = v.object({
+  date: v.string(),
+  reminderTime: v.string(),
+  minStartTime: v.optional(v.string()),
+  phaseLabel: v.optional(v.string()),
+});
+
+const normalizeReminderPlanForStorage = (
+  value?: Array<{ date: string; reminderTime: string; minStartTime?: string; phaseLabel?: string }> | null
+) => normalizeReminderPlan(value as any);
+
+const deriveReminderPlanIfNeeded = ({
+  reminderPlan,
+  description,
+  startDate,
+}: {
+  reminderPlan?: Array<{ date: string; reminderTime: string; minStartTime?: string; phaseLabel?: string }> | null;
+  description?: string;
+  startDate: string;
+}) => {
+  const normalizedPlan = normalizeReminderPlanForStorage(reminderPlan);
+  if (normalizedPlan.length > 0) return normalizedPlan;
+  const derivedPlan = deriveReminderPlanFromDescription({
+    description,
+    startDate,
+    maxDay: 30,
+  });
+  return derivedPlan.length > 0 ? derivedPlan : undefined;
+};
 
 const hasProjectAccess = async (ctx: any, projectId: Id<"projects">): Promise<boolean> => {
   const identity = await ctx.auth.getUserIdentity();
@@ -146,13 +182,20 @@ export const listProjectHabits = query({
       });
     }
 
-    return habits.map((habit) => ({
-      ...habit,
-      name: habit.name || (habit as any).title || "Habit",
-      completedToday: completionMap.has(String(habit._id)),
-      completionValue: completionMap.get(String(habit._id))?.value,
-      today,
-    }));
+    return habits.map((habit) => {
+      const reminderPlan = normalizeReminderPlan((habit as any).reminderPlan);
+      const todayPlan = getReminderPlanEntryForDate(reminderPlan, today);
+      return {
+        ...habit,
+        name: habit.name || (habit as any).title || "Habit",
+        completedToday: completionMap.has(String(habit._id)),
+        completionValue: completionMap.get(String(habit._id))?.value,
+        reminderPlan,
+        effectiveTodayReminderTime: todayPlan?.reminderTime ?? habit.reminderTime,
+        todayPhaseLabel: todayPlan?.phaseLabel,
+        today,
+      };
+    });
   },
 });
 
@@ -166,6 +209,7 @@ export const createHabit = mutation({
     unit: v.optional(v.string()),
     frequency: v.optional(v.union(v.literal("daily"), v.literal("weekly"))),
     reminderTime: v.optional(v.string()),
+    reminderPlan: v.optional(v.array(reminderPlanEntryValidator)),
     source: v.optional(v.union(v.literal("user"), v.literal("assistant"), v.literal("gymbro_onboarding"))),
   },
   handler: async (ctx, args) => {
@@ -177,6 +221,12 @@ export const createHabit = mutation({
 
     const hasAccess = await hasProjectAccess(ctx, args.projectId);
     if (!hasAccess) throw new Error("Access denied");
+    const today = await getProjectDate(ctx, args.projectId);
+    const reminderPlan = deriveReminderPlanIfNeeded({
+      reminderPlan: args.reminderPlan,
+      description: args.description,
+      startDate: today,
+    });
 
     const habitId = await ctx.db.insert("habits", {
       name: args.name,
@@ -189,11 +239,12 @@ export const createHabit = mutation({
       unit: args.unit,
       frequency: args.frequency ?? "daily",
       reminderTime: args.reminderTime,
+      reminderPlan,
       isActive: true,
       source: args.source ?? "user",
     } as any);
 
-    if (args.reminderTime) {
+    if (args.reminderTime || (reminderPlan && reminderPlan.length > 0)) {
       try {
         await ctx.runMutation(internalAny.messaging.reminders.scheduleHabitReminder, {
           habitId,
@@ -284,12 +335,19 @@ export const createHabitInternal = internalMutation({
     unit: v.optional(v.string()),
     frequency: v.optional(v.union(v.literal("daily"), v.literal("weekly"))),
     reminderTime: v.optional(v.string()),
+    reminderPlan: v.optional(v.array(reminderPlanEntryValidator)),
     source: v.optional(v.union(v.literal("user"), v.literal("assistant"), v.literal("gymbro_onboarding"))),
     isActive: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const access = await getProjectAccessForUser(ctx, args.projectId, args.actorUserId);
     if (!access) throw new Error("Permission denied.");
+    const today = await getProjectDate(ctx, args.projectId);
+    const reminderPlan = deriveReminderPlanIfNeeded({
+      reminderPlan: args.reminderPlan,
+      description: args.description,
+      startDate: today,
+    });
 
     const habitId = await ctx.db.insert("habits", {
       name: args.name,
@@ -302,11 +360,12 @@ export const createHabitInternal = internalMutation({
       unit: args.unit,
       frequency: args.frequency ?? "daily",
       reminderTime: args.reminderTime,
+      reminderPlan,
       isActive: args.isActive ?? true,
       source: args.source ?? "assistant",
     } as any);
 
-    if (args.reminderTime) {
+    if (args.reminderTime || (reminderPlan && reminderPlan.length > 0)) {
       try {
         await ctx.runMutation(internalAny.messaging.reminders.scheduleHabitReminder, {
           habitId,
@@ -339,6 +398,7 @@ export const updateHabit = mutation({
     unit: v.optional(v.string()),
     frequency: v.optional(v.union(v.literal("daily"), v.literal("weekly"))),
     reminderTime: v.optional(v.string()),
+    reminderPlan: v.optional(v.array(reminderPlanEntryValidator)),
     isActive: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -359,13 +419,36 @@ export const updateHabit = mutation({
     if (args.unit !== undefined) patch.unit = args.unit;
     if (args.frequency !== undefined) patch.frequency = args.frequency;
     if (args.reminderTime !== undefined) patch.reminderTime = args.reminderTime;
+    if (args.reminderPlan !== undefined) {
+      const normalizedPlan = normalizeReminderPlanForStorage(args.reminderPlan);
+      patch.reminderPlan = normalizedPlan.length > 0 ? normalizedPlan : undefined;
+    } else if (args.description !== undefined) {
+      const currentPlan = normalizeReminderPlanForStorage((habit as any).reminderPlan);
+      if (currentPlan.length === 0) {
+        const today = await getProjectDate(ctx, habit.projectId);
+        const derivedPlan = deriveReminderPlanFromDescription({
+          description: args.description,
+          startDate: today,
+          maxDay: 30,
+        });
+        if (derivedPlan.length > 0) {
+          patch.reminderPlan = derivedPlan;
+        }
+      }
+    }
     if (args.isActive !== undefined) patch.isActive = args.isActive;
 
     if (Object.keys(patch).length > 0) {
       await ctx.db.patch(args.habitId, patch as any);
     }
 
-    if (args.reminderTime !== undefined || args.scheduleDays !== undefined || args.isActive !== undefined) {
+    if (
+      args.reminderTime !== undefined ||
+      args.reminderPlan !== undefined ||
+      args.scheduleDays !== undefined ||
+      args.isActive !== undefined ||
+      patch.reminderPlan !== undefined
+    ) {
       try {
         await ctx.runMutation(internalAny.messaging.reminders.scheduleHabitReminder, {
           habitId: args.habitId,
@@ -390,6 +473,7 @@ export const updateHabitInternal = internalMutation({
     unit: v.optional(v.string()),
     frequency: v.optional(v.union(v.literal("daily"), v.literal("weekly"))),
     reminderTime: v.optional(v.string()),
+    reminderPlan: v.optional(v.array(reminderPlanEntryValidator)),
     isActive: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -407,13 +491,36 @@ export const updateHabitInternal = internalMutation({
     if (args.unit !== undefined) patch.unit = args.unit;
     if (args.frequency !== undefined) patch.frequency = args.frequency;
     if (args.reminderTime !== undefined) patch.reminderTime = args.reminderTime;
+    if (args.reminderPlan !== undefined) {
+      const normalizedPlan = normalizeReminderPlanForStorage(args.reminderPlan);
+      patch.reminderPlan = normalizedPlan.length > 0 ? normalizedPlan : undefined;
+    } else if (args.description !== undefined) {
+      const currentPlan = normalizeReminderPlanForStorage((habit as any).reminderPlan);
+      if (currentPlan.length === 0) {
+        const today = await getProjectDate(ctx, habit.projectId);
+        const derivedPlan = deriveReminderPlanFromDescription({
+          description: args.description,
+          startDate: today,
+          maxDay: 30,
+        });
+        if (derivedPlan.length > 0) {
+          patch.reminderPlan = derivedPlan;
+        }
+      }
+    }
     if (args.isActive !== undefined) patch.isActive = args.isActive;
 
     if (Object.keys(patch).length > 0) {
       await ctx.db.patch(args.habitId, patch as any);
     }
 
-    if (args.reminderTime !== undefined || args.scheduleDays !== undefined || args.isActive !== undefined) {
+    if (
+      args.reminderTime !== undefined ||
+      args.reminderPlan !== undefined ||
+      args.scheduleDays !== undefined ||
+      args.isActive !== undefined ||
+      patch.reminderPlan !== undefined
+    ) {
       try {
         await ctx.runMutation(internalAny.messaging.reminders.scheduleHabitReminder, {
           habitId: args.habitId,
@@ -690,6 +797,20 @@ const dateToDowKey = (dateStr: string) => {
 
 const isScheduledForDate = (habit: any, dateStr: string) => {
   if (!habit?.isActive) return false;
+  const reminderPlan = normalizeReminderPlanForStorage(habit?.reminderPlan);
+  if (reminderPlan.length > 0) {
+    const hasPlanEntry = !!getReminderPlanEntryForDate(reminderPlan, dateStr);
+    if (hasPlanEntry) return true;
+    if (habit.reminderTime) {
+      return !!resolveReminderForDate({
+        date: dateStr,
+        reminderTime: habit.reminderTime,
+        scheduleDays: habit.scheduleDays,
+        reminderPlan,
+      });
+    }
+    return false;
+  }
   const schedule = habit.scheduleDays;
   if (!schedule || schedule.length === 0) return true;
   return schedule.includes(dateToDowKey(dateStr));
@@ -792,6 +913,7 @@ export const getHabitsWeek = query({
       habits: (habits as any[]).map((habit) => ({
         ...habit,
         name: habit.name || habit.title || "Habit",
+        reminderPlan: normalizeReminderPlanForStorage(habit.reminderPlan),
         completedToday: completedSetToday.has(habit._id),
         today,
       })),

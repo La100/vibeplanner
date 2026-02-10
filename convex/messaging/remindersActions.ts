@@ -2,7 +2,7 @@
 
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
-import { shouldSendNow } from "./reminderUtils";
+import { normalizeReminderPlan, resolveReminderForDate, shouldSendNow } from "./reminderUtils";
 import { getCurrentDateTime } from "../ai/helpers/contextBuilder";
 
 const internalAny = require("../_generated/api").internal as any;
@@ -15,15 +15,17 @@ export const sendHabitReminder = internalAction({
     const habit = await ctx.runQuery(internalAny.habits.getHabitByIdInternal, {
       habitId: args.habitId,
     });
+    const reminderPlan = normalizeReminderPlan((habit as any)?.reminderPlan);
     if (!habit) {
       console.log("[HABIT REMINDER] Habit not found", { habitId: args.habitId });
       return { skipped: true, reason: "habit_not_found" };
     }
-    if (!habit.isActive || !habit.reminderTime) {
+    if (!habit.isActive || (!habit.reminderTime && reminderPlan.length === 0)) {
       console.log("[HABIT REMINDER] Inactive or missing reminder", {
         habitId: habit._id,
         isActive: habit.isActive,
         reminderTime: habit.reminderTime,
+        reminderPlan,
       });
       return { skipped: true, reason: "inactive_or_missing_time" };
     }
@@ -40,12 +42,39 @@ export const sendHabitReminder = internalAction({
     }
     const team = project ? await ctx.runQuery(internalAny.teams.getTeamById, { teamId: project.teamId }) : null;
     const timeZone = team?.timezone;
+    const { currentDate } = getCurrentDateTime(timeZone);
+    const effectiveTodayReminder = resolveReminderForDate({
+      date: currentDate,
+      reminderTime: habit.reminderTime,
+      scheduleDays: habit.scheduleDays,
+      reminderPlan,
+    });
+    if (!effectiveTodayReminder) {
+      console.log("[HABIT REMINDER] No reminder config for today's date", {
+        habitId: habit._id,
+        date: currentDate,
+        reminderTime: habit.reminderTime,
+        reminderPlan,
+      });
+      await ctx.runMutation(internalAny.messaging.reminders.scheduleHabitReminder, {
+        habitId: args.habitId,
+      });
+      return { skipped: true, reason: "no_today_config" };
+    }
 
-    if (!shouldSendNow({ timeZone, reminderTime: habit.reminderTime, scheduleDays: habit.scheduleDays })) {
+    if (!shouldSendNow({
+      timeZone,
+      reminderTime: habit.reminderTime,
+      scheduleDays: habit.scheduleDays,
+      reminderPlan,
+    })) {
       console.log("[HABIT REMINDER] Not scheduled now", {
         habitId: habit._id,
-        reminderTime: habit.reminderTime,
+        reminderTime: effectiveTodayReminder.reminderTime,
+        source: effectiveTodayReminder.source,
+        phaseLabel: effectiveTodayReminder.planEntry?.phaseLabel,
         scheduleDays: habit.scheduleDays,
+        reminderPlan,
         timeZone,
       });
       await ctx.runMutation(internalAny.messaging.reminders.scheduleHabitReminder, {
@@ -54,7 +83,6 @@ export const sendHabitReminder = internalAction({
       return { skipped: true, reason: "not_scheduled_now" };
     }
 
-    const { currentDate } = getCurrentDateTime(timeZone);
     const completion = await ctx.runQuery(internalAny.habits.getHabitCompletionForDateInternal, {
       habitId: args.habitId,
       date: currentDate,
@@ -102,14 +130,22 @@ export const sendHabitReminder = internalAction({
     const details = rawDetails.length > maxDetailsLength
       ? `${rawDetails.slice(0, maxDetailsLength - 1)}…`
       : rawDetails;
+    const phaseLine = effectiveTodayReminder.planEntry?.phaseLabel
+      ? `\nFaza: ${effectiveTodayReminder.planEntry.phaseLabel}`
+      : "";
+    const windowStartLine = effectiveTodayReminder.planEntry?.minStartTime
+      ? `\nDziś okno od: ${effectiveTodayReminder.planEntry.minStartTime}`
+      : "";
     const text = details
-      ? `⏰ Przypomnienie: ${habitName}\n\n${details}`
-      : `⏰ Przypomnienie: ${habitName}`;
+      ? `⏰ Przypomnienie: ${habitName}${phaseLine}${windowStartLine}\n\n${details}`
+      : `⏰ Przypomnienie: ${habitName}${phaseLine}${windowStartLine}`;
 
     console.log("[HABIT REMINDER] Sending Telegram message", {
       habitId: habit._id,
       projectId: habit.projectId,
-      reminderTime: habit.reminderTime,
+      reminderTime: effectiveTodayReminder.reminderTime,
+      source: effectiveTodayReminder.source,
+      phaseLabel: effectiveTodayReminder.planEntry?.phaseLabel,
       timeZone,
     });
     await ctx.runAction(internalAny.messaging.telegramActions.sendTelegramMessage, {

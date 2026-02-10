@@ -1,6 +1,7 @@
 import { internalQuery } from "../_generated/server";
 import { v } from "convex/values";
 import { getCurrentDateTime } from "./helpers/contextBuilder";
+import { getReminderPlanEntryForDate, normalizeReminderPlan } from "../messaging/reminderUtils";
 
 export const getProjectContextSnapshot = internalQuery({
   args: {
@@ -56,6 +57,14 @@ export const getProjectContextSnapshot = internalQuery({
       frequency: v.optional(v.union(v.literal("daily"), v.literal("weekly"))),
       scheduleDays: v.optional(v.array(v.string())),
       reminderTime: v.optional(v.string()),
+      reminderPlan: v.optional(v.array(v.object({
+        date: v.string(),
+        reminderTime: v.string(),
+        minStartTime: v.optional(v.string()),
+        phaseLabel: v.optional(v.string()),
+      }))),
+      effectiveTodayReminderTime: v.optional(v.string()),
+      todayPhaseLabel: v.optional(v.string()),
       isActive: v.boolean(),
       completedToday: v.optional(v.boolean()),
       completionValue: v.optional(v.number()),
@@ -158,19 +167,26 @@ export const getProjectContextSnapshot = internalQuery({
         endDate: t.endDate,
         cost: t.cost,
       })),
-      habits: habits.map((habit) => ({
-        _id: habit._id,
-        name: habit.name || (habit as any).title || "Habit",
-        description: habit.description,
-        targetValue: habit.targetValue,
-        unit: habit.unit,
-        frequency: habit.frequency,
-        scheduleDays: habit.scheduleDays,
-        reminderTime: habit.reminderTime,
-        isActive: habit.isActive,
-        completedToday: habitCompletionMap.has(String(habit._id)),
-        completionValue: habitCompletionMap.get(String(habit._id))?.value,
-      })),
+      habits: habits.map((habit) => {
+        const reminderPlan = normalizeReminderPlan((habit as any).reminderPlan);
+        const todayPlan = getReminderPlanEntryForDate(reminderPlan, currentDate);
+        return {
+          _id: habit._id,
+          name: habit.name || (habit as any).title || "Habit",
+          description: habit.description,
+          targetValue: habit.targetValue,
+          unit: habit.unit,
+          frequency: habit.frequency,
+          scheduleDays: habit.scheduleDays,
+          reminderTime: habit.reminderTime,
+          reminderPlan,
+          effectiveTodayReminderTime: todayPlan?.reminderTime ?? habit.reminderTime,
+          todayPhaseLabel: todayPlan?.phaseLabel,
+          isActive: habit.isActive,
+          completedToday: habitCompletionMap.has(String(habit._id)),
+          completionValue: habitCompletionMap.get(String(habit._id))?.value,
+        };
+      }),
       files: [],
       diaryEntries: recentDiaryEntries.map((entry) => ({
         date: entry.date,

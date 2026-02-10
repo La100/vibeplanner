@@ -15,8 +15,10 @@
 
 const apiAny = require("../_generated/api").api as any;
 const internalAny = require("../_generated/api").internal as any;
+import { components } from "../_generated/api";
 import { ActionCtx, MutationCtx, QueryCtx, action, internalAction } from "../_generated/server";
 import { v } from "convex/values";
+import { createThread } from "@convex-dev/agent";
 import { createVibePlannerAgent } from "./agent";
 import {
   buildTeamMembersContext,
@@ -29,9 +31,109 @@ import { buildSoulfulPrompt } from "./systemPrompt";
 import { buildContextFromSnapshot } from "./helpers/contextBuilder";
 import type { Id } from "../_generated/dataModel";
 import { buildFallbackResponseFromTools } from "./helpers/streamResponseBuilder";
-import { buildOnboardingPrompt } from "./onboarding/prompts";
 import { ASSISTANT_ONBOARDING_THREAD_TITLE, USER_ONBOARDING_THREAD_TITLE } from "./threads";
 import { USER_PROFILE_ONBOARDING_IDENTITY } from "./userOnboarding/prompt";
+import { getPresetOnboardingRules } from "./assistantCoreRules";
+
+const AI_CREDITS_UPGRADE_MESSAGE =
+  "Unfortunately, you've run out of free AI credits. Please upgrade your plan to continue.";
+
+const isLegacyStyleThreadId = (threadId: string) =>
+  threadId.startsWith("thread-") || threadId.startsWith("thread_");
+
+const resolveAgentThreadIdForMessage = async (
+  ctx: ActionCtx,
+  providedThreadId: string,
+  userClerkId: string
+): Promise<string> => {
+  if (!isLegacyStyleThreadId(providedThreadId)) {
+    return providedThreadId;
+  }
+
+  const mapping = await ctx.runQuery(internalAny.ai.threads.getThreadForResponses, {
+    threadId: providedThreadId,
+  });
+
+  if (mapping?.agentThreadId) {
+    return mapping.agentThreadId;
+  }
+
+  const agentThreadId = await createThread(ctx, components.agent, {
+    userId: userClerkId,
+  });
+
+  await ctx.runMutation(internalAny.ai.threads.saveAgentThreadMapping, {
+    threadId: providedThreadId,
+    agentThreadId,
+  });
+
+  return agentThreadId;
+};
+
+const persistSyntheticAssistantMessage = async (
+  ctx: ActionCtx,
+  args: {
+    providedThreadId: string;
+    userClerkId: string;
+    text: string;
+    agentThreadId?: string;
+  }
+): Promise<string> => {
+  const targetAgentThreadId =
+    args.agentThreadId ??
+    (await resolveAgentThreadIdForMessage(ctx, args.providedThreadId, args.userClerkId));
+
+  await ctx.runMutation(components.agent.messages.addMessages, {
+    threadId: targetAgentThreadId,
+    userId: args.userClerkId,
+    messages: [
+      {
+        message: {
+          role: "assistant",
+          content: args.text,
+        },
+        text: args.text,
+        status: "success",
+        finishReason: "stop",
+      },
+    ],
+  });
+
+  return targetAgentThreadId;
+};
+
+const buildAssistantOnboardingModeInstruction = (presetId?: string) => `You are now in ASSISTANT ONBOARDING MODE.
+
+Stay fully in your existing SOUL/persona. Do not switch identity.
+
+Onboarding objective:
+- Turn the user's intent into a concrete first plan with tasks, habits, and immediate next steps.
+
+Behavior rules:
+- Ask one concise question at a time.
+- Keep questions specific and practical.
+- Confirm understanding briefly, then move forward.
+- After collecting enough context, summarize key goals/constraints in bullets.
+- Propose a clear set of tasks/habits and ask for explicit approval before creating anything.
+- Do not create tasks/habits and do not call complete_onboarding until the user explicitly approves.
+
+${getPresetOnboardingRules(presetId)}
+
+Telegram step:
+- After plan approval, guide Telegram setup for reminders/check-ins.
+- When the user agrees to Telegram setup, provide a clickable BotFather quick-start link first: https://t.me/BotFather?start=newbot
+- Also provide fallback: open https://t.me/BotFather and send /newbot manually if the deep link is not supported.
+- If Telegram is declined twice, continue with skipTelegram=true when completing onboarding.
+- Do not reveal or echo secrets (bot tokens, private keys).
+
+Completion rule:
+- Call complete_onboarding only when the plan is approved and Telegram is connected, or skipped after two explicit refusals.
+
+Important:
+- The marker "[SYSTEM: START_ONBOARDING]" is only an activation signal, not user content.
+- Use the user's preferred language from USER PROFILE when available.
+- Otherwise mirror the language of the latest user message.
+- Do not inject English option labels into non-English messages unless the user explicitly asks for bilingual output.`;
 
 /**
  * Internal action that does the actual streaming work
@@ -63,7 +165,7 @@ export const internalDoStreaming = internalAction({
 
     try {
       const providedThreadId = args.threadId;
-      const isLegacyThreadId = providedThreadId.startsWith("thread-") || providedThreadId.startsWith("thread_");
+      const isLegacyThreadId = isLegacyStyleThreadId(providedThreadId);
 
       console.log("📝 [THREAD INFO]", {
         providedThreadId,
@@ -180,8 +282,8 @@ export const internalDoStreaming = internalAction({
 
       if (isAssistantOnboardingThread) {
         const presetId = (projectForTeam as any)?.assistantPreset || "custom";
-        const onboardingPrompt = buildOnboardingPrompt(presetId);
-        projectSoul += "\n\n[SYSTEM: ACTIVATING ONBOARDING MODE]\n" + onboardingPrompt;
+        projectSoul +=
+          "\n\n[SYSTEM: ACTIVATING ONBOARDING MODE]\n" + buildAssistantOnboardingModeInstruction(presetId);
         contextStateLines.push("ASSISTANT_ONBOARDING: pending");
       }
 
@@ -198,7 +300,25 @@ export const internalDoStreaming = internalAction({
 
       if (!aiAccess.allowed) {
         console.error("❌ [AI ACCESS DENIED]", aiAccess.message);
-        throw new Error(aiAccess.message || "AI features are unavailable for this project.");
+        const quotaMessage = AI_CREDITS_UPGRADE_MESSAGE;
+        await persistSyntheticAssistantMessage(ctx, {
+          providedThreadId,
+          userClerkId: args.userClerkId,
+          text: quotaMessage,
+        });
+        await ctx.runMutation(internalAny.ai.threads.updateThreadSummary, {
+          threadId: providedThreadId,
+          lastMessageAt: Date.now(),
+          lastMessagePreview: quotaMessage,
+          lastMessageRole: "assistant",
+          messageCountDelta: 1,
+        });
+        await ctx.runMutation(internalAny.ai.system.appendDailyMemory, {
+          content: `**User**: ${args.message}\n**Assistant**: ${quotaMessage}\n---\n`,
+          threadId: providedThreadId,
+          projectId: args.projectId,
+        });
+        return null;
       }
 
       // Snapshot loaded on-demand
@@ -486,6 +606,7 @@ ${userProfileSection}
       });
 
       let fullResponse = "";
+      let hasSyntheticAssistantMessage = false;
 
       if (steps && Array.isArray(steps)) {
         let latestStepText = "";
@@ -642,6 +763,8 @@ ${userProfileSection}
             "This usually means the OpenAI API key is invalid, billing has run out, or the model is unavailable. " +
             "Check your OpenAI dashboard at https://platform.openai.com/usage"
           );
+          fullResponse = AI_CREDITS_UPGRADE_MESSAGE;
+          hasSyntheticAssistantMessage = true;
         }
       }
 
@@ -653,6 +776,12 @@ ${userProfileSection}
         } else {
           fullResponse = "✅ Operation completed";
         }
+        hasSyntheticAssistantMessage = true;
+      }
+
+      if (!fullResponse) {
+        fullResponse = AI_CREDITS_UPGRADE_MESSAGE;
+        hasSyntheticAssistantMessage = true;
       }
 
       console.log("💬 [FINAL RESPONSE]", {
@@ -871,15 +1000,32 @@ ${userProfileSection}
         }
       }
 
+      if (hasSyntheticAssistantMessage && fullResponse.length > 0) {
+        try {
+          agentThreadId = await persistSyntheticAssistantMessage(ctx, {
+            providedThreadId,
+            userClerkId: args.userClerkId,
+            text: fullResponse,
+            agentThreadId,
+          });
+        } catch (syntheticPersistError) {
+          console.error("❌ [SYNTHETIC MESSAGE PERSIST FAILED]", syntheticPersistError);
+        }
+      }
+
       // Calculate token usage
+      const syntheticUsage = hasSyntheticAssistantMessage;
+      const estimatedInputTokens = Math.ceil(userPrompt.length / 4);
+      const estimatedOutputTokens = Math.ceil(fullResponse.length / 4);
+      const usageInputTokens = totalInputTokens || (syntheticUsage ? 0 : estimatedInputTokens);
+      const usageOutputTokens = totalOutputTokens || (syntheticUsage ? 0 : estimatedOutputTokens);
       const tokenUsage = {
-        inputTokens: totalInputTokens || Math.ceil(userPrompt.length / 4),
-        outputTokens: totalOutputTokens || Math.ceil(fullResponse.length / 4),
-        totalTokens: (totalInputTokens || Math.ceil(userPrompt.length / 4)) +
-          (totalOutputTokens || Math.ceil(fullResponse.length / 4)),
+        inputTokens: usageInputTokens,
+        outputTokens: usageOutputTokens,
+        totalTokens: usageInputTokens + usageOutputTokens,
         estimatedCostUSD: calculateCost(AI_MODEL,
-          totalInputTokens || Math.ceil(userPrompt.length / 4),
-          totalOutputTokens || Math.ceil(fullResponse.length / 4)
+          usageInputTokens,
+          usageOutputTokens
         ),
       };
 

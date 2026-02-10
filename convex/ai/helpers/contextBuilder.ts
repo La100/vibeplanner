@@ -60,11 +60,20 @@ export const buildContextFromSnapshot = (snapshot: ProjectContextSnapshot): stri
         : "";
       const frequency = habit.frequency ? ` | ${habit.frequency}` : "";
       const schedule = habit.scheduleDays?.length ? ` | days: ${habit.scheduleDays.join(", ")}` : "";
-      const reminder = habit.reminderTime ? ` | reminder: ${habit.reminderTime}` : "";
+      const reminder = (habit.effectiveTodayReminderTime || habit.reminderTime)
+        ? ` | reminder: ${habit.effectiveTodayReminderTime || habit.reminderTime}`
+        : "";
+      const phase = habit.todayPhaseLabel ? ` | phase: ${habit.todayPhaseLabel}` : "";
+      const reminderPlanPreview = habit.reminderPlan?.length
+        ? ` | plan: ${habit.reminderPlan
+          .slice(0, 3)
+          .map((entry) => `${entry.date} ${entry.reminderTime}`)
+          .join(", ")}${habit.reminderPlan.length > 3 ? ", ..." : ""}`
+        : "";
       const status = habit.completedToday ? " | completed today" : "";
       const desc = habit.description ? ` | desc: ${truncate(habit.description, 400)}` : "";
       parts.push(
-        `- "${habit.name}" [${habit._id}]${frequency}${schedule}${target}${reminder}${status}${desc}`,
+        `- "${habit.name}" [${habit._id}]${frequency}${schedule}${target}${reminder}${phase}${reminderPlanPreview}${status}${desc}`,
       );
     });
   }

@@ -14,19 +14,23 @@ export default function UserOnboardingGate({ children }: { children: ReactNode }
   const { user, isLoaded } = useUser();
 
   const onboarding = useQuery(apiAny.users.getMyOnboardingProfile);
+  const defaultProject = useQuery(apiAny.projects.getDefaultProjectForOnboarding);
 
   const isOnboardingRoute = pathname === "/onboarding";
   const completed = onboarding?.completed === true;
   const needsOnboarding = onboarding ? onboarding.completed === false : onboarding === null;
+  const hasAssistant = !!defaultProject;
+  const shouldEnforceOnboarding = needsOnboarding && hasAssistant;
 
   useEffect(() => {
     if (!isLoaded) return;
     if (!user) return;
+    if (defaultProject === undefined) return;
     if (isOnboardingRoute) return;
-    if (needsOnboarding) {
+    if (shouldEnforceOnboarding) {
       router.replace("/onboarding");
     }
-  }, [isLoaded, isOnboardingRoute, needsOnboarding, router, user]);
+  }, [defaultProject, isLoaded, isOnboardingRoute, router, shouldEnforceOnboarding, user]);
 
   if (!isLoaded) return null;
   if (!user) return <>{children}</>;
@@ -34,8 +38,11 @@ export default function UserOnboardingGate({ children }: { children: ReactNode }
   if (!isOnboardingRoute && onboarding === undefined) {
     return null;
   }
+  if (!isOnboardingRoute && defaultProject === undefined) {
+    return null;
+  }
 
-  if (!isOnboardingRoute && needsOnboarding && !completed) {
+  if (!isOnboardingRoute && shouldEnforceOnboarding && !completed) {
     return null;
   }
 

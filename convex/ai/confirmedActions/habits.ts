@@ -20,6 +20,12 @@ export const createConfirmedHabit = action({
       frequency: v.optional(v.union(v.literal("daily"), v.literal("weekly"))),
       scheduleDays: v.optional(v.array(v.string())),
       reminderTime: v.optional(v.string()),
+      reminderPlan: v.optional(v.array(v.object({
+        date: v.string(),
+        reminderTime: v.string(),
+        minStartTime: v.optional(v.string()),
+        phaseLabel: v.optional(v.string()),
+      }))),
       source: v.optional(v.union(v.literal("user"), v.literal("assistant"), v.literal("gymbro_onboarding"))),
     }),
   },
@@ -40,6 +46,7 @@ export const createConfirmedHabit = action({
         frequency: args.habitData.frequency,
         scheduleDays: args.habitData.scheduleDays,
         reminderTime: args.habitData.reminderTime,
+        reminderPlan: args.habitData.reminderPlan,
         source: args.habitData.source ?? "assistant",
       });
 

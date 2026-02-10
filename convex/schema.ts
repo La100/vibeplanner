@@ -183,6 +183,16 @@ export default defineSchema({
     unit: v.optional(v.string()),
     frequency: v.optional(v.union(v.literal("daily"), v.literal("weekly"))),
     reminderTime: v.optional(v.string()), // Local time (HH:mm)
+    reminderPlan: v.optional(
+      v.array(
+        v.object({
+          date: v.string(), // YYYY-MM-DD (project calendar date)
+          reminderTime: v.string(), // Local time (HH:mm)
+          minStartTime: v.optional(v.string()), // Local time (HH:mm), optional "not earlier than"
+          phaseLabel: v.optional(v.string()),
+        })
+      )
+    ),
     isActive: v.boolean(),
     source: v.optional(v.union(
       v.literal("user"),

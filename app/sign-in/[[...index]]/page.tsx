@@ -92,6 +92,8 @@ export default function SignInPage() {
             Sign up
           </button>
 
+          <div id="clerk-captcha" className="w-full mb-8" />
+
           {/* Terms */}
           <p className="text-center text-xs text-gray-500 mb-16">
             By signing in you agree to our{" "}

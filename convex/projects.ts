@@ -207,6 +207,38 @@ export const createProjectInOrg = mutation({
       throw new Error("Workspace not found");
     }
 
+    // Ensure owner has an active admin membership before checking plan limits.
+    let creatorMembership = await ctx.db
+      .query("teamMembers")
+      .withIndex("by_team_and_user", (q) => q.eq("teamId", team._id).eq("clerkUserId", identity.subject))
+      .unique();
+
+    if (!creatorMembership) {
+      await ctx.db.insert("teamMembers", {
+        teamId: team._id,
+        clerkUserId: identity.subject,
+        role: "admin",
+        isActive: true,
+        joinedAt: Date.now(),
+        permissions: [],
+      });
+    } else if (creatorMembership.role !== "admin" || !creatorMembership.isActive) {
+      await ctx.db.patch(creatorMembership._id, { role: "admin", isActive: true });
+    }
+
+    const limitCheck = await ctx.runQuery(internalAny.stripe.checkTeamLimits, {
+      teamId: args.teamId,
+      action: "create_project",
+    });
+    if (!limitCheck?.allowed) {
+      const limit = typeof limitCheck?.limit === "number" ? limitCheck.limit : undefined;
+      throw new Error(
+        limit
+          ? `Assistant limit reached (${limit}) for your current plan. Upgrade to add more assistants.`
+          : "Assistant limit reached for your current plan. Upgrade to add more assistants."
+      );
+    }
+
     const baseSlug = generateSlug(args.name);
     let slug = baseSlug;
     let counter = 1;
@@ -229,25 +261,6 @@ export const createProjectInOrg = mutation({
     };
 
     const nextProjectId = await generateNextProjectId(ctx);
-
-    // Check if creator is already a team member
-    let creatorMembership = await ctx.db
-      .query("teamMembers")
-      .withIndex("by_team_and_user", (q) => q.eq("teamId", team._id).eq("clerkUserId", identity.subject))
-      .unique();
-
-    if (!creatorMembership) {
-      await ctx.db.insert("teamMembers", {
-        teamId: team._id,
-        clerkUserId: identity.subject,
-        role: "admin",
-        isActive: true,
-        joinedAt: Date.now(),
-        permissions: [],
-      });
-    } else if (creatorMembership.role !== "admin") {
-      await ctx.db.patch(creatorMembership._id, { role: "admin" });
-    }
 
     const resolvedPreset = args.assistantPreset ?? "custom";
     const preset = getPreset(resolvedPreset);

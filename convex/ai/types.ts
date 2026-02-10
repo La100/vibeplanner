@@ -52,6 +52,14 @@ export interface HabitContext {
   frequency?: "daily" | "weekly";
   scheduleDays?: string[];
   reminderTime?: string;
+  reminderPlan?: Array<{
+    date: string;
+    reminderTime: string;
+    minStartTime?: string;
+    phaseLabel?: string;
+  }>;
+  effectiveTodayReminderTime?: string;
+  todayPhaseLabel?: string;
   isActive: boolean;
   completedToday?: boolean;
 }

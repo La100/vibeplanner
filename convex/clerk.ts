@@ -12,30 +12,59 @@ const handleClerkWebhook = httpAction(async (ctx, request) => {
       status: 400,
     });
   }
+  const eventData: any = event.data;
   switch (event.type) {
     case "user.created":
         await ctx.runMutation(internalAny.myFunctions.createOrUpdateUser, {
-            clerkUserId: event.data.id,
-            email: event.data.email_addresses[0].email_address,
-            name: event.data.first_name + " " + event.data.last_name,
-            imageUrl: event.data.image_url,
+            clerkUserId: eventData.id,
+            email: eventData.email_addresses?.[0]?.email_address ?? "",
+            name: [eventData.first_name, eventData.last_name].filter(Boolean).join(" ").trim(),
+            imageUrl: eventData.image_url,
         });
         break;
     case "user.updated":
         await ctx.runMutation(internalAny.myFunctions.createOrUpdateUser, {
-            clerkUserId: event.data.id,
-            email: event.data.email_addresses[0].email_address,
-            name: event.data.first_name + " " + event.data.last_name,
-            imageUrl: event.data.image_url,
+            clerkUserId: eventData.id,
+            email: eventData.email_addresses?.[0]?.email_address ?? "",
+            name: [eventData.first_name, eventData.last_name].filter(Boolean).join(" ").trim(),
+            imageUrl: eventData.image_url,
         });
         break;
     case "user.deleted":
-      if (event.data.id) {
+      if (eventData.id) {
         await ctx.runMutation(internalAny.myFunctions.deleteUser, {
-          clerkUserId: event.data.id,
+          clerkUserId: eventData.id,
         });
       }
       break;
+    case "organization.deleted": {
+      const clerkOrgId =
+        eventData.id ?? eventData.organization?.id ?? eventData.organization_id;
+      if (clerkOrgId) {
+        await ctx.runMutation(internalAny.myFunctions.deleteOrganization, {
+          clerkOrgId,
+        });
+      }
+      break;
+    }
+    case "organizationMembership.deleted": {
+      const clerkOrgId =
+        eventData.organization?.id ?? eventData.organization_id ?? undefined;
+      const clerkUserId =
+        eventData.public_user_data?.user_id ??
+        eventData.publicUserData?.userId ??
+        eventData.user?.id ??
+        eventData.user_id ??
+        undefined;
+
+      if (clerkOrgId && clerkUserId) {
+        await ctx.runMutation(internalAny.myFunctions.deleteOrganizationMembership, {
+          clerkOrgId,
+          clerkUserId,
+        });
+      }
+      break;
+    }
     default: {
       console.log("Ignored Clerk webhook event:", event.type);
     }

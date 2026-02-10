@@ -3,20 +3,18 @@
 Purpose: Fast, consistent onboarding for AI agents working in this repo.
 
 ## Project Summary
-VibePlanner is an AI assistant workspace for teams. It combines projects, tasks, files, calendars, and AI chat in one product.
+VibePlanner is an AI habit planner. It helps users build routines, track streaks, and stay accountable with AI assistants.
 
 ## Primary Stack
 - Next.js 15 (App Router) + React 19
 - Convex backend (queries, mutations, actions)
-- Clerk for auth (Organizations map to Teams)
+- Clerk for auth (Organizations map to internal org entities)
 - Stripe for billing
 - Tailwind CSS + shadcn/ui
 
 ## Key Domain Model (Convex)
-- Teams: top-level org, subscription status, settings.
-- Projects: belong to a team, contain tasks/files/calendar.
-- Tasks: kanban workflow (todo, in_progress, review, done).
-- Files: unified storage, AI extraction/analysis.
+- Backend schema still uses legacy internal entity names, so keep it stable unless explicitly requested.
+- Product-facing positioning and landing copy should be habits-first (habits, routines, streaks, accountability, AI coaching).
 - AI: threads/messages + token usage tracking.
 
 ## Important Paths
@@ -36,17 +34,18 @@ VibePlanner is an AI assistant workspace for teams. It combines projects, tasks,
 Create `.env.local` with keys for Clerk, Convex, OpenAI, Stripe, and storage (R2/S3). Avoid committing secrets.
 
 ## Auth + Billing Notes
-- Clerk orgs map to Teams; be careful when touching org/team logic.
+- Clerk orgs map to internal auth entities; be careful when touching org logic.
 - Stripe actions live in `convex/stripeActions.ts`.
 
 ## UI/UX Notes
 - Theme tokens live in `app/globals.css` (beige/ink palette). Reuse them instead of hardcoding colors.
 - Landing components are in `components/ui/landing/` and mounted at `app/(main)/page.tsx`.
+- For marketing/content updates, use `components/ui/landing/minimal/` as the primary source.
 
 ## Conventions
 - Prefer component reuse from `components/ui`.
 - Tailwind utility classes; avoid inline styles unless necessary.
-- Keep marketing copy concrete and aligned to the product (teams, projects, tasks, files, AI).
+- Keep marketing copy concrete and aligned to habits (habits, routines, streaks, check-ins, AI assistants).
 - When touching Convex schema or auth flows, call out migration or data-impact risks.
 
 ## Safe Editing Guidelines

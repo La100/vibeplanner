@@ -12,6 +12,7 @@ import { internalAction } from "../_generated/server";
 const internalAny = require("../_generated/api").internal as any;
 
 const TELEGRAM_API_BASE = "https://api.telegram.org/bot";
+const FREE_TELEGRAM_MESSAGE_LIMIT = 20;
 
 // Handle incoming Telegram message
 export const handleTelegramMessage = internalAction({
@@ -127,6 +128,15 @@ export const handleTelegramMessage = internalAction({
                     );
                     return;
                 }
+
+                const canProceed = await enforceFreeTelegramMessageLimit(
+                    ctx,
+                    channel.teamId,
+                    channel._id,
+                    args.chatId,
+                    project.telegramBotToken
+                );
+                if (!canProceed) return;
 
                 const baseMessage = args.text?.trim()
                     ? args.text.trim()
@@ -440,6 +450,15 @@ async function processRegularMessage(
         return;
     }
 
+    const canProceed = await enforceFreeTelegramMessageLimit(
+        ctx,
+        channel.teamId,
+        channel._id,
+        chatId,
+        botToken
+    );
+    if (!canProceed) return;
+
     const systemUserId = projectOwnerClerkId;
 
     try {
@@ -487,6 +506,40 @@ async function processRegularMessage(
             botToken
         );
     }
+}
+
+async function enforceFreeTelegramMessageLimit(
+    ctx: any,
+    teamId: string,
+    channelId: string,
+    chatId: string,
+    botToken: string
+): Promise<boolean> {
+    const teamSubscription = await ctx.runQuery(internalAny.stripe.checkAIFeatureAccess, {
+        teamId: teamId as any,
+    });
+
+    if (teamSubscription?.currentPlan !== "free") {
+        return true;
+    }
+
+    const usage = await ctx.runQuery(internalAny.messaging.channels.getTeamTelegramMessageUsage, {
+        teamId: teamId as any,
+    });
+
+    if ((usage?.totalMessages || 0) >= FREE_TELEGRAM_MESSAGE_LIMIT) {
+        await sendTelegramMessageDirect(
+            chatId,
+            "Free plan Telegram limit reached (20 messages total). Upgrade to continue chatting on Telegram.",
+            botToken
+        );
+        return false;
+    }
+
+    await ctx.runMutation(internalAny.messaging.channels.incrementTelegramMessageUsage, {
+        channelId: channelId as any,
+    });
+    return true;
 }
 
 // Send approval notification to user

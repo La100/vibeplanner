@@ -5,7 +5,6 @@ const footerLinks = [
   {
     title: "Product",
     links: [
-      { label: "AI Assistants", href: "#ai-assistants" },
       { label: "Features", href: "#features" },
       { label: "Pricing", href: "#pricing" },
       { label: "FAQ", href: "#faq" },

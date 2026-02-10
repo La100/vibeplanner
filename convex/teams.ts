@@ -350,11 +350,13 @@ export const getTeamResourceUsage = query({
     const limits = (user?.subscriptionLimits || team.subscriptionLimits || {
       maxProjects:
         plan === "free"
-          ? 3
+          ? 1
           : plan === "basic"
             ? 10
-            : plan === "ai" || plan === "ai_scale"
-              ? 20
+            : plan === "ai"
+              ? 4
+              : plan === "ai_scale"
+                ? 10
               : plan === "pro"
                 ? 50
                 : 999,

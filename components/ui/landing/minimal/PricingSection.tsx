@@ -12,11 +12,12 @@ const plans = [
     cadence: "forever",
     description: "Perfect for building your first habits with AI guidance.",
     features: [
-      "Up to 3 active habits",
-      "1 AI assistant (Atlas)",
-      "Basic streak tracking",
-      "Daily check-in reminders",
-      "Community support",
+      "1 active AI assistant",
+      "Starter AI token quota",
+      "Telegram chat: 20 messages total",
+      "Habit tracking and check-ins",
+      "Habit reminders",
+      "1 GB file storage",
     ],
     cta: "Get Started Free",
     href: "/sign-up",
@@ -24,35 +25,34 @@ const plans = [
   },
   {
     name: "Pro",
-    price: "$12",
+    price: "$29",
     cadence: "per month",
-    description: "For serious habit builders who want full AI power.",
+    description: "For users who need more assistant capacity and higher AI limits.",
     features: [
-      "Unlimited active habits",
-      "All 4 AI assistants",
-      "Advanced analytics & insights",
-      "Smart nudges & adaptive reminders",
-      "Custom routine builder",
-      "Priority support",
+      "Up to 4 active AI assistants",
+      "Expanded AI token quota",
+      "Unlimited Telegram chat",
+      "Habit tracking and reminders",
+      "50 GB file storage",
+      "Advanced features enabled",
     ],
-    cta: "Start Pro Trial",
+    cta: "Start Pro",
     href: "/sign-up",
     highlighted: true,
   },
   {
-    name: "Team",
-    price: "$8",
-    cadence: "per person / month",
-    description: "Build habits together with shared accountability.",
+    name: "Scale",
+    price: "$49",
+    cadence: "per month",
+    description: "For heavier AI usage and multi-assistant setups.",
     features: [
       "Everything in Pro",
-      "Team habit boards",
-      "Group challenges & streaks",
-      "Admin dashboard",
-      "Team analytics",
-      "Dedicated account manager",
+      "Up to 10 active AI assistants",
+      "Largest AI token quota",
+      "Unlimited Telegram chat",
+      "50 GB file storage",
     ],
-    cta: "Contact Sales",
+    cta: "Go Scale",
     href: "/sign-up",
     highlighted: false,
   },
@@ -83,8 +83,8 @@ export function PricingSection() {
             you&apos;re ready.
           </h2>
           <p className="mt-5 text-primary-foreground/60 text-lg max-w-xl mx-auto">
-            Every plan includes AI-powered habit coaching. Upgrade for deeper
-            personalization and team features.
+            Start with a starter AI token quota on Free, then unlock larger token
+            quotas and more assistant capacity on Pro or Scale.
           </p>
         </motion.div>
 

@@ -42,6 +42,14 @@ type HabitItem = {
   unit?: string;
   frequency?: "daily" | "weekly";
   reminderTime?: string;
+  reminderPlan?: Array<{
+    date: string;
+    reminderTime: string;
+    minStartTime?: string;
+    phaseLabel?: string;
+  }>;
+  effectiveTodayReminderTime?: string;
+  todayPhaseLabel?: string;
   isActive: boolean;
   completedToday?: boolean;
   completionValue?: number;
@@ -72,6 +80,17 @@ const formatDow = (dateStr: string) => {
 const formatMd = (dateStr: string) => {
   const d = new Date(`${dateStr}T00:00:00Z`);
   return d.toLocaleDateString(undefined, { month: "numeric", day: "numeric" });
+};
+
+const isHabitScheduledForDate = (habit: HabitItem, dateStr: string) => {
+  if (!habit.isActive) return false;
+  const reminderPlan = habit.reminderPlan ?? [];
+  const hasPlanForDate = reminderPlan.some((entry) => entry.date === dateStr);
+  if (hasPlanForDate) return true;
+  if (reminderPlan.length > 0 && !habit.reminderTime) return false;
+  const schedule = habit.scheduleDays;
+  if (!schedule || schedule.length === 0) return true;
+  return schedule.includes(dateToDowKey(dateStr));
 };
 
 export function HabitsViewSkeleton() {
@@ -143,10 +162,16 @@ export default function HabitsView() {
     if (!week?.dates?.length || !week?.habits?.length) {
       return { totalCells: 0, doneCells: 0, percent: 0 };
     }
-    const totalCells = week.dates.length * week.habits.length;
+    let totalCells = 0;
     let doneCells = 0;
+    const completionsByHabitId = week.completionsByHabitId ?? {};
     for (const h of week.habits) {
-      doneCells += (week.completionsByHabitId[h._id]?.length ?? 0);
+      const doneDates = new Set(completionsByHabitId[h._id] ?? []);
+      for (const date of week.dates) {
+        if (!isHabitScheduledForDate(h, date)) continue;
+        totalCells += 1;
+        if (doneDates.has(date)) doneCells += 1;
+      }
     }
     const percent = totalCells > 0 ? Math.round((doneCells / totalCells) * 100) : 0;
     return { totalCells, doneCells, percent };
@@ -159,13 +184,7 @@ export default function HabitsView() {
 
   const habitsForSelectedDate = useMemo(() => {
     if (!effectiveSelectedDate) return [] as HabitItem[];
-    const dowKey = dateToDowKey(effectiveSelectedDate);
-    return (week?.habits ?? habits ?? []).filter((h) => {
-      if (!h.isActive) return false;
-      const schedule = h.scheduleDays;
-      if (!schedule || schedule.length === 0) return true;
-      return schedule.includes(dowKey);
-    });
+    return (week?.habits ?? habits ?? []).filter((h) => isHabitScheduledForDate(h, effectiveSelectedDate));
   }, [effectiveSelectedDate, week?.habits, habits]);
 
   const completedCountForSelectedDate = useMemo(() => {
@@ -475,6 +494,11 @@ export default function HabitsView() {
                       ? Math.min(100, Math.round(((loggedValue ?? 0) / (habit.targetValue || 1)) * 100))
                       : isDone ? 100 : 0;
                     const isValueInputOpen = valueInputHabitId === habit._id;
+                    const planEntry = effectiveSelectedDate
+                      ? (habit.reminderPlan ?? []).find((entry) => entry.date === effectiveSelectedDate)
+                      : undefined;
+                    const reminderLabel = planEntry?.reminderTime || habit.effectiveTodayReminderTime || habit.reminderTime;
+                    const phaseLabel = planEntry?.phaseLabel || habit.todayPhaseLabel;
                     return (
                       <Card
                         key={habit._id}
@@ -521,8 +545,11 @@ export default function HabitsView() {
                                 </div>
                                 <p className="text-xs text-muted-foreground">{progressLabel}</p>
                                 <p className="text-xs text-muted-foreground">
-                                  {habit.reminderTime ? `Reminder: ${habit.reminderTime}` : "No reminder set"}
+                                  {reminderLabel ? `Reminder: ${reminderLabel}` : "No reminder set"}
                                 </p>
+                                {phaseLabel ? (
+                                  <p className="text-[11px] text-muted-foreground/80">Phase: {phaseLabel}</p>
+                                ) : null}
                               </div>
                             </div>
                             {isNumeric ? (
@@ -787,7 +814,9 @@ export default function HabitsView() {
                           </div>
 
                           {week.dates.map((date) => {
+                            const isScheduled = isHabitScheduledForDate(habit, date);
                             const isDone = doneDates.has(date);
+                            const isScheduledDone = isScheduled && isDone;
                             const isToday = date === week.today;
                             const isNumeric = Boolean(habit.targetValue && habit.unit);
                             const cellValue = week.valuesByHabitId?.[habit._id]?.[date];
@@ -795,15 +824,24 @@ export default function HabitsView() {
                               <button
                                 key={`${habit._id}:${date}`}
                                 type="button"
-                                onClick={() => toggleHabitCompletion({ habitId: habit._id, date })}
+                                onClick={() => {
+                                  if (!isScheduled) return;
+                                  toggleHabitCompletion({ habitId: habit._id, date });
+                                }}
+                                disabled={!isScheduled}
                                 className={cn(
                                   "border-t border-l flex items-center justify-center py-3 transition relative",
-                                  isDone ? "bg-green-500/10" : "bg-background group-hover:bg-muted/5",
-                                  isToday && !isDone ? "bg-primary/5" : ""
+                                  !isScheduled && "bg-muted/20 cursor-not-allowed opacity-50",
+                                  isScheduledDone ? "bg-green-500/10" : "bg-background group-hover:bg-muted/5",
+                                  isToday && !isScheduledDone ? "bg-primary/5" : ""
                                 )}
-                                aria-label={isDone ? "Mark incomplete" : "Mark complete"}
+                                aria-label={
+                                  !isScheduled ? "Not scheduled" : isDone ? "Mark incomplete" : "Mark complete"
+                                }
                               >
-                                {isDone ? (
+                                {!isScheduled ? (
+                                  <span className="text-xs text-muted-foreground/60">-</span>
+                                ) : isScheduledDone ? (
                                   isNumeric && cellValue != null ? (
                                     <span className="text-xs font-medium text-green-700">{cellValue}</span>
                                   ) : (
