@@ -68,20 +68,20 @@ function CompanyNavbarContent() {
             ) : (
               <Link
                 href="/organisation/subscription"
-                className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                className="text-sm font-medium text-foreground hover:text-foreground transition-colors"
               >
                 Subscription
               </Link>
             )}
             <Link
               href="/organisation/settings"
-              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              className="text-sm font-medium text-foreground hover:text-foreground transition-colors"
             >
               Settings
             </Link>
             <Link
               href="/help"
-              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              className="text-sm font-medium text-foreground hover:text-foreground transition-colors"
             >
               Help
             </Link>

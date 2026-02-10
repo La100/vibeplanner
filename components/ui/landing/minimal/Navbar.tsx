@@ -41,7 +41,7 @@ export function Navbar() {
             <Link
               key={link.label}
               href={link.href}
-              className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+              className="text-sm font-medium text-foreground transition-colors hover:text-foreground"
             >
               {link.label}
             </Link>
@@ -53,7 +53,7 @@ export function Navbar() {
             <Button
               variant="ghost"
               asChild
-              className="text-sm font-medium text-muted-foreground hover:text-foreground"
+              className="text-sm font-medium text-foreground hover:text-foreground"
             >
               <Link href="/organisation">Dashboard</Link>
             </Button>
