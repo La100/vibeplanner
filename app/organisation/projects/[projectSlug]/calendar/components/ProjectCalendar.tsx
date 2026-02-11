@@ -136,10 +136,6 @@ export function ProjectCalendarSkeleton() {
 export default function ProjectCalendar() {
   const { project } = useProject();
 
-  const hasAccess = useQuery(apiAny.projects.checkUserProjectAccess, {
-    projectId: project._id,
-  });
-
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -152,7 +148,7 @@ export default function ProjectCalendar() {
 
   const calendarData = useQuery(
     apiAny.calendar.getProjectCalendarData,
-    hasAccess ? { projectId: project._id, month: currentMonth } : "skip"
+    { projectId: project._id, month: currentMonth }
   );
 
   // Parse current month for grid generation
@@ -260,18 +256,7 @@ export default function ProjectCalendar() {
 
   // --- Access / Loading states ---
 
-  if (hasAccess === false) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-        <h1 className="text-2xl font-bold text-red-600 mb-2">Access Denied</h1>
-        <p className="text-muted-foreground">
-          You don&apos;t have permission to access this project.
-        </p>
-      </div>
-    );
-  }
-
-  if (hasAccess === undefined || calendarData === undefined) {
+  if (calendarData === undefined) {
     return <ProjectCalendarSkeleton />;
   }
 

@@ -1,6 +1,26 @@
 import { internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
+const fetchUsersByClerkIds = async (ctx: any, clerkUserIds: Iterable<string | null | undefined>) => {
+  const uniqueIds = [...new Set([...clerkUserIds].filter((id): id is string => Boolean(id)))];
+  if (uniqueIds.length === 0) return new Map<string, any>();
+
+  const users = await Promise.all(
+    uniqueIds.map((clerkUserId) =>
+      ctx.db
+        .query("users")
+        .withIndex("by_clerk_user_id", (q: any) => q.eq("clerkUserId", clerkUserId))
+        .unique()
+    )
+  );
+
+  const byClerkId = new Map<string, any>();
+  for (const user of users) {
+    if (user) byClerkId.set(user.clerkUserId, user);
+  }
+  return byClerkId;
+};
+
 // Internal queries: Pobierz dane do indeksowania
 export const getProjectTasks = internalQuery({
   args: { projectId: v.id("projects") },
@@ -11,17 +31,15 @@ export const getProjectTasks = internalQuery({
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .collect();
 
-    // Add assignedToName for each task
-    return await Promise.all(
-      tasks.map(async (task) => {
-        let assignedToName: string | undefined;
-        if (task.assignedTo) {
-          const user = await ctx.db.query("users").withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.assignedTo!)).unique();
-          if (user) { assignedToName = user.name || user.email; }
-        }
-        return { ...task, assignedToName };
-      })
+    const usersByClerkId = await fetchUsersByClerkIds(
+      ctx,
+      tasks.map((task) => task.assignedTo ?? null)
     );
+
+    return tasks.map((task) => {
+      const assignedUser = task.assignedTo ? usersByClerkId.get(task.assignedTo) : undefined;
+      return { ...task, assignedToName: assignedUser?.name || assignedUser?.email };
+    });
   },
 });
 
@@ -33,12 +51,8 @@ export const getTaskById = internalQuery({
     const task = await ctx.db.get(args.taskId);
     if (!task) return null;
 
-    // Add assignedToName
-    let assignedToName: string | undefined;
-    if (task.assignedTo) {
-      const user = await ctx.db.query("users").withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.assignedTo!)).unique();
-      if (user) { assignedToName = user.name || user.email; }
-    }
-    return { ...task, assignedToName };
+    const usersByClerkId = await fetchUsersByClerkIds(ctx, [task.assignedTo ?? null]);
+    const assignedUser = task.assignedTo ? usersByClerkId.get(task.assignedTo) : undefined;
+    return { ...task, assignedToName: assignedUser?.name || assignedUser?.email };
   },
 });

@@ -28,7 +28,7 @@ import { prepareMessageWithFile, prepareMessageWithFiles } from "./files";
 import type { ProjectContextSnapshot } from "./types";
 import { AI_MODEL, calculateCost } from "./config";
 import { buildSoulfulPrompt } from "./systemPrompt";
-import { buildContextFromSnapshot } from "./helpers/contextBuilder";
+import { buildCompactContextFromSnapshot } from "./helpers/contextBuilder";
 import type { Id } from "../_generated/dataModel";
 import { buildFallbackResponseFromTools } from "./helpers/streamResponseBuilder";
 import { ASSISTANT_ONBOARDING_THREAD_TITLE, USER_ONBOARDING_THREAD_TITLE } from "./threads";
@@ -37,6 +37,8 @@ import { getPresetOnboardingRules } from "./assistantCoreRules";
 
 const AI_CREDITS_UPGRADE_MESSAGE =
   "Unfortunately, you've run out of free AI credits. Please upgrade your plan to continue.";
+
+const MAX_DAILY_MEMORY_PROMPT_CHARS = 4000;
 
 const isLegacyStyleThreadId = (threadId: string) =>
   threadId.startsWith("thread-") || threadId.startsWith("thread_");
@@ -110,10 +112,16 @@ Onboarding objective:
 - Turn the user's intent into a concrete first plan with tasks, habits, and immediate next steps.
 
 Behavior rules:
-- Ask one concise question at a time.
+- Ask one concise question at a time only when truly needed.
 - Keep questions specific and practical.
+- Avoid interview mode. Ask only the minimum needed to produce a useful first plan.
+- After at most 4 discovery questions, present a first draft plan with reasonable defaults if needed.
+- If the user replies with option numbers (e.g., "1" or "1 2 i 5"), map them to the last options and continue without asking to repeat.
+- If the user provides multiple answers in one message, accept all of them and continue.
 - Confirm understanding briefly, then move forward.
-- After collecting enough context, summarize key goals/constraints in bullets.
+- After collecting enough context (or reaching the discovery limit), summarize key goals/constraints in bullets.
+- Keep language adult and natural. Avoid repetitive scripted phrases and avoid over-simplifying the user's problem.
+- Include brief rationale/tradeoffs for recommendations when relevant.
 - Propose a clear set of tasks/habits and ask for explicit approval before creating anything.
 - Do not create tasks/habits and do not call complete_onboarding until the user explicitly approves.
 
@@ -394,15 +402,19 @@ ${userProfileSection}
 
       // 3. Build Project Context
       const projectContextSnapshot = await ensureSnapshot();
-      // We use the helper to format it, but we might want to customize this later
-      const formattedProjectContext = buildContextFromSnapshot(projectContextSnapshot);
+      const formattedProjectContext = buildCompactContextFromSnapshot(projectContextSnapshot);
 
       const memorySections: string[] = [];
       if (systemContext.longTermMemory) {
         memorySections.push(`# LONG-TERM MEMORY\n${systemContext.longTermMemory}`);
       }
-      if (systemContext.todayMemory) {
-        memorySections.push(`# DAILY MEMORY (${currentDate})\n${systemContext.todayMemory}`);
+      const dailyMemoryForPrompt = systemContext.todayMemory
+        ? systemContext.todayMemory.length > MAX_DAILY_MEMORY_PROMPT_CHARS
+          ? `...[older daily memory truncated]\n${systemContext.todayMemory.slice(-MAX_DAILY_MEMORY_PROMPT_CHARS)}`
+          : systemContext.todayMemory
+        : "";
+      if (dailyMemoryForPrompt) {
+        memorySections.push(`# DAILY MEMORY (${currentDate})\n${dailyMemoryForPrompt}`);
       }
       const memoryBlock = memorySections.join("\n\n");
 
@@ -1071,7 +1083,7 @@ ${userProfileSection}
         inputTokens: tokenUsage.inputTokens,
         outputTokens: tokenUsage.outputTokens,
         totalTokens: tokenUsage.totalTokens,
-        contextSize: 0,
+        contextSize: systemInstructions.length + userPrompt.length,
         mode: agentModeIdentifier,
         estimatedCostCents: Math.round(tokenUsage.estimatedCostUSD * 100),
         responseTimeMs: responseTime,

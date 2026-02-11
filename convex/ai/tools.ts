@@ -769,7 +769,7 @@ export function createStreamingTools(options?: StreamingToolOptions) {
 
     // Full project context loading tool
     load_full_project_context: {
-      description: "Load complete project overview including ALL tasks. Use this when you need comprehensive context about the entire project (e.g., for summaries or complex queries). This is more expensive than targeted searches, so use it wisely. The context is cached, so multiple calls are efficient.",
+      description: "Load complete project overview including ALL tasks. Use only for explicit full-audit requests or complex summaries. This is more expensive than targeted searches, so prefer search tools first.",
       inputSchema: loadFullProjectContextSchema,
       execute: async () => {
         if (!options?.loadSnapshot) {
@@ -785,8 +785,8 @@ export function createStreamingTools(options?: StreamingToolOptions) {
           const formattedContext = buildContextFromSnapshot(snapshot);
 
           let finalContext = formattedContext;
-          if (finalContext.length > 500000) {
-            finalContext = finalContext.substring(0, 500000) + "\n...[TRUNCATED due to size]...";
+          if (finalContext.length > 80000) {
+            finalContext = finalContext.substring(0, 80000) + "\n...[TRUNCATED due to size]...";
           }
 
           return JSON.stringify({

@@ -37,8 +37,8 @@ export const getProjectThread = mutation({
     // Check for ANY existing thread for this project and user
     const existingThread = await ctx.db
       .query("aiThreads")
-      .withIndex("by_user", (q) => q.eq("userClerkId", args.userClerkId))
-      .filter((q) => q.eq(q.field("projectId"), args.projectId))
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .filter((q) => q.eq(q.field("userClerkId"), args.userClerkId))
       // Do not reuse dedicated onboarding threads for normal assistant chat
       .filter((q) => q.neq(q.field("title"), USER_ONBOARDING_THREAD_TITLE))
       .filter((q) => q.neq(q.field("title"), ASSISTANT_ONBOARDING_THREAD_TITLE))
@@ -86,8 +86,8 @@ export const getUserOnboardingThread = mutation({
 
     const existingThread = await ctx.db
       .query("aiThreads")
-      .withIndex("by_user", (q) => q.eq("userClerkId", args.userClerkId))
-      .filter((q) => q.eq(q.field("projectId"), args.projectId))
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .filter((q) => q.eq(q.field("userClerkId"), args.userClerkId))
       .filter((q) => q.eq(q.field("title"), USER_ONBOARDING_THREAD_TITLE))
       .first();
 
@@ -130,8 +130,8 @@ export const getAssistantOnboardingThread = mutation({
 
     const existingThread = await ctx.db
       .query("aiThreads")
-      .withIndex("by_user", (q) => q.eq("userClerkId", args.userClerkId))
-      .filter((q) => q.eq(q.field("projectId"), args.projectId))
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .filter((q) => q.eq(q.field("userClerkId"), args.userClerkId))
       .filter((q) => q.eq(q.field("title"), ASSISTANT_ONBOARDING_THREAD_TITLE))
       .first();
 
@@ -171,8 +171,8 @@ export const getProjectThreadInternal = internalMutation({
   handler: async (ctx, args) => {
     const existingThread = await ctx.db
       .query("aiThreads")
-      .withIndex("by_user", (q) => q.eq("userClerkId", args.userClerkId))
-      .filter((q) => q.eq(q.field("projectId"), args.projectId))
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .filter((q) => q.eq(q.field("userClerkId"), args.userClerkId))
       .first();
 
     if (existingThread) {
@@ -870,12 +870,11 @@ export const listThreadsForUser = query({
       throw new Error("Forbidden");
     }
 
-    const threads = await ctx.db
+    const filtered = await ctx.db
       .query("aiThreads")
-      .withIndex("by_user", (q) => q.eq("userClerkId", args.userClerkId))
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .filter((q) => q.eq(q.field("userClerkId"), args.userClerkId))
       .collect();
-
-    const filtered = threads.filter((thread) => thread.projectId === args.projectId);
 
     const summaries = await Promise.all(
       filtered.map(async (thread) => {

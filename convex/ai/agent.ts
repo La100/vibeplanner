@@ -56,8 +56,9 @@ export const createVibePlannerAgent = (
     // Context options - we use contextHandler to load messages from custom tables
     // See: https://docs.convex.dev/agents/context
     contextOptions: {
-      // Include tool messages in context so the AI remembers search results and previous actions
-      excludeToolMessages: false,
+      // Keep tool payloads out of context to reduce token overhead on long threads.
+      // The assistant should summarize relevant tool outcomes in normal assistant turns.
+      excludeToolMessages: true,
     },
 
     // Import all tools from tools.ts (single source of truth)

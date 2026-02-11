@@ -2,6 +2,26 @@ import { v } from "convex/values";
 import { query, mutation, internalQuery } from "./_generated/server";
 const internalAny = require("./_generated/api").internal as any;
 
+const fetchUsersByClerkIds = async (ctx: any, clerkUserIds: Iterable<string>) => {
+  const uniqueIds = [...new Set([...clerkUserIds].filter(Boolean))];
+  if (uniqueIds.length === 0) return new Map<string, any>();
+
+  const users = await Promise.all(
+    uniqueIds.map((clerkUserId) =>
+      ctx.db
+        .query("users")
+        .withIndex("by_clerk_user_id", (q: any) => q.eq("clerkUserId", clerkUserId))
+        .unique()
+    )
+  );
+
+  const byClerkId = new Map<string, any>();
+  for (const user of users) {
+    if (user) byClerkId.set(user.clerkUserId, user);
+  }
+  return byClerkId;
+};
+
 export const listUserTeams = query({
   args: {},
   handler: async (ctx) => {
@@ -218,19 +238,19 @@ export const getTeamMembersForIndexing = internalQuery({
       .withIndex("by_team", (q) => q.eq("teamId", project.teamId!))
       .collect();
 
-    return await Promise.all(
-      members.map(async (member) => {
-        const user = await ctx.db
-          .query("users")
-          .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", member.clerkUserId))
-          .unique();
-        return {
-          clerkUserId: member.clerkUserId,
-          name: user?.name,
-          email: user?.email,
-        };
-      })
+    const usersByClerkId = await fetchUsersByClerkIds(
+      ctx,
+      members.map((member) => member.clerkUserId)
     );
+
+    return members.map((member) => {
+      const user = usersByClerkId.get(member.clerkUserId);
+      return {
+        clerkUserId: member.clerkUserId,
+        name: user?.name,
+        email: user?.email,
+      };
+    });
   },
 });
 
@@ -247,20 +267,20 @@ export const getTeamMembersWithUserDetails = internalQuery({
       .withIndex("by_team", (q) => q.eq("teamId", project.teamId!))
       .collect();
 
-    return await Promise.all(
-      members.map(async (member) => {
-        const user = await ctx.db
-          .query("users")
-          .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", member.clerkUserId))
-          .unique();
-        return {
-          ...member,
-          name: user?.name ?? "Unknown User",
-          email: user?.email ?? "No Email",
-          imageUrl: user?.imageUrl,
-        };
-      })
+    const usersByClerkId = await fetchUsersByClerkIds(
+      ctx,
+      members.map((member) => member.clerkUserId)
     );
+
+    return members.map((member) => {
+      const user = usersByClerkId.get(member.clerkUserId);
+      return {
+        ...member,
+        name: user?.name ?? "Unknown User",
+        email: user?.email ?? "No Email",
+        imageUrl: user?.imageUrl,
+      };
+    });
   },
 });
 
@@ -272,20 +292,20 @@ export const getTeamMembers = query({
       .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
       .collect();
 
-    return Promise.all(
-      members.map(async (member) => {
-        const user = await ctx.db
-          .query("users")
-          .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", member.clerkUserId))
-          .unique();
-        return {
-          ...member,
-          name: user?.name ?? "User without name",
-          email: user?.email ?? "No email",
-          imageUrl: user?.imageUrl,
-        };
-      })
+    const usersByClerkId = await fetchUsersByClerkIds(
+      ctx,
+      members.map((member) => member.clerkUserId)
     );
+
+    return members.map((member) => {
+      const user = usersByClerkId.get(member.clerkUserId);
+      return {
+        ...member,
+        name: user?.name ?? "User without name",
+        email: user?.email ?? "No email",
+        imageUrl: user?.imageUrl,
+      };
+    });
   },
 });
 
@@ -357,9 +377,9 @@ export const getTeamResourceUsage = query({
               ? 4
               : plan === "ai_scale"
                 ? 10
-              : plan === "pro"
-                ? 50
-                : 999,
+                : plan === "pro"
+                  ? 50
+                  : 999,
       maxTeamMembers:
         plan === "free"
           ? 1

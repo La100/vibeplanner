@@ -5,6 +5,35 @@ import type { Id } from "../_generated/dataModel";
 const internalAny = require("../_generated/api").internal as any;
 import { getNextReminderSchedule, normalizeReminderPlan } from "./reminderUtils";
 
+const clearReminderScheduleState = async (ctx: any, habitId: Id<"habits">) => {
+  await ctx.db.patch(habitId, {
+    scheduledReminderId: undefined,
+    nextReminderAt: undefined,
+  } as any);
+};
+
+const cancelExistingHabitReminderIfAny = async (
+  ctx: any,
+  habit: any,
+  habitId: Id<"habits">
+) => {
+  const scheduledReminderId = (habit as any).scheduledReminderId as string | undefined;
+  if (!scheduledReminderId) return false;
+
+  try {
+    await ctx.scheduler.cancel(scheduledReminderId as any);
+  } catch (error) {
+    // Scheduler jobs can already be running/completed when we attempt to cancel.
+    console.warn("[HABIT REMINDER] Failed to cancel scheduled job", {
+      habitId,
+      scheduledReminderId,
+      error: String(error),
+    });
+  }
+
+  return true;
+};
+
 export const scheduleTelegramReminder = internalMutation({
   args: {
     projectId: v.id("projects"),
@@ -85,7 +114,12 @@ export const scheduleHabitReminder = internalMutation({
       throw new Error("Habit not found");
     }
     const reminderPlan = normalizeReminderPlan((habit as any).reminderPlan);
+    const hadScheduledJob = await cancelExistingHabitReminderIfAny(ctx, habit, args.habitId);
+
     if ((!habit.reminderTime && reminderPlan.length === 0) || !habit.isActive) {
+      if (hadScheduledJob || (habit as any).nextReminderAt !== undefined) {
+        await clearReminderScheduleState(ctx, args.habitId);
+      }
       return { scheduled: false };
     }
 
@@ -95,6 +129,9 @@ export const scheduleHabitReminder = internalMutation({
         habitId: args.habitId,
         projectId: habit.projectId,
       });
+      if (hadScheduledJob || (habit as any).nextReminderAt !== undefined) {
+        await clearReminderScheduleState(ctx, args.habitId);
+      }
       return { scheduled: false };
     }
     const team = project ? await ctx.db.get(project.teamId) : null;
@@ -115,6 +152,9 @@ export const scheduleHabitReminder = internalMutation({
         reminderPlan,
         timeZone,
       });
+      if (hadScheduledJob || (habit as any).nextReminderAt !== undefined) {
+        await clearReminderScheduleState(ctx, args.habitId);
+      }
       return { scheduled: false };
     }
 
@@ -130,15 +170,40 @@ export const scheduleHabitReminder = internalMutation({
       scheduledFor: nextSchedule.timestamp,
       delayMs,
     });
-    await ctx.scheduler.runAfter(delayMs, internalAny.messaging.remindersActions.sendHabitReminder, {
+    const scheduledReminderId = await ctx.scheduler.runAfter(delayMs, internalAny.messaging.remindersActions.sendHabitReminder, {
       habitId: args.habitId,
+      expectedReminderAt: nextSchedule.timestamp,
     });
+    await ctx.db.patch(args.habitId, {
+      scheduledReminderId,
+      nextReminderAt: nextSchedule.timestamp,
+    } as any);
 
     return {
       scheduled: true,
       scheduledFor: nextSchedule.timestamp,
       source: nextSchedule.source,
       date: nextSchedule.date,
+      scheduledReminderId,
     };
+  },
+});
+
+export const unscheduleHabitReminder = internalMutation({
+  args: {
+    habitId: v.id("habits"),
+  },
+  handler: async (ctx, args) => {
+    const habit = await ctx.db.get(args.habitId);
+    if (!habit) {
+      return { unscheduled: false, reason: "habit_not_found" };
+    }
+
+    const hadScheduledJob = await cancelExistingHabitReminderIfAny(ctx, habit, args.habitId);
+    if (hadScheduledJob || (habit as any).nextReminderAt !== undefined) {
+      await clearReminderScheduleState(ctx, args.habitId);
+    }
+
+    return { unscheduled: hadScheduledJob };
   },
 });

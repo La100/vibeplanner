@@ -640,8 +640,43 @@ export const getTeamPayments = query({
     const stripeCustomerId = user.stripeCustomerId || team?.stripeCustomerId;
     if (!stripeCustomerId) return [];
 
-    const payments = await ctx.runQuery(components.stripe.public.listPayments, { stripeCustomerId });
-    return payments.sort((a, b) => b.created - a.created);
+    const [payments, invoices, subscriptions] = await Promise.all([
+      ctx.runQuery(components.stripe.public.listPayments, { stripeCustomerId }),
+      ctx.runQuery(components.stripe.public.listInvoices, { stripeCustomerId }),
+      ctx.runQuery(components.stripe.public.listSubscriptions, { stripeCustomerId }),
+    ]);
+
+    const planNameBySubscriptionId = new Map(
+      subscriptions.map((subscription) => {
+        const planKey = determinePlanFromPriceId(subscription.priceId) as keyof typeof SUBSCRIPTION_PLANS;
+        const planName = SUBSCRIPTION_PLANS[planKey]?.name || "Plan";
+        return [subscription.stripeSubscriptionId, planName];
+      })
+    );
+
+    const paymentTransactions = payments.map((payment) => ({
+      amount: payment.amount,
+      created: payment.created,
+      currency: payment.currency,
+      status: payment.status,
+      stripePaymentIntentId: payment.stripePaymentIntentId,
+      source: "payment_intent" as const,
+      planName: undefined as string | undefined,
+    }));
+
+    const invoiceTransactions = invoices.map((invoice) => ({
+      amount: invoice.status === "paid" ? invoice.amountPaid : invoice.amountDue,
+      created: invoice.created,
+      currency: "usd",
+      status: invoice.status,
+      stripePaymentIntentId: invoice.stripeInvoiceId,
+      source: "invoice" as const,
+      planName: invoice.stripeSubscriptionId
+        ? planNameBySubscriptionId.get(invoice.stripeSubscriptionId)
+        : undefined,
+    }));
+
+    return [...paymentTransactions, ...invoiceTransactions].sort((a, b) => b.created - a.created);
   },
 });
 

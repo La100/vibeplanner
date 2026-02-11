@@ -2,6 +2,26 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 
+const fetchUsersByClerkIds = async (ctx: any, clerkUserIds: Iterable<string>) => {
+    const uniqueIds = [...new Set([...clerkUserIds].filter(Boolean))];
+    if (uniqueIds.length === 0) return new Map<string, any>();
+
+    const users = await Promise.all(
+        uniqueIds.map((clerkUserId) =>
+            ctx.db
+                .query("users")
+                .withIndex("by_clerk_user_id", (q: any) => q.eq("clerkUserId", clerkUserId))
+                .unique()
+        )
+    );
+
+    const byClerkId = new Map<string, any>();
+    for (const user of users) {
+        if (user) byClerkId.set(user.clerkUserId, user);
+    }
+    return byClerkId;
+};
+
 export const addComment = mutation({
     args: {
         taskId: v.id("tasks"),
@@ -76,19 +96,19 @@ export const getCommentsForTask = query({
             .order("desc")
             .collect();
 
-        const commentsWithAuthors = await Promise.all(
-            comments.map(async (comment) => {
-                const author = await ctx.db
-                    .query("users")
-                    .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", comment.authorId))
-                    .unique();
-                return {
-                    ...comment,
-                    authorName: author?.name,
-                    authorImageUrl: author?.imageUrl,
-                };
-            })
+        const usersByClerkId = await fetchUsersByClerkIds(
+            ctx,
+            comments.map((comment) => comment.authorId)
         );
+
+        const commentsWithAuthors = comments.map((comment) => {
+            const author = usersByClerkId.get(comment.authorId);
+            return {
+                ...comment,
+                authorName: author?.name,
+                authorImageUrl: author?.imageUrl,
+            };
+        });
 
         return commentsWithAuthors;
     },

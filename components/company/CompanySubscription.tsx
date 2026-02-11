@@ -303,21 +303,32 @@ export default function CompanySubscription() {
                                 <div className="space-y-4">
                                     {teamPayments.map((payment) => {
                                         const amount = payment.amount / 100;
-                                        const formatted = amount.toFixed(2);
+                                        const currencyCode = (payment.currency || "usd").toUpperCase();
+                                        let formatted = `$${amount.toFixed(2)}`;
+                                        try {
+                                            formatted = new Intl.NumberFormat("en-US", {
+                                                style: "currency",
+                                                currency: currencyCode,
+                                            }).format(amount);
+                                        } catch {
+                                            formatted = `$${amount.toFixed(2)}`;
+                                        }
                                         const createdAt = new Date(payment.created * 1000).toLocaleDateString("en-US", {
                                             month: "short",
                                             day: "numeric",
                                             year: "numeric",
                                         });
+                                        const sourceLabel = payment.source === "invoice" ? "Invoice" : "Payment";
+                                        const planLabel = payment.planName || "Subscription";
                                         return (
-                                            <div key={payment.stripePaymentIntentId} className="flex flex-col gap-1 rounded-lg border border-border/40 px-4 py-3 text-sm">
+                                            <div key={`${payment.source}-${payment.stripePaymentIntentId}`} className="flex flex-col gap-1 rounded-lg border border-border/40 px-4 py-3 text-sm">
                                                 <div className="flex items-center justify-between">
                                                     <span className="font-medium">{formatted}</span>
                                                     <span className="text-xs uppercase tracking-wide text-muted-foreground">{payment.status}</span>
                                                 </div>
                                                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                                                     <span>{createdAt}</span>
-                                                    <span>{payment.stripePaymentIntentId.slice(-8)}</span>
+                                                    <span>{planLabel} • {sourceLabel} {payment.stripePaymentIntentId.slice(-8)}</span>
                                                 </div>
                                             </div>
                                         );

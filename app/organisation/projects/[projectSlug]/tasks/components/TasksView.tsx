@@ -210,10 +210,6 @@ export default function TasksView() {
 
   const tasksToDisplay = tasks ?? preservedTasks;
 
-  const hasAccess = useQuery(apiAny.projects.checkUserProjectAccess,
-    project ? { projectId: project._id } : "skip"
-  );
-
   const updateTaskStatus = useMutation(apiAny.tasks.updateTaskStatus);
 
   const statusOptions = useMemo(() => {
@@ -292,20 +288,12 @@ export default function TasksView() {
   };
 
 
-  if (project === undefined || hasAccess === undefined || teamMembers === undefined) {
+  if (project === undefined || teamMembers === undefined) {
     return <TasksViewSkeleton />;
   }
 
   if (project === null) {
     return <div>Project not found.</div>;
-  }
-
-  if (hasAccess === false) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <p>You do not have access to view {entityLabelLower}s for this project.</p>
-      </div>
-    );
   }
 
   return (
@@ -330,7 +318,7 @@ export default function TasksView() {
       </Dialog>
 
       <div className="w-full max-w-6xl mx-auto mb-4">
-        <Button onClick={() => setIsTaskFormOpen(true)} disabled={!hasAccess}>
+        <Button onClick={() => setIsTaskFormOpen(true)}>
           Add {entityLabel}
         </Button>
       </div>

@@ -237,16 +237,19 @@ export const saveMyOnboardingProfile = mutation({
 export const getByClerkIds = query({
     args: { clerkUserIds: v.array(v.string()) },
     async handler(ctx, args) {
-        if (args.clerkUserIds.length === 0) {
-            return [];
-        }
+      const uniqueIds = [...new Set(args.clerkUserIds.filter(Boolean))];
+      if (uniqueIds.length === 0) return [];
 
-        const users = await ctx.db
+      const users = await Promise.all(
+        uniqueIds.map((clerkUserId) =>
+          ctx.db
             .query("users")
-            .filter(q => q.or(...args.clerkUserIds.map(id => q.eq(q.field("clerkUserId"), id))))
-            .collect();
+            .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", clerkUserId))
+            .unique()
+        )
+      );
 
-        return users;
+      return users.filter((user): user is NonNullable<typeof user> => Boolean(user));
     }
 });
 

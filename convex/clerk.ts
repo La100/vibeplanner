@@ -15,21 +15,21 @@ const handleClerkWebhook = httpAction(async (ctx, request) => {
   const eventData: any = event.data;
   switch (event.type) {
     case "user.created":
-        await ctx.runMutation(internalAny.myFunctions.createOrUpdateUser, {
-            clerkUserId: eventData.id,
-            email: eventData.email_addresses?.[0]?.email_address ?? "",
-            name: [eventData.first_name, eventData.last_name].filter(Boolean).join(" ").trim(),
-            imageUrl: eventData.image_url,
-        });
-        break;
+      await ctx.runMutation(internalAny.myFunctions.createOrUpdateUser, {
+        clerkUserId: eventData.id,
+        email: eventData.email_addresses?.[0]?.email_address ?? "",
+        name: [eventData.first_name, eventData.last_name].filter(Boolean).join(" ").trim(),
+        imageUrl: eventData.image_url,
+      });
+      break;
     case "user.updated":
-        await ctx.runMutation(internalAny.myFunctions.createOrUpdateUser, {
-            clerkUserId: eventData.id,
-            email: eventData.email_addresses?.[0]?.email_address ?? "",
-            name: [eventData.first_name, eventData.last_name].filter(Boolean).join(" ").trim(),
-            imageUrl: eventData.image_url,
-        });
-        break;
+      await ctx.runMutation(internalAny.myFunctions.createOrUpdateUser, {
+        clerkUserId: eventData.id,
+        email: eventData.email_addresses?.[0]?.email_address ?? "",
+        name: [eventData.first_name, eventData.last_name].filter(Boolean).join(" ").trim(),
+        imageUrl: eventData.image_url,
+      });
+      break;
     case "user.deleted":
       if (eventData.id) {
         await ctx.runMutation(internalAny.myFunctions.deleteUser, {

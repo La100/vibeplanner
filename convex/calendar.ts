@@ -18,16 +18,38 @@ const hasProjectAccess = async (ctx: any, projectId: Id<"projects">, requireWrit
     .withIndex("by_team_and_user", (q: any) =>
       q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
     )
-    .filter((q: any) => q.eq(q.field("isActive"), true))
-    .first();
+    .unique();
 
-  if (!membership) return false;
+  if (!membership || !membership.isActive) return false;
 
   if (membership.role === 'admin' || membership.role === 'member') {
     return true;
   }
 
   return false;
+};
+
+const fetchUsersByClerkIds = async (
+  ctx: any,
+  clerkUserIds: Iterable<string | null | undefined>
+) => {
+  const uniqueIds = [...new Set([...clerkUserIds].filter((id): id is string => Boolean(id)))];
+  if (uniqueIds.length === 0) return new Map<string, any>();
+
+  const users = await Promise.all(
+    uniqueIds.map((clerkUserId) =>
+      ctx.db
+        .query("users")
+        .withIndex("by_clerk_user_id", (q: any) => q.eq("clerkUserId", clerkUserId))
+        .unique()
+    )
+  );
+
+  const byClerkId = new Map<string, any>();
+  for (const user of users) {
+    if (user) byClerkId.set(user.clerkUserId, user);
+  }
+  return byClerkId;
 };
 
 // ====== QUERIES ======
@@ -74,61 +96,35 @@ export const getProjectCalendarEvents = query({
       !task.startDate && !task.endDate
     );
 
-    // Enrich tasks with user data
-    const enrichedTasks = await Promise.all(
-      tasksWithDates.map(async (task) => {
-        let assignedToName: string | undefined;
-        let assignedToImageUrl: string | undefined;
-
-        if (task.assignedTo) {
-          const user = await ctx.db
-            .query("users")
-            .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.assignedTo!))
-            .unique();
-          if (user) {
-            assignedToName = user.name;
-            assignedToImageUrl = user.imageUrl;
-          }
-        }
-
-        const createdByUser = await ctx.db
-          .query("users")
-          .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.createdBy))
-          .unique();
-
-        return {
-          ...task,
-          assignedToName,
-          assignedToImageUrl,
-          createdByName: createdByUser?.name,
-        };
-      })
+    const usersByClerkId = await fetchUsersByClerkIds(
+      ctx,
+      [
+        ...tasksWithDates.flatMap((task) => [task.assignedTo ?? null, task.createdBy]),
+        ...todosWithoutDates.map((todo) => todo.assignedTo ?? null),
+      ]
     );
+
+    // Enrich tasks with user data
+    const enrichedTasks = tasksWithDates.map((task) => {
+      const assignedUser = task.assignedTo ? usersByClerkId.get(task.assignedTo) : undefined;
+      const createdByUser = usersByClerkId.get(task.createdBy);
+      return {
+        ...task,
+        assignedToName: assignedUser?.name,
+        assignedToImageUrl: assignedUser?.imageUrl,
+        createdByName: createdByUser?.name,
+      };
+    });
 
     // Enrich todos
-    const enrichedTodos = await Promise.all(
-      todosWithoutDates.map(async (todo) => {
-        let assignedToName: string | undefined;
-        let assignedToImageUrl: string | undefined;
-
-        if (todo.assignedTo) {
-          const user = await ctx.db
-            .query("users")
-            .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", todo.assignedTo!))
-            .unique();
-          if (user) {
-            assignedToName = user.name;
-            assignedToImageUrl = user.imageUrl;
-          }
-        }
-
-        return {
-          ...todo,
-          assignedToName,
-          assignedToImageUrl,
-        };
-      })
-    );
+    const enrichedTodos = todosWithoutDates.map((todo) => {
+      const assignedUser = todo.assignedTo ? usersByClerkId.get(todo.assignedTo) : undefined;
+      return {
+        ...todo,
+        assignedToName: assignedUser?.name,
+        assignedToImageUrl: assignedUser?.imageUrl,
+      };
+    });
 
     return {
       tasks: enrichedTasks,
@@ -240,11 +236,28 @@ export const getProjectCalendarData = query({
     const startDateStr = args.month + "-01";
     const endDateStr = args.month + "-" + String(lastDay.getUTCDate()).padStart(2, "0");
 
-    // --- Tasks ---
-    const allTasks = await ctx.db
-      .query("tasks")
-      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
-      .collect();
+    const [allTasks, habits, monthCompletions, monthDiaryEntries] = await Promise.all([
+      ctx.db
+        .query("tasks")
+        .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+        .collect(),
+      ctx.db
+        .query("habits")
+        .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+        .collect(),
+      ctx.db
+        .query("habitCompletions")
+        .withIndex("by_project_and_date", (q: any) =>
+          q.eq("projectId", args.projectId).gte("date", startDateStr).lte("date", endDateStr)
+        )
+        .collect(),
+      ctx.db
+        .query("diaryEntries")
+        .withIndex("by_project_and_date", (q: any) =>
+          q.eq("projectId", args.projectId).gte("date", startDateStr).lte("date", endDateStr)
+        )
+        .collect(),
+    ]);
 
     const tasksInRange = allTasks.filter((task) => {
       const s = task.startDate;
@@ -256,34 +269,24 @@ export const getProjectCalendarData = query({
       return taskStart <= endTimestamp && taskEnd >= startTimestamp;
     });
 
-    const enrichedTasks = await Promise.all(
-      tasksInRange.map(async (task) => {
-        let assignedToName: string | undefined;
-        if (task.assignedTo) {
-          const user = await ctx.db
-            .query("users")
-            .withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.assignedTo!))
-            .unique();
-          if (user) assignedToName = user.name;
-        }
-        return {
-          _id: task._id,
-          title: task.title,
-          description: task.description,
-          status: task.status,
-          priority: task.priority,
-          startDate: task.startDate,
-          endDate: task.endDate,
-          assignedToName,
-        };
-      })
+    const usersByClerkId = await fetchUsersByClerkIds(
+      ctx,
+      tasksInRange.map((task) => task.assignedTo ?? null)
     );
 
-    // --- Habits ---
-    const habits = await ctx.db
-      .query("habits")
-      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
-      .collect();
+    const enrichedTasks = tasksInRange.map((task) => {
+      const assignedUser = task.assignedTo ? usersByClerkId.get(task.assignedTo) : undefined;
+      return {
+        _id: task._id,
+        title: task.title,
+        description: task.description,
+        status: task.status,
+        priority: task.priority,
+        startDate: task.startDate,
+        endDate: task.endDate,
+        assignedToName: assignedUser?.name,
+      };
+    });
 
     const activeHabits = habits
       .filter((h) => h.isActive)
@@ -299,33 +302,14 @@ export const getProjectCalendarData = query({
 
     // --- Habit Completions for the month ---
     const completionsByHabitId: Record<string, string[]> = {};
-    // Fetch completions for each date in the range (using index)
-    // We iterate day by day since the index is by_project_and_date with exact date match
-    const dayCount = lastDay.getUTCDate();
-    for (let d = 1; d <= dayCount; d++) {
-      const dateStr = args.month + "-" + String(d).padStart(2, "0");
-      const completions = await ctx.db
-        .query("habitCompletions")
-        .withIndex("by_project_and_date", (q: any) =>
-          q.eq("projectId", args.projectId).eq("date", dateStr)
-        )
-        .collect();
-      for (const c of completions) {
-        const hid = String(c.habitId);
-        if (!completionsByHabitId[hid]) completionsByHabitId[hid] = [];
-        completionsByHabitId[hid].push(dateStr);
-      }
+    for (const completion of monthCompletions) {
+      const habitId = String(completion.habitId);
+      if (!completionsByHabitId[habitId]) completionsByHabitId[habitId] = [];
+      completionsByHabitId[habitId].push(completion.date);
     }
 
     // --- Diary Entries ---
-    const allDiaryEntries = await ctx.db
-      .query("diaryEntries")
-      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
-      .collect();
-
-    const diaryEntries = allDiaryEntries
-      .filter((e) => e.date >= startDateStr && e.date <= endDateStr)
-      .map((e) => ({
+    const diaryEntries = monthDiaryEntries.map((e) => ({
         _id: e._id,
         date: e.date,
         mood: e.mood,

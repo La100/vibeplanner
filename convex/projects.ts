@@ -114,23 +114,32 @@ export const listProjectsForCurrentUser = query({
       .withIndex("by_team", (q) => q.eq("teamId", team._id))
       .collect();
 
+    const tasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_team", (q) => q.eq("teamId", team._id))
+      .collect();
+
+    const taskCountsByProjectId = new Map<string, { total: number; completed: number }>();
+    for (const task of tasks) {
+      const key = String(task.projectId);
+      const stats = taskCountsByProjectId.get(key) ?? { total: 0, completed: 0 };
+      stats.total += 1;
+      if (task.status === "done") stats.completed += 1;
+      taskCountsByProjectId.set(key, stats);
+    }
+
     const projectsWithTasks = await Promise.all(
       projects.map(async (project) => {
-        const [tasks, resolvedImageUrl] = await Promise.all([
-          ctx.db
-            .query("tasks")
-            .withIndex("by_project", (q) => q.eq("projectId", project._id))
-            .collect(),
+        const [stats, resolvedImageUrl] = await Promise.all([
+          Promise.resolve(taskCountsByProjectId.get(String(project._id)) ?? { total: 0, completed: 0 }),
           getProjectImageUrl(project.imageUrl),
         ]);
-        const completedTasks = tasks.filter(
-          (task) => task.status === "done"
-        ).length;
+
         return {
           ...project,
           imageUrl: resolvedImageUrl,
-          taskCount: tasks.length,
-          completedTasks: completedTasks,
+          taskCount: stats.total,
+          completedTasks: stats.completed,
         };
       })
     );
@@ -730,10 +739,9 @@ export const checkUserProjectAccess = query({
       .withIndex("by_team_and_user", q =>
         q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
       )
-      .filter(q => q.eq(q.field("isActive"), true))
       .unique();
 
-    if (!teamMember) {
+    if (!teamMember || !teamMember.isActive) {
       return false;
     }
 
@@ -925,6 +933,14 @@ export const deleteProject = mutation({
       .collect();
 
     for (const habit of habits) {
+      try {
+        await ctx.runMutation(internalAny.messaging.reminders.unscheduleHabitReminder, {
+          habitId: habit._id,
+        });
+      } catch (error) {
+        console.error("Failed to unschedule habit reminder during project delete:", error);
+      }
+
       const completions = await ctx.db
         .query("habitCompletions")
         .withIndex("by_habit_and_date", (q) => q.eq("habitId", habit._id))

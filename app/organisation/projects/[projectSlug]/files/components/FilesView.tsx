@@ -86,10 +86,6 @@ export default function FilesView() {
     currentFolderId ? { folderId: currentFolderId } : "skip"
   );
 
-  const hasAccess = useQuery(apiAny.projects.checkUserProjectAccess, {
-    projectId: project._id,
-  });
-
   const generateUploadUrl = useMutation(apiAny.files.generateUploadUrlWithCustomKey);
   const addFile = useMutation(apiAny.files.addFile);
   const createFolder = useMutation(apiAny.files.createFolder);
@@ -141,16 +137,8 @@ export default function FilesView() {
     }))
   ];
 
-  if (!project || !content || hasAccess === false || (currentFolderId && !currentFolder)) {
+  if (!project || !content || (currentFolderId && !currentFolder)) {
     // This will be handled by Suspense
-    if (hasAccess === false) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-          <h1 className="text-2xl font-bold text-red-600 mb-2">Access Denied</h1>
-          <p className="text-muted-foreground">You don't have permission to access this project.</p>
-        </div>
-      );
-    }
     if (!project) {
        return <div>Project not found.</div>;
     }

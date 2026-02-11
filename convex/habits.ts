@@ -52,10 +52,9 @@ const hasProjectAccess = async (ctx: any, projectId: Id<"projects">): Promise<bo
     .withIndex("by_team_and_user", (q: any) =>
       q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
     )
-    .filter((q: any) => q.eq(q.field("isActive"), true))
-    .first();
+    .unique();
 
-  if (!membership) return false;
+  if (!membership || !membership.isActive) return false;
   return membership.role === "admin" || membership.role === "member";
 };
 
@@ -72,10 +71,9 @@ const getProjectAccessForUser = async (
     .withIndex("by_team_and_user", (q: any) =>
       q.eq("teamId", project.teamId).eq("clerkUserId", clerkUserId)
     )
-    .filter((q: any) => q.eq(q.field("isActive"), true))
-    .first();
+    .unique();
 
-  if (!membership) return null;
+  if (!membership || !membership.isActive) return null;
   if (membership.role !== "admin" && membership.role !== "member") return null;
 
   return { project, membership };
@@ -555,6 +553,14 @@ export const deleteHabit = mutation({
     const hasAccess = await hasProjectAccess(ctx, habit.projectId);
     if (!hasAccess) throw new Error("Access denied");
 
+    try {
+      await ctx.runMutation(internalAny.messaging.reminders.unscheduleHabitReminder, {
+        habitId: args.habitId,
+      });
+    } catch (error) {
+      console.error("Failed to unschedule habit reminder before delete:", error);
+    }
+
     await ctx.db.delete(args.habitId);
 
     const completions = await ctx.db
@@ -581,6 +587,14 @@ export const deleteHabitInternal = internalMutation({
 
     const access = await getProjectAccessForUser(ctx, habit.projectId, args.actorUserId);
     if (!access) throw new Error("Permission denied.");
+
+    try {
+      await ctx.runMutation(internalAny.messaging.reminders.unscheduleHabitReminder, {
+        habitId: args.habitId,
+      });
+    } catch (error) {
+      console.error("Failed to unschedule habit reminder before internal delete:", error);
+    }
 
     await ctx.db.delete(args.habitId);
 
@@ -878,20 +892,21 @@ export const getHabitsWeek = query({
       completionsByHabitId[h._id] = new Set();
     }
 
-    // Fetch completions for each date (small N, ok)
-    for (const date of dates) {
-      const completions = await ctx.db
-        .query("habitCompletions")
-        .withIndex("by_project_and_date", (q) => q.eq("projectId", args.projectId).eq("date", date))
-        .collect();
+    const allCompletionsInRange = await ctx.db
+      .query("habitCompletions")
+      .withIndex("by_project_and_date", (q) =>
+        q.eq("projectId", args.projectId).gte("date", dates[0]).lte("date", dates[dates.length - 1])
+      )
+      .collect();
 
-      for (const c of completions as any[]) {
-        if (!completionsByHabitId[c.habitId]) completionsByHabitId[c.habitId] = new Set();
-        completionsByHabitId[c.habitId].add(date);
-        if (c.value !== undefined) {
-          if (!valuesByHabitId[c.habitId]) valuesByHabitId[c.habitId] = {};
-          valuesByHabitId[c.habitId][date] = c.value;
-        }
+    for (const completion of allCompletionsInRange as any[]) {
+      if (!completionsByHabitId[completion.habitId]) {
+        completionsByHabitId[completion.habitId] = new Set();
+      }
+      completionsByHabitId[completion.habitId].add(completion.date);
+      if (completion.value !== undefined) {
+        if (!valuesByHabitId[completion.habitId]) valuesByHabitId[completion.habitId] = {};
+        valuesByHabitId[completion.habitId][completion.date] = completion.value;
       }
     }
 
@@ -901,10 +916,9 @@ export const getHabitsWeek = query({
     }
 
     const completedSetToday = new Set(
-      (await ctx.db
-        .query("habitCompletions")
-        .withIndex("by_project_and_date", (q) => q.eq("projectId", args.projectId).eq("date", today))
-        .collect()).map((c: any) => c.habitId)
+      allCompletionsInRange
+        .filter((completion: any) => completion.date === today)
+        .map((completion: any) => completion.habitId)
     );
 
     return {

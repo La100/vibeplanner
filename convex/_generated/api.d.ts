@@ -60,7 +60,6 @@ import type * as messaging_types from "../messaging/types.js";
 import type * as messaging_whatsapp from "../messaging/whatsapp.js";
 import type * as messaging_whatsappActions from "../messaging/whatsappActions.js";
 import type * as messaging_whatsappDb from "../messaging/whatsappDb.js";
-import type * as myFunctions from "../myFunctions.js";
 import type * as projects from "../projects.js";
 import type * as rag from "../rag.js";
 import type * as stripe from "../stripe.js";
@@ -128,7 +127,6 @@ declare const fullApi: ApiFromModules<{
   "messaging/whatsapp": typeof messaging_whatsapp;
   "messaging/whatsappActions": typeof messaging_whatsappActions;
   "messaging/whatsappDb": typeof messaging_whatsappDb;
-  myFunctions: typeof myFunctions;
   projects: typeof projects;
   rag: typeof rag;
   stripe: typeof stripe;

@@ -10,16 +10,26 @@ const internalAny = require("../_generated/api").internal as any;
 export const sendHabitReminder = internalAction({
   args: {
     habitId: v.id("habits"),
+    expectedReminderAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const habit = await ctx.runQuery(internalAny.habits.getHabitByIdInternal, {
       habitId: args.habitId,
     });
-    const reminderPlan = normalizeReminderPlan((habit as any)?.reminderPlan);
     if (!habit) {
-      console.log("[HABIT REMINDER] Habit not found", { habitId: args.habitId });
       return { skipped: true, reason: "habit_not_found" };
     }
+    const reminderPlan = normalizeReminderPlan((habit as any)?.reminderPlan);
+    const nextReminderAt = (habit as any).nextReminderAt as number | undefined;
+    if (args.expectedReminderAt !== undefined && nextReminderAt !== args.expectedReminderAt) {
+      return {
+        skipped: true,
+        reason: "stale_schedule",
+        expectedReminderAt: args.expectedReminderAt,
+        currentNextReminderAt: nextReminderAt,
+      };
+    }
+
     if (!habit.isActive || (!habit.reminderTime && reminderPlan.length === 0)) {
       console.log("[HABIT REMINDER] Inactive or missing reminder", {
         habitId: habit._id,

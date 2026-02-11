@@ -21,10 +21,9 @@ const getProjectAccessForUser = async (
     .withIndex("by_team_and_user", (q: any) =>
       q.eq("teamId", project.teamId).eq("clerkUserId", clerkUserId)
     )
-    .filter((q: any) => q.eq(q.field("isActive"), true))
-    .first();
+    .unique();
 
-  if (!membership) return null;
+  if (!membership || !membership.isActive) return null;
   if (membership.role !== "admin" && membership.role !== "member") return null;
 
   return { project, membership };
@@ -36,6 +35,16 @@ const resolveFileType = (mimeType: string) => {
   if (mimeType === "application/pdf" || mimeType.includes("document")) return "document";
   if (mimeType.includes("dwg") || mimeType.includes("dxf")) return "drawing";
   return "other";
+};
+
+const getTeamLatestFilesSize = async (ctx: any, teamId: Id<"teams">): Promise<number> => {
+  const files = await ctx.db
+    .query("files")
+    .withIndex("by_team", (q: any) => q.eq("teamId", teamId))
+    .filter((q: any) => q.eq(q.field("isLatest"), true))
+    .collect();
+
+  return files.reduce((sum: number, file: any) => sum + (file.size || 0), 0);
 };
 
 // Get team storage usage in bytes
@@ -59,23 +68,7 @@ export const getTeamStorageUsage = query({
       throw new Error("Team not found");
     }
 
-    // Get all projects for this team
-    const projects = await ctx.db
-      .query("projects")
-      .withIndex("by_team", q => q.eq("teamId", args.teamId))
-      .collect();
-
-    // Sum up all file sizes across projects
-    let totalBytes = 0;
-    for (const project of projects) {
-      const files = await ctx.db
-        .query("files")
-        .withIndex("by_project", q => q.eq("projectId", project._id))
-        .filter(q => q.eq(q.field("isLatest"), true))
-        .collect();
-
-      totalBytes += files.reduce((sum, file) => sum + (file.size || 0), 0);
-    }
+    const totalBytes = await getTeamLatestFilesSize(ctx, args.teamId);
 
     const plan = (team.subscriptionPlan || "free") as keyof typeof SUBSCRIPTION_PLANS;
     const limits = team.subscriptionLimits || SUBSCRIPTION_PLANS[plan];
@@ -107,23 +100,7 @@ export const checkStorageLimit = internalQuery({
       return { allowed: false, message: "Team not found" };
     }
 
-    // Get all projects for this team
-    const projects = await ctx.db
-      .query("projects")
-      .withIndex("by_team", q => q.eq("teamId", args.teamId))
-      .collect();
-
-    // Sum up all file sizes
-    let totalBytes = 0;
-    for (const project of projects) {
-      const files = await ctx.db
-        .query("files")
-        .withIndex("by_project", q => q.eq("projectId", project._id))
-        .filter(q => q.eq(q.field("isLatest"), true))
-        .collect();
-
-      totalBytes += files.reduce((sum, file) => sum + (file.size || 0), 0);
-    }
+    const totalBytes = await getTeamLatestFilesSize(ctx, args.teamId);
 
     const plan = (team.subscriptionPlan || "free") as keyof typeof SUBSCRIPTION_PLANS;
     const limits = team.subscriptionLimits || SUBSCRIPTION_PLANS[plan];
@@ -447,10 +424,17 @@ export const getProjectFolders = query({
 
     if (!hasAccess || !hasAccess.isActive) return [];
 
+    if (args.parentFolderId) {
+      return await ctx.db
+        .query("folders")
+        .withIndex("by_parent", (q) => q.eq("parentFolderId", args.parentFolderId))
+        .collect();
+    }
+
     return await ctx.db
       .query("folders")
       .withIndex("by_project", q => q.eq("projectId", args.projectId))
-      .filter(q => q.eq(q.field("parentFolderId"), args.parentFolderId))
+      .filter(q => q.eq(q.field("parentFolderId"), undefined))
       .collect();
   },
 });
@@ -478,11 +462,16 @@ export const getProjectFiles = query({
 
     if (!hasAccess || !hasAccess.isActive) return [];
 
-    const files = await ctx.db
-      .query("files")
-      .withIndex("by_project", q => q.eq("projectId", args.projectId))
-      .filter(q => q.eq(q.field("folderId"), args.folderId))
-      .collect();
+    const files = args.folderId
+      ? await ctx.db
+          .query("files")
+          .withIndex("by_folder", (q) => q.eq("folderId", args.folderId))
+          .collect()
+      : await ctx.db
+          .query("files")
+          .withIndex("by_project", q => q.eq("projectId", args.projectId))
+          .filter(q => q.eq(q.field("folderId"), undefined))
+          .collect();
 
     const visibleFiles = files.filter((file) => file.origin !== "ai");
 
@@ -529,18 +518,28 @@ export const getProjectContent = query({
     if (!hasAccess || !hasAccess.isActive) return { folders: [], files: [] };
 
     // Pobierz foldery
-    const folders = await ctx.db
-      .query("folders")
-      .withIndex("by_project", q => q.eq("projectId", args.projectId))
-      .filter(q => q.eq(q.field("parentFolderId"), args.folderId))
-      .collect();
+    const folders = args.folderId
+      ? await ctx.db
+          .query("folders")
+          .withIndex("by_parent", (q) => q.eq("parentFolderId", args.folderId))
+          .collect()
+      : await ctx.db
+          .query("folders")
+          .withIndex("by_project", q => q.eq("projectId", args.projectId))
+          .filter(q => q.eq(q.field("parentFolderId"), undefined))
+          .collect();
 
     // Pobierz pliki
-    const files = await ctx.db
-      .query("files")
-      .withIndex("by_project", q => q.eq("projectId", args.projectId))
-      .filter(q => q.eq(q.field("folderId"), args.folderId))
-      .collect();
+    const files = args.folderId
+      ? await ctx.db
+          .query("files")
+          .withIndex("by_folder", (q) => q.eq("folderId", args.folderId))
+          .collect()
+      : await ctx.db
+          .query("files")
+          .withIndex("by_project", q => q.eq("projectId", args.projectId))
+          .filter(q => q.eq(q.field("folderId"), undefined))
+          .collect();
 
     const visibleFiles = files.filter((file) => file.origin !== "ai");
 

@@ -18,10 +18,9 @@ const hasProjectAccess = async (ctx: any, projectId: Id<"projects">, requireWrit
     .withIndex("by_team_and_user", (q: any) =>
       q.eq("teamId", project.teamId).eq("clerkUserId", identity.subject)
     )
-    .filter((q: any) => q.eq(q.field("isActive"), true))
-    .first();
+    .unique();
 
-  if (!membership) return false;
+  if (!membership || !membership.isActive) return false;
 
   if (membership.role === 'admin' || membership.role === 'member') {
     return true;
@@ -43,10 +42,9 @@ const getProjectAccessForUser = async (
     .withIndex("by_team_and_user", (q: any) =>
       q.eq("teamId", project.teamId).eq("clerkUserId", clerkUserId)
     )
-    .filter((q: any) => q.eq(q.field("isActive"), true))
-    .first();
+    .unique();
 
-  if (!membership) return null;
+  if (!membership || !membership.isActive) return null;
   if (membership.role !== "admin" && membership.role !== "member") return null;
 
   return { project, membership };
@@ -58,6 +56,29 @@ const hasTaskAccess = async (ctx: any, taskId: Id<"tasks">, requireWriteAccess =
   if (!task) return false;
   return await hasProjectAccess(ctx, task.projectId, requireWriteAccess);
 }
+
+const fetchUsersByClerkIds = async (
+  ctx: any,
+  clerkUserIds: Iterable<string | null | undefined>
+) => {
+  const uniqueIds = [...new Set([...clerkUserIds].filter((id): id is string => Boolean(id)))];
+  if (uniqueIds.length === 0) return new Map<string, any>();
+
+  const users = await Promise.all(
+    uniqueIds.map((clerkUserId) =>
+      ctx.db
+        .query("users")
+        .withIndex("by_clerk_user_id", (q: any) => q.eq("clerkUserId", clerkUserId))
+        .unique()
+    )
+  );
+
+  const byClerkId = new Map<string, any>();
+  for (const user of users) {
+    if (user) byClerkId.set(user.clerkUserId, user);
+  }
+  return byClerkId;
+};
 
 // ====== QUERIES ======
 
@@ -79,7 +100,10 @@ export const listProjectTasks = query({
     const hasAccess = await hasProjectAccess(ctx, args.projectId);
     if (!hasAccess) return [];
 
-    let tasks = await ctx.db.query("tasks").withIndex("by_project", (q) => q.eq("projectId", args.projectId)).collect();
+    let tasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
 
     // Apply filters
     if (args.filters) {
@@ -96,8 +120,9 @@ export const listProjectTasks = query({
     // Apply sorting
     if (args.sortBy) {
       tasks.sort((a, b) => {
-        const fieldA = a[args.sortBy as keyof typeof a] as any;
-        const fieldB = b[args.sortBy as keyof typeof b] as any;
+        const sortKey = args.sortBy === "createdAt" ? "_creationTime" : args.sortBy;
+        const fieldA = a[sortKey as keyof typeof a] as any;
+        const fieldB = b[sortKey as keyof typeof b] as any;
         if (fieldA == null && fieldB == null) return 0;
         if (fieldA == null) return args.sortOrder === 'desc' ? 1 : -1;
         if (fieldB == null) return args.sortOrder === 'desc' ? -1 : 1;
@@ -108,19 +133,36 @@ export const listProjectTasks = query({
       });
     }
 
-    return await Promise.all(
-      tasks.map(async (task) => {
-        let assignedToName: string | undefined;
-        let assignedToImageUrl: string | undefined;
-        if (task.assignedTo) {
-          const user = await ctx.db.query("users").withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.assignedTo!)).unique();
-          if (user) { assignedToName = user.name; assignedToImageUrl = user.imageUrl; }
-        }
-        const createdByUser = await ctx.db.query("users").withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.createdBy)).unique();
-        const commentCount = (await ctx.db.query("comments").withIndex("by_task", q => q.eq("taskId", task._id)).collect()).length;
-        return { ...task, assignedToName, assignedToImageUrl, createdByName: createdByUser?.name, commentCount };
-      })
+    const usersByClerkId = await fetchUsersByClerkIds(
+      ctx,
+      tasks.flatMap((task) => [task.assignedTo ?? null, task.createdBy])
     );
+
+    const comments = await ctx.db
+      .query("comments")
+      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+      .collect();
+
+    const commentCountByTaskId = new Map<string, number>();
+    for (const comment of comments) {
+      if (!comment.taskId) continue;
+      const taskId = String(comment.taskId);
+      commentCountByTaskId.set(taskId, (commentCountByTaskId.get(taskId) ?? 0) + 1);
+    }
+
+    return tasks.map((task) => {
+      const assignedUser = task.assignedTo ? usersByClerkId.get(task.assignedTo) : undefined;
+      const createdByUser = usersByClerkId.get(task.createdBy);
+      const commentCount = commentCountByTaskId.get(String(task._id)) ?? 0;
+
+      return {
+        ...task,
+        assignedToName: assignedUser?.name,
+        assignedToImageUrl: assignedUser?.imageUrl,
+        createdByName: createdByUser?.name,
+        commentCount,
+      };
+    });
   },
 });
 
@@ -282,18 +324,14 @@ export const getTask = query({
     const task = await ctx.db.get(args.taskId);
     if (!task) return null;
 
-    let assignedToName, assignedToImageUrl;
-    if (task.assignedTo) {
-      const user = await ctx.db.query("users").withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.assignedTo!)).unique();
-      assignedToName = user?.name ?? user?.email;
-      assignedToImageUrl = user?.imageUrl;
-    }
-    const createdByUser = await ctx.db.query("users").withIndex("by_clerk_user_id", (q) => q.eq("clerkUserId", task.createdBy)).unique();
+    const usersByClerkId = await fetchUsersByClerkIds(ctx, [task.assignedTo ?? null, task.createdBy]);
+    const assignedUser = task.assignedTo ? usersByClerkId.get(task.assignedTo) : undefined;
+    const createdByUser = usersByClerkId.get(task.createdBy);
 
     return {
       ...task,
-      assignedToName,
-      assignedToImageUrl,
+      assignedToName: assignedUser?.name ?? assignedUser?.email,
+      assignedToImageUrl: assignedUser?.imageUrl,
       createdByName: createdByUser?.name
     };
   },
@@ -305,12 +343,15 @@ export const getCommentsForTask = query({
     const hasAccess = await hasTaskAccess(ctx, args.taskId);
     if (!hasAccess) return [];
     const comments = await ctx.db.query("comments").withIndex("by_task", (q) => q.eq("taskId", args.taskId)).order("desc").collect();
-    return Promise.all(
-      comments.map(async (comment) => {
-        const author = await ctx.db.query("users").withIndex("by_clerk_user_id", q => q.eq("clerkUserId", comment.authorId)).unique();
-        return { ...comment, authorName: author?.name, authorImageUrl: author?.imageUrl };
-      })
+    const usersByClerkId = await fetchUsersByClerkIds(
+      ctx,
+      comments.map((comment) => comment.authorId)
     );
+
+    return comments.map((comment) => {
+      const author = usersByClerkId.get(comment.authorId);
+      return { ...comment, authorName: author?.name, authorImageUrl: author?.imageUrl };
+    });
   }
 });
 
@@ -325,16 +366,20 @@ export const listTeamTasks = query({
       .withIndex("by_team", q => q.eq("teamId", args.teamId))
       .collect();
 
-    const tasksWithProjects = await Promise.all(
-      tasks.map(async (task) => {
-        const project = await ctx.db.get(task.projectId);
-        return {
-          ...task,
-          projectName: project?.name || "Unknown Project",
-          projectSlug: project?.slug || "",
-        };
-      })
-    );
+    const projects = await ctx.db
+      .query("projects")
+      .withIndex("by_team", (q) => q.eq("teamId", args.teamId))
+      .collect();
+    const projectById = new Map(projects.map((project) => [String(project._id), project]));
+
+    const tasksWithProjects = tasks.map((task) => {
+      const project = projectById.get(String(task.projectId));
+      return {
+        ...task,
+        projectName: project?.name || "Unknown Project",
+        projectSlug: project?.slug || "",
+      };
+    });
 
     return tasksWithProjects;
   }

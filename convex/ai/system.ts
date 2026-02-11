@@ -3,6 +3,7 @@ import { mutation, query, internalQuery, internalMutation } from "../_generated/
 import { getCurrentDateTime } from "./helpers/contextBuilder";
 
 const MAX_LONG_TERM_MEMORY_CHARS = 8000;
+const MAX_DAILY_MEMORY_CHARS = 12000;
 
 function normalizeMemoryEntry(content: string): string {
     return content.trim().replace(/\s+/g, " ");
@@ -199,7 +200,11 @@ export const appendDailyMemory = internalMutation({
 
         if (existing) {
             // Append to existing
-            const newContent = existing.content + "\n" + args.content;
+            const combined = existing.content + "\n" + args.content;
+            const newContent =
+                combined.length > MAX_DAILY_MEMORY_CHARS
+                    ? `...[older entries truncated]\n${combined.slice(-MAX_DAILY_MEMORY_CHARS)}`
+                    : combined;
             const threadIds = existing.threadIds.includes(args.threadId)
                 ? existing.threadIds
                 : [...existing.threadIds, args.threadId];

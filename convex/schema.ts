@@ -193,6 +193,8 @@ export default defineSchema({
         })
       )
     ),
+    scheduledReminderId: v.optional(v.string()),
+    nextReminderAt: v.optional(v.number()), // Unix timestamp (ms) for currently scheduled reminder
     isActive: v.boolean(),
     source: v.optional(v.union(
       v.literal("user"),

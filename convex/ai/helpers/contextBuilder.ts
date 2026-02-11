@@ -6,8 +6,30 @@
 
 import type { ProjectContextSnapshot, TeamMember } from "../types";
 
+type BuildContextOptions = {
+  maxTaskDescriptionChars?: number;
+  maxHabitDescriptionChars?: number;
+  maxDiaryContentChars?: number;
+  reminderPlanPreviewLimit?: number;
+};
+
+const DEFAULT_CONTEXT_OPTIONS: Required<BuildContextOptions> = {
+  maxTaskDescriptionChars: 200,
+  maxHabitDescriptionChars: 400,
+  maxDiaryContentChars: 300,
+  reminderPlanPreviewLimit: 3,
+};
+
 export const buildContextFromSnapshot = (snapshot: ProjectContextSnapshot): string => {
+  return buildContextFromSnapshotWithOptions(snapshot, DEFAULT_CONTEXT_OPTIONS);
+};
+
+function buildContextFromSnapshotWithOptions(
+  snapshot: ProjectContextSnapshot,
+  options: BuildContextOptions,
+): string {
   const parts: string[] = [];
+  const resolved = { ...DEFAULT_CONTEXT_OPTIONS, ...options };
 
   const truncate = (value: string, max = 200): string => {
     const trimmed = value.trim();
@@ -45,7 +67,9 @@ export const buildContextFromSnapshot = (snapshot: ProjectContextSnapshot): stri
       const dateRange = formatDateRange(task.startDate, task.endDate);
       const assignee = task.assignedToName || task.assignedTo;
       const cost = typeof task.cost === "number" ? ` | cost: ${task.cost}` : "";
-      const description = task.description ? ` | desc: ${truncate(task.description)}` : "";
+      const description = task.description
+        ? ` | desc: ${truncate(task.description, resolved.maxTaskDescriptionChars)}`
+        : "";
       parts.push(
         `- "${task.title}" [${task._id}] - ${task.status} | ${task.priority || "none"}${dateRange}${assignee ? ` | assigned: ${assignee}` : ""}${cost}${description}`,
       );
@@ -66,12 +90,14 @@ export const buildContextFromSnapshot = (snapshot: ProjectContextSnapshot): stri
       const phase = habit.todayPhaseLabel ? ` | phase: ${habit.todayPhaseLabel}` : "";
       const reminderPlanPreview = habit.reminderPlan?.length
         ? ` | plan: ${habit.reminderPlan
-          .slice(0, 3)
+          .slice(0, resolved.reminderPlanPreviewLimit)
           .map((entry) => `${entry.date} ${entry.reminderTime}`)
-          .join(", ")}${habit.reminderPlan.length > 3 ? ", ..." : ""}`
+          .join(", ")}${habit.reminderPlan.length > resolved.reminderPlanPreviewLimit ? ", ..." : ""}`
         : "";
       const status = habit.completedToday ? " | completed today" : "";
-      const desc = habit.description ? ` | desc: ${truncate(habit.description, 400)}` : "";
+      const desc = habit.description
+        ? ` | desc: ${truncate(habit.description, resolved.maxHabitDescriptionChars)}`
+        : "";
       parts.push(
         `- "${habit.name}" [${habit._id}]${frequency}${schedule}${target}${reminder}${phase}${reminderPlanPreview}${status}${desc}`,
       );
@@ -83,7 +109,7 @@ export const buildContextFromSnapshot = (snapshot: ProjectContextSnapshot): stri
     snapshot.diaryEntries.forEach((entry) => {
       const moodTag = entry.mood ? ` [mood: ${entry.mood}]` : "";
       const sourceTag = entry.source === "assistant" ? " (AI)" : "";
-      const contentPreview = truncate(entry.content, 300);
+      const contentPreview = truncate(entry.content, resolved.maxDiaryContentChars);
       parts.push(
         `- ${entry.date}${moodTag}${sourceTag}: ${contentPreview}`,
       );
@@ -91,6 +117,49 @@ export const buildContextFromSnapshot = (snapshot: ProjectContextSnapshot): stri
   }
 
   return parts.join('\n');
+}
+
+const COMPACT_TASK_LIMIT = 16;
+const COMPACT_DONE_TASK_LIMIT = 4;
+const COMPACT_HABIT_LIMIT = 12;
+const COMPACT_DIARY_LIMIT = 3;
+
+export const buildCompactContextFromSnapshot = (snapshot: ProjectContextSnapshot): string => {
+  const openTasks = snapshot.tasks.filter((task) => task.status !== "done");
+  const doneTasks = snapshot.tasks.filter((task) => task.status === "done");
+  const activeHabits = snapshot.habits.filter((habit) => habit.isActive);
+
+  const compactSnapshot: ProjectContextSnapshot = {
+    ...snapshot,
+    tasks: [
+      ...openTasks.slice(0, COMPACT_TASK_LIMIT),
+      ...doneTasks.slice(0, COMPACT_DONE_TASK_LIMIT),
+    ],
+    habits: activeHabits.slice(0, COMPACT_HABIT_LIMIT),
+    diaryEntries: snapshot.diaryEntries.slice(0, COMPACT_DIARY_LIMIT),
+  };
+
+  const compactContext = buildContextFromSnapshotWithOptions(compactSnapshot, {
+    maxTaskDescriptionChars: 120,
+    maxHabitDescriptionChars: 180,
+    maxDiaryContentChars: 160,
+    reminderPlanPreviewLimit: 2,
+  });
+
+  const omittedTasks = Math.max(0, snapshot.tasks.length - compactSnapshot.tasks.length);
+  const omittedHabits = Math.max(0, snapshot.habits.length - compactSnapshot.habits.length);
+  const omittedDiary = Math.max(0, snapshot.diaryEntries.length - compactSnapshot.diaryEntries.length);
+
+  const truncationHints: string[] = [];
+  if (omittedTasks > 0) truncationHints.push(`tasks omitted: ${omittedTasks}`);
+  if (omittedHabits > 0) truncationHints.push(`habits omitted: ${omittedHabits}`);
+  if (omittedDiary > 0) truncationHints.push(`diary entries omitted: ${omittedDiary}`);
+
+  const truncationLine = truncationHints.length
+    ? `\nCONTEXT COMPACTED (${truncationHints.join(" | ")}). Use search tools for full details.`
+    : "";
+
+  return `${compactContext}\n\nPROJECT SUMMARY: ${snapshot.summary}${truncationLine}`;
 };
 
 export const buildTeamMembersContext = (teamMembers: TeamMember[]): string => {
