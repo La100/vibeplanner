@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Brain, Save, Loader2, RotateCcw, Sparkles, Database, X, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { getPreset } from "@/convex/ai/presets";
+import { DEFAULT_ASSISTANT_SOUL } from "@/convex/ai/souls/client";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,7 +45,7 @@ export default function SoulPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
-  const defaultSoul = getPreset(projectData?.assistantPreset || "custom")?.defaultSoul || "";
+  const defaultSoul = getPreset(projectData?.assistantPreset || "")?.defaultSoul || DEFAULT_ASSISTANT_SOUL;
   const memoryItems = parseMemoryItems(memoryContent || "");
 
   // Initialize soul from project

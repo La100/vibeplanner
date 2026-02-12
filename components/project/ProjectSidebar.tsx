@@ -44,6 +44,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { resolveAssistantImageUrl } from "@/lib/assistantImage";
 
 function ProjectSidebarContent() {
   const params = useParams<{ projectSlug: string }>();
@@ -69,7 +70,7 @@ function ProjectSidebarContent() {
 
   const footerItems = [
     { href: "/help", label: "Help", icon: LifeBuoy },
-    { href: `/organisation/projects/${params.projectSlug}/settings`, label: "Settings", icon: Settings2 },
+    { href: `/organisation/projects/${params.projectSlug}/settings`, label: "Project", icon: Settings2 },
   ];
 
   const userInitial =
@@ -77,6 +78,10 @@ function ProjectSidebarContent() {
     user?.firstName?.charAt(0) ||
     user?.primaryEmailAddress?.emailAddress?.charAt(0) ||
     "U";
+  const resolvedAssistantImageUrl = resolveAssistantImageUrl({
+    imageUrl: project?.imageUrl,
+    assistantPreset: project?.assistantPreset,
+  });
 
   const handleLinkClick = () => {
     setOpenMobile(false);
@@ -114,10 +119,10 @@ function ProjectSidebarContent() {
           </Tooltip>
 
           <div className="flex items-center gap-3 px-1 group-data-[collapsible=icon]:justify-center">
-            {project?.imageUrl ? (
+            {resolvedAssistantImageUrl ? (
               <div className="relative h-10 w-10 overflow-hidden rounded-full border border-sidebar-border/40">
                 <NextImage
-                  src={project.imageUrl}
+                  src={resolvedAssistantImageUrl}
                   alt={project.name || "Project"}
                   fill
                   className="object-cover"

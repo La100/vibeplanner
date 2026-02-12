@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, query, mutation } from "./_generated/server";
 import { Id, Doc } from "./_generated/dataModel";
-import { getPreset } from "./ai/presets.server";
+import { getPreset } from "./ai/presets";
+import { DEFAULT_ASSISTANT_SOUL } from "./ai/souls/client";
 import { r2 } from "./files";
 import { components } from "./_generated/api";
 const internalAny = require("./_generated/api").internal as any;
@@ -199,7 +200,7 @@ export const createProjectInOrg = mutation({
       v.literal("custom"),
       v.literal("gymbro"),
       v.literal("martin"),
-      v.literal("buddha"),
+      v.literal("monk"),
       v.literal("marcus"),
       v.literal("startup"),
     )),
@@ -274,11 +275,11 @@ export const createProjectInOrg = mutation({
     const resolvedPreset = args.assistantPreset ?? "custom";
     const preset = getPreset(resolvedPreset);
     // Copy SOUL from preset to project (each project has its own SOUL)
-    const projectSoul = args.customAiPrompt || preset?.defaultSoul || "";
+    const projectSoul = args.customAiPrompt || preset?.defaultSoul || DEFAULT_ASSISTANT_SOUL;
 
     const shouldStartOnboarding = resolvedPreset === "gymbro"
       || resolvedPreset === "martin"
-      || resolvedPreset === "buddha"
+      || resolvedPreset === "monk"
       || resolvedPreset === "marcus"
       || resolvedPreset === "startup"
       || (resolvedPreset === "custom" && args.assistantOnboardingEnabled);
@@ -502,7 +503,7 @@ export const updateProject = mutation({
       v.literal("custom"),
       v.literal("gymbro"),
       v.literal("martin"),
-      v.literal("buddha"),
+      v.literal("monk"),
       v.literal("marcus"),
       v.literal("startup"),
     )),
@@ -553,7 +554,7 @@ export const updateProject = mutation({
     const assistantOnboardingUpdate =
       assistantPreset === undefined
         ? {}
-        : assistantPreset === "gymbro" || assistantPreset === "martin" || assistantPreset === "buddha" || assistantPreset === "marcus" || assistantPreset === "startup"
+        : assistantPreset === "gymbro" || assistantPreset === "martin" || assistantPreset === "monk" || assistantPreset === "marcus" || assistantPreset === "startup"
           ? {
             assistantPreset,
             assistantOnboarding:
@@ -855,13 +856,7 @@ export const deleteProject = mutation({
       await ctx.db.delete(thread._id);
     }
 
-    // Delete AI token usage + long-term memory for this project
-    const tokenUsage = await ctx.db
-      .query("aiTokenUsage")
-      .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
-      .collect();
-    await Promise.all(tokenUsage.map((u) => ctx.db.delete(u._id)));
-
+    // Keep aiTokenUsage records to preserve billing usage history after assistant deletion.
     const longTermMemories = await ctx.db
       .query("aiLongTermMemories")
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))

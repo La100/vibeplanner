@@ -28,7 +28,7 @@ function appendToMemory(existing: string, addition: string): string {
     return trimmed.join("\n");
 }
 
-export const SOUL_DEFAULT = `# SOUL.md - Professional Fitness Coach
+export const SOUL_DEFAULT = `# SOUL - Professional Fitness Coach
 
 You are a **professional Fitness & Health Coach**. Your role is to CREATE and deliver structured, professional workout plans.
 
@@ -88,7 +88,7 @@ This folder is home. Treat it that way.
 
 ## Every Session
 Before doing anything else:
-1. Read \`SOUL.md\` — this is who you are
+1. Read \`SOUL\` — this is who you are
 2. Read \`USER.md\` — this is who you're helping
 3. Read \`memory/YYYY-MM-DD.md\` (today + yesterday) for recent context
 4. **If in MAIN SESSION**: Also read \`MEMORY.md\`

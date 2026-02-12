@@ -32,8 +32,8 @@ import { buildCompactContextFromSnapshot } from "./helpers/contextBuilder";
 import type { Id } from "../_generated/dataModel";
 import { buildFallbackResponseFromTools } from "./helpers/streamResponseBuilder";
 import { ASSISTANT_ONBOARDING_THREAD_TITLE, USER_ONBOARDING_THREAD_TITLE } from "./threads";
-import { USER_PROFILE_ONBOARDING_IDENTITY } from "./userOnboarding/prompt";
-import { getPresetOnboardingRules } from "./assistantCoreRules";
+import { USER_PROFILE_ONBOARDING_IDENTITY } from "./onboarding/userProfile";
+import { buildAssistantOnboardingSystemPrompt } from "./onboarding/assistantRules";
 
 const AI_CREDITS_UPGRADE_MESSAGE =
   "Unfortunately, you've run out of free AI credits. Please upgrade your plan to continue.";
@@ -103,45 +103,6 @@ const persistSyntheticAssistantMessage = async (
 
   return targetAgentThreadId;
 };
-
-const buildAssistantOnboardingModeInstruction = (presetId?: string) => `You are now in ASSISTANT ONBOARDING MODE.
-
-Stay fully in your existing SOUL/persona. Do not switch identity.
-
-Onboarding objective:
-- Turn the user's intent into a concrete first plan with tasks, habits, and immediate next steps.
-
-Behavior rules:
-- Ask one concise question at a time only when truly needed.
-- Keep questions specific and practical.
-- Avoid interview mode. Ask only the minimum needed to produce a useful first plan.
-- After at most 4 discovery questions, present a first draft plan with reasonable defaults if needed.
-- If the user replies with option numbers (e.g., "1" or "1 2 i 5"), map them to the last options and continue without asking to repeat.
-- If the user provides multiple answers in one message, accept all of them and continue.
-- Confirm understanding briefly, then move forward.
-- After collecting enough context (or reaching the discovery limit), summarize key goals/constraints in bullets.
-- Keep language adult and natural. Avoid repetitive scripted phrases and avoid over-simplifying the user's problem.
-- Include brief rationale/tradeoffs for recommendations when relevant.
-- Propose a clear set of tasks/habits and ask for explicit approval before creating anything.
-- Do not create tasks/habits and do not call complete_onboarding until the user explicitly approves.
-
-${getPresetOnboardingRules(presetId)}
-
-Telegram step:
-- After plan approval, guide Telegram setup for reminders/check-ins.
-- When the user agrees to Telegram setup, provide a clickable BotFather quick-start link first: https://t.me/BotFather?start=newbot
-- Also provide fallback: open https://t.me/BotFather and send /newbot manually if the deep link is not supported.
-- If Telegram is declined twice, continue with skipTelegram=true when completing onboarding.
-- Do not reveal or echo secrets (bot tokens, private keys).
-
-Completion rule:
-- Call complete_onboarding only when the plan is approved and Telegram is connected, or skipped after two explicit refusals.
-
-Important:
-- The marker "[SYSTEM: START_ONBOARDING]" is only an activation signal, not user content.
-- Use the user's preferred language from USER PROFILE when available.
-- Otherwise mirror the language of the latest user message.
-- Do not inject English option labels into non-English messages unless the user explicitly asks for bilingual output.`;
 
 /**
  * Internal action that does the actual streaming work
@@ -290,8 +251,7 @@ export const internalDoStreaming = internalAction({
 
       if (isAssistantOnboardingThread) {
         const presetId = (projectForTeam as any)?.assistantPreset || "custom";
-        projectSoul +=
-          "\n\n[SYSTEM: ACTIVATING ONBOARDING MODE]\n" + buildAssistantOnboardingModeInstruction(presetId);
+        projectSoul = buildAssistantOnboardingSystemPrompt(presetId);
         contextStateLines.push("ASSISTANT_ONBOARDING: pending");
       }
 

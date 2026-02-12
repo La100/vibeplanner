@@ -8,33 +8,36 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { UploadCloud, Trash2, MessageCircle, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { useProject } from "@/components/providers/ProjectProvider";
 import { MessagingConnectionDialog } from "./MessagingConnectionDialog";
 import { ConnectedChannelsList } from "./ConnectedChannelsList";
-import { ASSISTANT_PRESETS, getPreset } from "@/convex/ai/presets";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Id } from "@/convex/_generated/dataModel";
+import { resolveAssistantImageUrl } from "@/lib/assistantImage";
 
 export default function AssistantSettingsPage() {
   const { project } = useProject();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [assistantPreset, setAssistantPreset] = useState(project?.assistantPreset || "custom");
   const [name, setName] = useState(project?.name || "");
   const [telegramBotUsername, setTelegramBotUsername] = useState(project?.telegramBotUsername || "");
   const [telegramBotToken, setTelegramBotToken] = useState(project?.telegramBotToken || "");
@@ -45,6 +48,7 @@ export default function AssistantSettingsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [showSavedModal, setShowSavedModal] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialSyncRef = useRef(false);
   const savedModalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -68,7 +72,6 @@ export default function AssistantSettingsPage() {
   useEffect(() => {
     if (!project) return;
     initialSyncRef.current = false;
-    setAssistantPreset(project.assistantPreset || "custom");
     setName(project.name || "");
     setTelegramBotUsername(project.telegramBotUsername || "");
     setTelegramBotToken(project.telegramBotToken || "");
@@ -99,20 +102,14 @@ export default function AssistantSettingsPage() {
     };
   }, []);
 
-  const currentPreset = useMemo(() => getPreset(assistantPreset), [assistantPreset]);
-
-  const handlePresetSelect = (presetId: string) => {
-    const previousPreset = getPreset(assistantPreset);
-    const nextPreset = getPreset(presetId);
-
-    const previousDefaultName = previousPreset?.name || "";
-    const nextDefaultName = nextPreset?.name || "";
-    const isNameDefault = name === previousDefaultName || !name;
-    const nextName = isNameDefault ? nextDefaultName : name;
-
-    setAssistantPreset(presetId as "custom" | "gymbro" | "martin" | "buddha" | "marcus" | "startup");
-    setName(nextName);
-  };
+  const resolvedAssistantImageUrl = useMemo(
+    () =>
+      resolveAssistantImageUrl({
+        imageUrl: project?.imageUrl,
+        assistantPreset: project?.assistantPreset,
+      }),
+    [project?.assistantPreset, project?.imageUrl],
+  );
 
   const showSavedConfirmation = () => {
     if (savedModalTimerRef.current) {
@@ -133,7 +130,6 @@ export default function AssistantSettingsPage() {
       await updateProject({
         projectId: project._id,
         name: name.trim(),
-        assistantPreset: assistantPreset as "gymbro" | "custom" | "martin" | "buddha" | "marcus" | "startup" | undefined,
         telegramBotUsername: telegramBotUsername.trim() || undefined,
         telegramBotToken: telegramBotToken.trim() || undefined,
         whatsappNumber: whatsappNumber.trim() || undefined,
@@ -146,7 +142,6 @@ export default function AssistantSettingsPage() {
       setIsSaving(false);
     }
   }, [
-    assistantPreset,
     name,
     project?._id,
     telegramBotToken,
@@ -241,7 +236,6 @@ export default function AssistantSettingsPage() {
       saveSettings();
     }, 700);
   }, [
-    assistantPreset,
     name,
     telegramBotUsername,
     telegramBotToken,
@@ -277,11 +271,10 @@ export default function AssistantSettingsPage() {
 
   const handleDelete = async () => {
     if (!project?._id) return;
-    const confirmed = window.confirm("Delete this assistant permanently? This cannot be undone.");
-    if (!confirmed) return;
     try {
       setIsDeleting(true);
       await deleteProject({ projectId: project._id });
+      setDeleteDialogOpen(false);
       toast.success("Assistant deleted");
       router.push("/organisation");
     } catch (error) {
@@ -350,9 +343,9 @@ export default function AssistantSettingsPage() {
                         alt="Selected assistant"
                         className="h-full w-full object-cover"
                       />
-                    ) : project?.imageUrl ? (
+                    ) : resolvedAssistantImageUrl ? (
                       <img
-                        src={project.imageUrl}
+                        src={resolvedAssistantImageUrl}
                         alt={project.name}
                         className="h-full w-full object-cover"
                       />
@@ -396,24 +389,6 @@ export default function AssistantSettingsPage() {
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 border-t pt-4">
-              <label className="text-sm font-medium">Assistant Preset</label>
-              <Select value={assistantPreset} onValueChange={handlePresetSelect}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select preset" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ASSISTANT_PRESETS.map((preset) => (
-                    <SelectItem key={preset.id} value={preset.id}>
-                      {preset.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {currentPreset && (
-                <p className="text-xs text-muted-foreground">{currentPreset.description}</p>
-              )}
-            </div>
           </div>
         </TabsContent>
 
@@ -596,15 +571,39 @@ export default function AssistantSettingsPage() {
 
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap gap-3">
-          <Button
-            variant="destructive"
-            className="gap-2"
-            onClick={handleDelete}
-            disabled={isSaving || isDeleting}
-          >
-            <Trash2 className="h-4 w-4" />
-            {isDeleting ? "Deleting..." : "Delete Assistant"}
-          </Button>
+          <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="destructive"
+                className="gap-2"
+                disabled={isSaving || isDeleting}
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete Assistant
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete assistant?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action is permanent. It will remove this assistant and all related tasks, files, and chats.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void handleDelete();
+                  }}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  disabled={isDeleting}
+                >
+                  {isDeleting ? "Deleting..." : "Delete"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
         <p className="text-xs text-muted-foreground">
           Deleting an assistant removes its tasks, files, and chats permanently.

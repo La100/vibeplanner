@@ -3,11 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "sync-prompts": "node scripts/sync-ai-prompts.mjs",
-    "dev": "pnpm sync-prompts && npm-run-all --parallel dev:frontend dev:backend",
+    "dev": "npm-run-all --parallel dev:frontend dev:backend",
     "dev:frontend": "next dev -H 0.0.0.0 -p 3000",
     "dev:backend": "convex dev",
-    "build": "pnpm sync-prompts && next build",
+    "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "elo": "bash ./elo"

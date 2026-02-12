@@ -2,10 +2,10 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dumbbell, Flame, Landmark, Sparkles } from "lucide-react";
+import { Dumbbell, Flame, Landmark, Leaf, Sparkles } from "lucide-react";
 
 interface AssistantTypeSelectorProps {
-  onSelect: (type: "gymbro" | "custom" | "martin" | "buddha" | "marcus" | "startup" | "skip") => void;
+  onSelect: (type: "gymbro" | "custom" | "martin" | "monk" | "marcus" | "startup" | "skip") => void;
 }
 
 export function AssistantTypeSelector({ onSelect }: AssistantTypeSelectorProps) {
@@ -21,7 +21,7 @@ export function AssistantTypeSelector({ onSelect }: AssistantTypeSelectorProps) 
           </p>
         </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+        <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
           <Card
             className="cursor-pointer hover:border-primary transition-colors"
             onClick={() => onSelect("gymbro")}
@@ -93,6 +93,31 @@ export function AssistantTypeSelector({ onSelect }: AssistantTypeSelectorProps) 
                 <li>• Krótkie rytuały i refleksja</li>
                 <li>• Praca na tym, co zależne</li>
                 <li>• Stabilna motywacja bez presji</li>
+              </ul>
+            </CardContent>
+          </Card>
+
+          <Card
+            className="cursor-pointer hover:border-primary transition-colors"
+            onClick={() => onSelect("monk")}
+          >
+            <CardHeader>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 rounded-lg bg-teal-500/10">
+                  <Leaf className="h-6 w-6 text-teal-600" />
+                </div>
+                <CardTitle className="text-xl">Monk</CardTitle>
+              </div>
+              <CardDescription className="text-base">
+                Spokojny asystent do uważności, dyscypliny i codziennej stabilizacji
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li>• Medytacja i oddech</li>
+                <li>• Rytm dnia i koncentracja</li>
+                <li>• Redukcja napięcia i wyciszenie</li>
+                <li>• Regularna praktyka bez presji</li>
               </ul>
             </CardContent>
           </Card>

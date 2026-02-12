@@ -12,6 +12,7 @@ import { useMutation, useQuery } from "convex/react";
 import { apiAny } from "@/lib/convexApiAny";
 import { Id } from "@/convex/_generated/dataModel";
 import { getPreset } from "@/convex/ai/presets";
+import { DEFAULT_ASSISTANT_SOUL } from "@/convex/ai/souls/client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -73,7 +74,7 @@ export function SoulEditor({ projectId, isOpen, onOpenChange }: SoulEditorProps)
         }
     };
 
-    const defaultSoul = getPreset(project?.assistantPreset || "custom")?.defaultSoul || "";
+    const defaultSoul = getPreset(project?.assistantPreset || "")?.defaultSoul || DEFAULT_ASSISTANT_SOUL;
 
     const handleReset = () => {
         // Reset to last saved value (current DB value)

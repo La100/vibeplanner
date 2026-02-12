@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { CreateAssistantView } from "./CreateAssistantView";
 import { getPreset } from "@/convex/ai/presets";
 import { cn } from "@/lib/utils";
+import { resolveAssistantImageUrl } from "@/lib/assistantImage";
 
 export default function CompanyProjects() {
   const router = useRouter();
@@ -105,7 +106,10 @@ export default function CompanyProjects() {
                     assistantPreset?: string;
                   }) => {
                     const preset = getPreset(project.assistantPreset || "");
-                    const displayImage = project.imageUrl || preset?.image;
+                    const displayImage = resolveAssistantImageUrl({
+                      imageUrl: project.imageUrl,
+                      assistantPreset: project.assistantPreset,
+                    });
 
                     return (
                       <motion.div

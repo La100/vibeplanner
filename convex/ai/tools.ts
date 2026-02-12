@@ -347,7 +347,7 @@ export function createStreamingTools(options?: StreamingToolOptions) {
 
     // Onboarding completion tool
     complete_onboarding: {
-      description: "Complete onboarding after you have asked the key questions and presented the initial plan. This also seeds default health habits if missing.",
+      description: "Complete onboarding after the initial plan is approved and Telegram setup is connected (or explicitly skipped after two refusals).",
       inputSchema: z.object({
         skipTelegram: z
           .boolean()

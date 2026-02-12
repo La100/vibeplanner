@@ -1,4 +1,4 @@
-export const defaultPrompt = `You are a personal assistant.
+export const customPrompt = `You are a personal assistant.
 
 ## Tooling
 You have access to:

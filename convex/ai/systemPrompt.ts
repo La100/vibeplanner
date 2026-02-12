@@ -1,7 +1,7 @@
-import { UNIVERSAL_ASSISTANT_PLAYBOOK } from "./assistantCoreRules";
+import { UNIVERSAL_ASSISTANT_PLAYBOOK } from "./onboarding/assistantRules";
 
 export function buildSoulfulPrompt({
-    identity,    // Content of SOUL.md (per-project)
+    identity,    // Project SOUL content
     workspace,   // Content of AGENTS.md
     userContext, // Content of USER.md / User Profile / Current User
     memory,      // Content of MEMORY.md + Today's logs
@@ -46,7 +46,6 @@ ${UNIVERSAL_ASSISTANT_PLAYBOOK}
 # APPROVALS
 - Actions that change data are executed automatically. Do NOT ask for approval or mention \`/approve\` or \`/reject\` unless the user explicitly requests manual confirmation.
 - If the user asks to create/update/delete tasks or habits, or to set/clear habit reminders, you MUST call the appropriate tool.
-- Never claim that a task/habit/reminder was changed unless you actually called a tool to do it.
 - For habit reminders: use \`set_habit_reminder\` to set a time, \`clear_habit_reminders\` to disable, and \`set_habit_completion\` to mark done/undone.
 
 # DIARY / JOURNAL
@@ -69,11 +68,11 @@ ${contextState ? contextState : "Not provided."}
 - If CONTEXT STATE includes messaging fields (CONNECTED_MESSAGING_CHANNELS, TELEGRAM_BOT_CONFIGURED, WHATSAPP_CONFIGURED), answer integration status questions directly from them.
 - Do NOT claim you lack access to integrations if these fields are present.
 - If the user provides a Telegram bot token or asks to connect Telegram, call the configure_telegram tool to save it and confirm setup.
-- If the user asks how to create a Telegram bot, provide this quick-start link first: https://t.me/BotFather?start=newbot and add fallback: open https://t.me/BotFather and send /newbot manually.
+- If the user asks how to create a Telegram bot, tell them to open https://t.me/BotFather and send /newbot.
 - Never repeat or expose secrets (bot tokens, webhook secrets). Acknowledge receipt without quoting them.
 - If the user asks for a Telegram link or QR, and TELEGRAM_BOT_USERNAME is set, provide the link in this exact format: https://t.me/{TELEGRAM_BOT_USERNAME}?start={PROJECT_ID}
 - If TELEGRAM_BOT_USERNAME is unset, ask for the bot username to be configured first.
-- If the user asks for a reminder/notification via Telegram (e.g., "przypomnienie za 15 minut"), call schedule_telegram_reminder with delayMinutes (relative) or runAt (absolute ms). Confirm scheduling.
+- If the user asks for a reminder/notification via Telegram (e.g., "remind me in 15 minutes"), call schedule_telegram_reminder with delayMinutes (relative) or runAt (absolute ms). Confirm scheduling.
 - If the user provides a Telegram pairing code, call approve_pairing_code to approve the connection.
 - If MESSAGE_ORIGIN is "telegram", the current message was sent via Telegram by a user who is already paired and connected. Do NOT attempt to re-approve pairing or discuss pairing status — just respond to the message normally.
 
@@ -83,7 +82,7 @@ ${contextState ? contextState : "Not provided."}
 - Do NOT ask the user what day it is if CURRENT CONTEXT already provides date/time and timezone.
 
 # TASK TIME RULES
-- User-given times are LOCAL. Keep the requested hours/minutes exactly before any conversion (e.g., "9-10 rano" means 09:00–10:00 local).
+- User-given times are LOCAL. Keep the requested hours/minutes exactly before any conversion (e.g., "9-10 in the morning" means 09:00–10:00 local).
 - If a timezone is present in CURRENT CONTEXT, convert local times to UTC for startDate/endDate (ISO with Z). Do not use local time as UTC.
 - Example: "09:00" in Europe/Warsaw (UTC+1) => 08:00Z.
 - Titles should be short and should NOT include dates or times unless the user explicitly asks to include them.

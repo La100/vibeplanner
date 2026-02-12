@@ -11,19 +11,12 @@ import { Thread } from "@/components/assistant-ui/thread";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { apiAny } from "@/lib/convexApiAny";
 import { cn } from "@/lib/utils";
+import { resolveAssistantImageUrl } from "@/lib/assistantImage";
 import { useChat } from "@/components/ai/assistant/data/hooks";
 import { ACCEPTED_FILE_TYPES } from "@/components/ai/assistant/config";
 import type { UIMessage } from "@convex-dev/agent/react";
 import { MessageSquare, RotateCcw } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
-
-const PRESET_IMAGES: Record<string, string> = {
-  gymbro: "/assistants/gymbro/image.jpg",
-  martin: "/assistants/martin/image.png",
-  buddha: "/assistants/buddha/image.jpeg",
-  marcus: "/assistants/marcus/image.webp",
-  startup: "/assistants/startup/image.png",
-};
 
 const ONBOARDING_INTRO_ASSISTANT = "[SYSTEM: START_ONBOARDING]";
 const ONBOARDING_INTRO_USER_PROFILE = "[SYSTEM: START_USER_PROFILE_ONBOARDING]";
@@ -462,8 +455,10 @@ export default function AssistantChat({
   }, [handleNewChat]);
 
   const headerName = assistantName || "Assistant";
-  const resolvedAssistantImageUrl =
-    assistantImageUrl || PRESET_IMAGES[assistantPreset ?? ""] || undefined;
+  const resolvedAssistantImageUrl = resolveAssistantImageUrl({
+    imageUrl: assistantImageUrl,
+    assistantPreset,
+  });
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>

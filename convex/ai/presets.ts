@@ -1,12 +1,12 @@
 /**
  * Assistant Presets - Client-safe definitions for UI
- * Source of truth: convex/ai/souls/**.md (synced into convex/ai/souls/client.ts)
+ * Source of truth for SOUL strings: convex/ai/souls/client.ts
  */
 
 import {
   WORKOUT_COACH_SOUL,
   CUSTOM_ASSISTANT_SOUL,
-  BUDDHA_ASSISTANT_SOUL,
+  MONK_ASSISTANT_SOUL,
   MARCUS_AURELIUS_SOUL,
 } from "./souls/client";
 
@@ -16,8 +16,7 @@ export interface AssistantPreset {
   description: string;
   icon: string;
   color: string;
-  defaultSoul: string; // Full SOUL.md content copied to project on creation
-  onboardingPrompt?: string;
+  defaultSoul: string; // Full SOUL content copied to project on creation
   image?: string;
   gradient?: string;
   backgroundClass?: string;
@@ -57,13 +56,13 @@ export const ASSISTANT_PRESETS: AssistantPreset[] = [
     gradient: "from-blue-600 to-indigo-700",
   },
   {
-    id: "buddha",
+    id: "monk",
     name: "Monk",
     description: "Mindfulness assistant for calm, clarity, and daily practice.",
     icon: "MK",
     color: "bg-teal-500/10 text-teal-700 border-teal-200 dark:border-teal-800",
-    defaultSoul: BUDDHA_ASSISTANT_SOUL,
-    image: "/assistants/buddha/image.jpeg",
+    defaultSoul: MONK_ASSISTANT_SOUL,
+    image: "/assistants/monk/image.jpeg",
 
     gradient: "from-emerald-600 to-teal-800",
   },

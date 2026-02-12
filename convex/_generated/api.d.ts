@@ -10,7 +10,6 @@
 
 import type * as ai_actions from "../ai/actions.js";
 import type * as ai_agent from "../ai/agent.js";
-import type * as ai_assistantCoreRules from "../ai/assistantCoreRules.js";
 import type * as ai_config from "../ai/config.js";
 import type * as ai_confirmedActions from "../ai/confirmedActions.js";
 import type * as ai_confirmedActions_habits from "../ai/confirmedActions/habits.js";
@@ -24,9 +23,10 @@ import type * as ai_helpers_functionCallHandler from "../ai/helpers/functionCall
 import type * as ai_helpers_streamResponseBuilder from "../ai/helpers/streamResponseBuilder.js";
 import type * as ai_helpers_tokenUtils from "../ai/helpers/tokenUtils.js";
 import type * as ai_longContextQueries from "../ai/longContextQueries.js";
-import type * as ai_onboarding_prompts from "../ai/onboarding/prompts.js";
+import type * as ai_onboarding_assistantRules from "../ai/onboarding/assistantRules.js";
+import type * as ai_onboarding_userProfile from "../ai/onboarding/userProfile.js";
 import type * as ai_presets from "../ai/presets.js";
-import type * as ai_prompt from "../ai/prompt.js";
+import type * as ai_prompts_custom from "../ai/prompts/custom.js";
 import type * as ai_search from "../ai/search.js";
 import type * as ai_souls_client from "../ai/souls/client.js";
 import type * as ai_souls_index from "../ai/souls/index.js";
@@ -38,7 +38,6 @@ import type * as ai_threads from "../ai/threads.js";
 import type * as ai_tools from "../ai/tools.js";
 import type * as ai_types from "../ai/types.js";
 import type * as ai_usage from "../ai/usage.js";
-import type * as ai_userOnboarding_prompt from "../ai/userOnboarding/prompt.js";
 import type * as calendar from "../calendar.js";
 import type * as clerk from "../clerk.js";
 import type * as comments from "../comments.js";
@@ -77,7 +76,6 @@ import type {
 declare const fullApi: ApiFromModules<{
   "ai/actions": typeof ai_actions;
   "ai/agent": typeof ai_agent;
-  "ai/assistantCoreRules": typeof ai_assistantCoreRules;
   "ai/config": typeof ai_config;
   "ai/confirmedActions": typeof ai_confirmedActions;
   "ai/confirmedActions/habits": typeof ai_confirmedActions_habits;
@@ -91,9 +89,10 @@ declare const fullApi: ApiFromModules<{
   "ai/helpers/streamResponseBuilder": typeof ai_helpers_streamResponseBuilder;
   "ai/helpers/tokenUtils": typeof ai_helpers_tokenUtils;
   "ai/longContextQueries": typeof ai_longContextQueries;
-  "ai/onboarding/prompts": typeof ai_onboarding_prompts;
+  "ai/onboarding/assistantRules": typeof ai_onboarding_assistantRules;
+  "ai/onboarding/userProfile": typeof ai_onboarding_userProfile;
   "ai/presets": typeof ai_presets;
-  "ai/prompt": typeof ai_prompt;
+  "ai/prompts/custom": typeof ai_prompts_custom;
   "ai/search": typeof ai_search;
   "ai/souls/client": typeof ai_souls_client;
   "ai/souls/index": typeof ai_souls_index;
@@ -105,7 +104,6 @@ declare const fullApi: ApiFromModules<{
   "ai/tools": typeof ai_tools;
   "ai/types": typeof ai_types;
   "ai/usage": typeof ai_usage;
-  "ai/userOnboarding/prompt": typeof ai_userOnboarding_prompt;
   calendar: typeof calendar;
   clerk: typeof clerk;
   comments: typeof comments;

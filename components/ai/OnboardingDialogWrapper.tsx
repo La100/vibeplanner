@@ -7,7 +7,7 @@ import { useMutation, useQuery } from "convex/react";
 import { apiAny } from "@/lib/convexApiAny";
 import { Button } from "@/components/ui/button";
 
-type PresetId = "gymbro" | "custom" | "martin" | "buddha" | "marcus" | "startup";
+type PresetId = "gymbro" | "custom" | "martin" | "monk" | "marcus" | "startup";
 
 /**
  * Health Assistant onboarding wrapper.
@@ -78,7 +78,7 @@ export function OnboardingDialogWrapper() {
               ? "Gym Bro Setup"
               : presetId === "martin"
                 ? "Martin Onboarding"
-                : presetId === "buddha"
+                : presetId === "monk"
                   ? "Monk Onboarding"
                 : presetId === "marcus"
                   ? "Marcus Aurelius Onboarding"
@@ -91,7 +91,7 @@ export function OnboardingDialogWrapper() {
               ? "Answer a few questions and I’ll build your training plan."
               : presetId === "martin"
                 ? "Answer a few questions and I’ll propose habits and a weekly plan."
-                : presetId === "buddha"
+                : presetId === "monk"
                   ? "Answer a few questions and I’ll set up a simple daily mindfulness practice."
                 : presetId === "marcus"
                   ? "Answer a few questions and I’ll help you build a calm, disciplined plan."

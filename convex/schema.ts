@@ -100,7 +100,7 @@ export default defineSchema({
       v.literal("custom"),
       v.literal("gymbro"),
       v.literal("martin"),
-      v.literal("buddha"),
+      v.literal("monk"),
       v.literal("marcus"),
       v.literal("startup"),
     )),
@@ -118,7 +118,7 @@ export default defineSchema({
     telegramWebhookSecret: v.optional(v.string()), // Telegram webhook secret (per-bot)
     whatsappNumber: v.optional(v.string()), // WhatsApp business number
     // Per-project AI SOUL - the assistant's personality and instructions
-    soul: v.optional(v.string()), // Full SOUL.md content for this assistant
+    soul: v.optional(v.string()), // Full SOUL content for this assistant
   })
     .index("by_team", ["teamId"])
     .index("by_team_and_slug", ["teamId", "slug"])
@@ -503,7 +503,7 @@ export default defineSchema({
     .index("by_thread_and_status", ["threadId", "status"])
     .index("by_response_id", ["responseId"]),
 
-  // AI System Files - stores SOUL.md, AGENTS.md, etc.
+  // AI System Files - stores SOUL, AGENTS.md, etc.
   aiSystemFiles: defineTable({
     slug: v.string(), // "soul", "agents", "long_term_memory"
     content: v.string(),
