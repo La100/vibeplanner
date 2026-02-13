@@ -199,10 +199,8 @@ export const createProjectInOrg = mutation({
     assistantPreset: v.optional(v.union(
       v.literal("custom"),
       v.literal("gymbro"),
-      v.literal("martin"),
       v.literal("monk"),
       v.literal("marcus"),
-      v.literal("startup"),
     )),
     assistantOnboardingEnabled: v.optional(v.boolean()),
   },
@@ -278,10 +276,8 @@ export const createProjectInOrg = mutation({
     const projectSoul = args.customAiPrompt || preset?.defaultSoul || DEFAULT_ASSISTANT_SOUL;
 
     const shouldStartOnboarding = resolvedPreset === "gymbro"
-      || resolvedPreset === "martin"
       || resolvedPreset === "monk"
       || resolvedPreset === "marcus"
-      || resolvedPreset === "startup"
       || (resolvedPreset === "custom" && args.assistantOnboardingEnabled);
 
     // Only enable onboarding when explicitly requested for custom
@@ -502,10 +498,8 @@ export const updateProject = mutation({
     assistantPreset: v.optional(v.union(
       v.literal("custom"),
       v.literal("gymbro"),
-      v.literal("martin"),
       v.literal("monk"),
       v.literal("marcus"),
-      v.literal("startup"),
     )),
     status: v.optional(v.union(
       v.literal("planning"),
@@ -554,7 +548,7 @@ export const updateProject = mutation({
     const assistantOnboardingUpdate =
       assistantPreset === undefined
         ? {}
-        : assistantPreset === "gymbro" || assistantPreset === "martin" || assistantPreset === "monk" || assistantPreset === "marcus" || assistantPreset === "startup"
+        : assistantPreset === "gymbro" || assistantPreset === "monk" || assistantPreset === "marcus"
           ? {
             assistantPreset,
             assistantOnboarding:

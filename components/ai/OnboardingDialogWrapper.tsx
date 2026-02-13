@@ -7,7 +7,7 @@ import { useMutation, useQuery } from "convex/react";
 import { apiAny } from "@/lib/convexApiAny";
 import { Button } from "@/components/ui/button";
 
-type PresetId = "gymbro" | "custom" | "martin" | "monk" | "marcus" | "startup";
+type PresetId = "gymbro" | "custom" | "monk" | "marcus";
 
 /**
  * Health Assistant onboarding wrapper.
@@ -76,28 +76,20 @@ export function OnboardingDialogWrapper() {
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2">
             {presetId === "gymbro"
               ? "Gym Bro Setup"
-              : presetId === "martin"
-                ? "Martin Onboarding"
-                : presetId === "monk"
-                  ? "Monk Onboarding"
-                : presetId === "marcus"
-                  ? "Marcus Aurelius Onboarding"
-                  : presetId === "startup"
-                    ? "Startup Mentor Onboarding"
-                  : "Assistant Onboarding"}
+              : presetId === "monk"
+                ? "Monk Onboarding"
+              : presetId === "marcus"
+                ? "Marcus Aurelius Onboarding"
+              : "Assistant Onboarding"}
           </h1>
           <p className="text-muted-foreground">
             {presetId === "gymbro"
               ? "Answer a few questions and I’ll build your training plan."
-              : presetId === "martin"
-                ? "Answer a few questions and I’ll propose habits and a weekly plan."
-                : presetId === "monk"
-                  ? "Answer a few questions and I’ll set up a simple daily mindfulness practice."
-                : presetId === "marcus"
-                  ? "Answer a few questions and I’ll help you build a calm, disciplined plan."
-                  : presetId === "startup"
-                    ? "Answer a few questions and I’ll build a focused execution plan for your product."
-                  : "Answer a few questions to define your focus and habits."}
+              : presetId === "monk"
+                ? "Answer a few questions and I’ll set up a simple daily mindfulness practice."
+              : presetId === "marcus"
+                ? "Answer a few questions and I’ll help you build a calm, disciplined plan."
+              : "Answer a few questions to define your focus and habits."}
           </p>
         </header>
 

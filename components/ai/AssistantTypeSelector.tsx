@@ -2,10 +2,10 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dumbbell, Flame, Landmark, Leaf, Sparkles } from "lucide-react";
+import { Dumbbell, Landmark, Leaf, Sparkles } from "lucide-react";
 
 interface AssistantTypeSelectorProps {
-  onSelect: (type: "gymbro" | "custom" | "martin" | "monk" | "marcus" | "startup" | "skip") => void;
+  onSelect: (type: "gymbro" | "custom" | "monk" | "marcus" | "skip") => void;
 }
 
 export function AssistantTypeSelector({ onSelect }: AssistantTypeSelectorProps) {
@@ -21,7 +21,7 @@ export function AssistantTypeSelector({ onSelect }: AssistantTypeSelectorProps) 
           </p>
         </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
           <Card
             className="cursor-pointer hover:border-primary transition-colors"
             onClick={() => onSelect("gymbro")}
@@ -43,31 +43,6 @@ export function AssistantTypeSelector({ onSelect }: AssistantTypeSelectorProps) 
                 <li>• Śledzenie postępów</li>
                 <li>• Porady dotyczące żywienia</li>
                 <li>• Motywacja i wsparcie</li>
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card
-            className="cursor-pointer hover:border-primary transition-colors"
-            onClick={() => onSelect("martin")}
-          >
-            <CardHeader>
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 rounded-lg bg-orange-500/10">
-                  <Flame className="h-6 w-6 text-orange-500" />
-                </div>
-                <CardTitle className="text-xl">Martin</CardTitle>
-              </div>
-              <CardDescription className="text-base">
-                Asystent do rutyn, medytacji, Wim Hofa i planowania tygodnia
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li>• Proponuje nawyki i plan tygodnia</li>
-                <li>• Stały blok kodowania 08:00–12:00</li>
-                <li>• Medytacja i oddech</li>
-                <li>• Trening i regeneracja</li>
               </ul>
             </CardContent>
           </Card>

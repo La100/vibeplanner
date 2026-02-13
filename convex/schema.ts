@@ -99,10 +99,8 @@ export default defineSchema({
     assistantPreset: v.optional(v.union(
       v.literal("custom"),
       v.literal("gymbro"),
-      v.literal("martin"),
       v.literal("monk"),
       v.literal("marcus"),
-      v.literal("startup"),
     )),
     assistantOnboarding: v.optional(v.object({
       status: v.union(v.literal("pending"), v.literal("completed")),
