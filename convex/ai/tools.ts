@@ -228,6 +228,8 @@ const saveUserProfileSchema = z.object({
 interface StreamingToolOptions {
   projectId?: string;
   actorUserId?: string;
+  threadId?: string;
+  latestUserMessage?: string;
   runAction?: RunActionFn;
   runMutation?: RunMutationFn;
   runQuery?: RunQueryFn;
@@ -309,6 +311,38 @@ async function runOpenAIWebSearch(args: z.infer<typeof webSearchSchema>) {
   };
 }
 
+const normalizeUserText = (text?: string): string =>
+  (text ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+const TELEGRAM_REFUSAL_PATTERNS = [
+  /\bno telegram\b/i,
+  /\bwithout telegram\b/i,
+  /\bskip telegram\b/i,
+  /\bdon'?t want telegram\b/i,
+  /\bdo not want telegram\b/i,
+  /\bnie chce telegrama\b/i,
+  /\bnie chc[ea] telegrama\b/i,
+  /\bbez telegrama\b/i,
+  /\bpomijam telegram\b/i,
+  /\bpomin telegram\b/i,
+  /\bodmawiam telegrama\b/i,
+];
+
+const isExplicitTelegramRefusal = (text?: string): boolean => {
+  const normalized = normalizeUserText(text);
+  if (!normalized) return false;
+  return TELEGRAM_REFUSAL_PATTERNS.some((pattern) => pattern.test(normalized));
+};
+
+const countExplicitTelegramRefusals = (messages: string[]): number => {
+  return messages.reduce((acc, message) => {
+    return acc + (isExplicitTelegramRefusal(message) ? 1 : 0);
+  }, 0);
+};
+
 /**
  * Create tools in AI SDK format for use with streamText
  * Using inputSchema (AI SDK v5) instead of parameters
@@ -367,6 +401,40 @@ export function createStreamingTools(options?: StreamingToolOptions) {
           const internalAny = require("../_generated/api").internal as any;
 
           const shouldSkipTelegram = !!args?.skipTelegram;
+
+          if (shouldSkipTelegram) {
+            if (!options.runQuery || !options.threadId) {
+              return JSON.stringify({
+                error: "telegram_skip_unavailable",
+                message:
+                  "Cannot skip Telegram safely right now. Continue Telegram setup, or explicitly refuse Telegram reminders twice and try again.",
+              });
+            }
+
+            const recentUserMessages = await options.runQuery(internalAny.ai.threads.getRecentUserMessagesText, {
+              threadId: options.threadId,
+              limit: 20,
+            }) as string[];
+
+            const latestUserMessage = options.latestUserMessage ?? "";
+            const latestUserMessageNormalized = normalizeUserText(latestUserMessage);
+            const recentNormalized = new Set((recentUserMessages ?? []).map((msg) => normalizeUserText(msg)));
+
+            const refusalCountFromHistory = countExplicitTelegramRefusals(recentUserMessages ?? []);
+            const latestIsRefusal = isExplicitTelegramRefusal(latestUserMessage);
+            const latestAlreadyCounted = latestUserMessageNormalized.length > 0 && recentNormalized.has(latestUserMessageNormalized);
+            const refusalCount = refusalCountFromHistory + (latestIsRefusal && !latestAlreadyCounted ? 1 : 0);
+
+            if (refusalCount < 2) {
+              return JSON.stringify({
+                error: "telegram_skip_requires_double_refusal",
+                message:
+                  "Skipping Telegram is allowed only after two explicit user refusals. Continue Telegram setup, or ask the user to clearly refuse Telegram reminders twice.",
+                refusalCount,
+                requiredRefusalCount: 2,
+              });
+            }
+          }
 
           // Enforce Telegram setup before closing onboarding (unless explicitly skipped).
           // This prevents the UI from jumping to the dashboard immediately after the plan is approved.

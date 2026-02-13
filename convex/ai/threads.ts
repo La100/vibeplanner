@@ -234,6 +234,44 @@ export const getLatestAssistantMessageText = internalQuery({
   },
 });
 
+// Internal helper: get recent user messages text for a thread (legacy or agent thread id)
+export const getRecentUserMessagesText = internalQuery({
+  args: {
+    threadId: v.string(),
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(v.string()),
+  handler: async (ctx, args) => {
+    let agentThreadId = args.threadId;
+
+    if (isLegacyThreadId(args.threadId)) {
+      const mapping = await ctx.db
+        .query("aiThreads")
+        .withIndex("by_thread_id", (q) => q.eq("threadId", args.threadId))
+        .unique();
+      if (!mapping?.agentThreadId) {
+        return [];
+      }
+      agentThreadId = mapping.agentThreadId;
+    }
+
+    const limit = Math.max(1, Math.min(args.limit ?? 12, 50));
+    const numItems = Math.max(10, Math.min(limit * 4, 200));
+
+    const recentMessages = await listMessages(ctx, components.agent, {
+      threadId: agentThreadId,
+      paginationOpts: { cursor: null, numItems },
+      excludeToolMessages: true,
+    });
+
+    return recentMessages.page
+      .filter((msg) => msg.message?.role === "user")
+      .map((msg) => (msg.text ?? "").trim())
+      .filter((text) => text.length > 0)
+      .slice(0, limit);
+  },
+});
+
 export const autoConfirmFunctionCalls = internalMutation({
   args: {
     threadId: v.string(),

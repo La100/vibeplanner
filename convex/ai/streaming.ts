@@ -433,6 +433,8 @@ ${userProfileSection}
       const agent = createVibePlannerAgent(systemInstructions, {
         projectId: args.projectId as string,
         actorUserId: args.userClerkId,
+        threadId: providedThreadId,
+        latestUserMessage: userPrompt,
         runAction: ctx.runAction,
         runMutation: ctx.runMutation,
         runQuery: ctx.runQuery,

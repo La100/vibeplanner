@@ -25,6 +25,8 @@ type RunQueryFn = (query: any, args: any) => Promise<any>;
 interface AgentOptions {
   projectId?: string;
   actorUserId?: string;
+  threadId?: string;
+  latestUserMessage?: string;
   runAction?: RunActionFn;
   runMutation?: RunMutationFn;
   runQuery?: RunQueryFn;
@@ -65,6 +67,8 @@ export const createVibePlannerAgent = (
     tools: createAgentTools({
       projectId: options?.projectId,
       actorUserId: options?.actorUserId,
+      threadId: options?.threadId,
+      latestUserMessage: options?.latestUserMessage,
       runAction: options?.runAction,
       runMutation: options?.runMutation,
       runQuery: options?.runQuery,
